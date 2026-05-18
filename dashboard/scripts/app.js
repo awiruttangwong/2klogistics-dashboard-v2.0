@@ -1,7 +1,7 @@
 const PAGES = [
-  { id: 'master', title: 'ภาพรวมผลประกอบการ', icon: '1' },
-  { id: 'daily', title: 'วิเคราะห์และเปรียบเทียบผลการดำเนินงาน', icon: '2' },
-  { id: 'oilprice', title: 'ตรวจสอบราคาน้ำมันดีเซล', icon: '3' }
+  { id: 'master', title: 'ภาพรวมผลประกอบการ', icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M80-120v-80h800v80H80Zm40-120v-280h120v280H120Zm200 0v-480h120v480H320Zm200 0v-360h120v360H520Zm200 0v-600h120v600H720Z"/></svg>' },
+  { id: 'daily', title: 'วิเคราะห์และเปรียบเทียบผลการดำเนินงาน', icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="m320-160-56-57 103-103H80v-80h287L264-503l56-57 200 200-200 200Zm320-240L440-600l200-200 56 57-103 103h287v80H593l103 103-56 57Z"/></svg>' },
+  { id: 'oilprice', title: 'ตรวจสอบราคาน้ำมันดีเซล', icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M160-120v-640q0-33 23.5-56.5T240-840h240q33 0 56.5 23.5T560-760v280h40q33 0 56.5 23.5T680-400v180q0 17 11.5 28.5T720-180q17 0 28.5-11.5T760-220v-288q-9 5-19 6.5t-21 1.5q-42 0-71-29t-29-71q0-32 17.5-57.5T684-694l-84-84 42-42 148 144q15 15 22.5 35t7.5 41v380q0 42-29 71t-71 29q-42 0-71-29t-29-71v-200h-60v300H160Zm80-440h240v-200H240v200Zm480 0q17 0 28.5-11.5T760-600q0-17-11.5-28.5T720-640q-17 0-28.5 11.5T680-600q0 17 11.5 28.5T720-560ZM240-200h240v-280H240v280Zm240 0H240h240Z"/></svg>' }
 ];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const MTH = { January: 'ม.ค.', February: 'ก.พ.', March: 'มี.ค.', April: 'เม.ย.', May: 'พ.ค.', June: 'มิ.ย.', July: 'ก.ค.', August: 'ส.ค.', September: 'ก.ย.', October: 'ต.ค.', November: 'พ.ย.', December: 'ธ.ค.' };
@@ -693,13 +693,15 @@ function renderAuditTable(id, config, opts = {}) {
       page: 0,
       perPage: config.perPage || 12,
       filterValues: Object.fromEntries(firstThreeFilters.map(filterDef => [filterDef.key, ''])),
-      csvName: config.csvName || id
+      csvName: config.csvName || id,
+      onRowClick: typeof config.onRowClick === 'function' ? config.onRowClick : null
     };
   } else {
     state.cols = config.cols;
     state.rows = config.rows;
     state.filters = firstThreeFilters;
     state.csvName = config.csvName || id;
+    state.onRowClick = typeof config.onRowClick === 'function' ? config.onRowClick : null;
     const keys = new Set(firstThreeFilters.map(filterDef => filterDef.key));
     Object.keys(state.filterValues).forEach(k => { if (!keys.has(k)) delete state.filterValues[k]; });
     firstThreeFilters.forEach(filterDef => {
@@ -735,7 +737,7 @@ function renderAuditTable(id, config, opts = {}) {
       </div>
       <div class="audit-table-toolbar-side">
         <div class="audit-table-actions">
-          <button type="button" class="audit-table-button" onclick="auditExportXls('${id}')">Export XLS</button>
+          <button type="button" class="audit-table-button" onclick="auditExportXls('${id}')">Export XLSX</button>
           <button type="button" class="audit-table-button" onclick="auditMovePage('${id}',-1)">‹</button>
           <button type="button" class="audit-table-button" onclick="auditMovePage('${id}',1)">›</button>
           <select id="${id}_perpage" class="audit-table-select audit-table-select-sm">
@@ -753,7 +755,7 @@ function renderAuditTable(id, config, opts = {}) {
           </tr>
         </thead>
         <tbody>
-          ${pageRows.length ? pageRows.map(row => `<tr>${state.cols.map(col => `<td class="${auditCellClass(row, col)}">${auditFormatCell(row, col)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${state.cols.length}" class="audit-table-empty">ไม่พบข้อมูลตามเงื่อนไขที่เลือก</td></tr>`}
+          ${pageRows.length ? pageRows.map((row, rowIdx) => `<tr class="${state.onRowClick ? 'audit-row-action' : ''}" data-row-idx="${rowIdx}">${state.cols.map(col => `<td class="${auditCellClass(row, col)}">${auditFormatCell(row, col)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${state.cols.length}" class="audit-table-empty">ไม่พบข้อมูลตามเงื่อนไขที่เลือก</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -771,6 +773,16 @@ function renderAuditTable(id, config, opts = {}) {
       state.perPage = Number(e.target.value) || state.perPage;
       state.page = 0;
       renderAuditTable(id, config, { restore: true });
+    });
+  }
+  if (state.onRowClick && pageRows.length) {
+    shell.querySelectorAll('tbody tr[data-row-idx]').forEach(rowEl => {
+      rowEl.addEventListener('click', () => {
+        const idx = Number(rowEl.getAttribute('data-row-idx'));
+        const row = pageRows[idx];
+        if (!row) return;
+        state.onRowClick(row);
+      });
     });
   }
 }
@@ -797,30 +809,18 @@ function auditExportXls(id) {
   const state = auditTableStates[id];
   if (!state) return;
   const rows = auditFilterRows(state);
-  const tableHtml = `
-    <table>
-      <thead>
-        <tr>${state.cols.map(col => `<th>${esc(col.label)}</th>`).join('')}</tr>
-      </thead>
-      <tbody>
-        ${rows.map(row => `<tr>${state.cols.map(col => {
-          const exportValue = typeof col.exportValue === 'function' ? col.exportValue(row) : auditGetValue(row, col);
-          const text = exportValue == null ? '' : String(exportValue);
-          return `<td>${esc(text)}</td>`;
-        }).join('')}</tr>`).join('')}
-      </tbody>
-    </table>
-  `;
-  const xlsDoc = `<!doctype html><html><head><meta charset="utf-8"></head><body>${tableHtml}</body></html>`;
-  const blob = new Blob([xlsDoc], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${state.csvName}.xls`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  const aoa = [
+    state.cols.map(col => col.label),
+    ...rows.map(row => state.cols.map(col => {
+      const exportValue = typeof col.exportValue === 'function' ? col.exportValue(row) : auditGetValue(row, col);
+      return exportValue == null ? '' : exportValue;
+    }))
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = state.cols.map(() => ({ wch: 18 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Data');
+  XLSX.writeFile(wb, `${state.csvName}.xlsx`, { bookType: 'xlsx', cellStyles: true });
 }
 function buildAuditTableSection(id, title, icon, color, note = '') {
   return `
@@ -838,6 +838,236 @@ function buildAuditTableSection(id, title, icon, color, note = '') {
     </div>
   `;
 }
+
+// Loss drill-down (on-demand + cache)
+const LOSS_DRILL_CACHE = new Map();
+
+function lossDrillNorm(value) {
+  return String(value == null ? '' : value).trim().toLowerCase();
+}
+
+function makeLossDrillKey(kind, row) {
+  if (kind === 'monthly') return `monthly:${row?.monthKey || row?.month || ''}`;
+  if (kind === 'customer') return `customer:${mapCustomer(row?.name || '-')}`;
+  if (kind === 'route') return `route:${lossDrillNorm(row?.name || '-')}`;
+  return `${kind}:${lossDrillNorm(JSON.stringify(row || {}))}`;
+}
+
+function collectLossCauses(trip) {
+  const causes = [];
+  const recv = Number(trip.recv) || 0;
+  const pay = Number(trip.pay) || 0;
+  const oil = Number(trip.oil) || 0;
+  const margin = Number(trip.margin) || 0;
+  if (recv > 0 && Math.abs(margin / recv * 100) >= 10) causes.push('ขาดทุนเกิน 10%');
+  if (pay > recv) causes.push('ราคาจ่ายสูงกว่าราคารับ');
+  if (pay > 0 && oil > pay * 0.5) causes.push('สำรองน้ำมัน > 50%');
+  return causes;
+}
+
+function getLossCauseColor(cause) {
+  const t = String(cause || '');
+  if (t.startsWith('ขาดทุน ')) return 'red';
+  if (t.includes('ราคาจ่าย')) return 'purple';
+  if (t.includes('สำรองน้ำมัน')) return 'orange';
+  return 'blue';
+}
+
+function renderLossCauseTags(causes) {
+  const items = Array.isArray(causes) ? causes.filter(Boolean) : [];
+  if (!items.length) return '<span class="loss-cause-empty">-</span>';
+  return `<div class="loss-cause-tags">${items.map(c => `<span class="loss-cause-tag ${getLossCauseColor(c)}">${esc(c)}</span>`).join('')}</div>`;
+}
+
+function buildLossDrillPayload(kind, row, trips) {
+  const lossTrips = (Array.isArray(trips) ? trips : [])
+    .map(canonicalizeTripRow)
+    .filter(t => Number(t.margin) < 0);
+
+  let matched = [];
+  let title = 'รายละเอียดขาดทุนเชิงลึก';
+  let subtitle = '';
+
+  if (kind === 'monthly') {
+    const monthKey = row?.monthKey || '';
+    matched = lossTrips.filter(t => getMonthNameFromDate(t.date) === monthKey);
+    title = `รายละเอียดขาดทุนรายเดือน: ${row?.month || '-'}`;
+    subtitle = `เที่ยวขาดทุนทั้งหมดในเดือน ${row?.month || '-'}`;
+  } else if (kind === 'customer') {
+    const customer = mapCustomer(row?.name || '-');
+    matched = lossTrips.filter(t => mapCustomer(t.customer || '-') === customer);
+    title = `ขาดทุนแยกตามลูกค้า: ${customer}`;
+    subtitle = 'รายการเที่ยวที่มีส่วนต่างขาดทุนของลูกค้ารายนี้';
+  } else if (kind === 'route') {
+    const routeKey = lossDrillNorm(row?.name || '-');
+    matched = lossTrips.filter(t => lossDrillNorm(t.route || '-') === routeKey);
+    title = `ขาดทุนแยกตามเส้นทาง: ${row?.name || '-'}`;
+    subtitle = 'รายการเที่ยวที่มีส่วนต่างขาดทุนของเส้นทางนี้';
+  }
+
+  matched.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || ((Number(a.margin) || 0) - (Number(b.margin) || 0)));
+
+  const rows = matched.map((t, idx) => {
+    const recv = Number(t.recv) || 0;
+    const margin = Number(t.margin) || 0;
+    const marginPct = recv > 0 ? (margin / recv) * 100 : null;
+    const causesRaw = collectLossCauses(t);
+    const lossPct = marginPct == null ? null : Math.abs(marginPct);
+    const causesDisplay = causesRaw.map(c => {
+      if (c === 'ขาดทุนเกิน 10%' && lossPct != null) return `ขาดทุน ${fmtP(lossPct)}`;
+      return c;
+    });
+    return {
+      idx: idx + 1,
+      date: t.date || '-',
+      customer: t.customer || '-',
+      route: t.route || '-',
+      vtype: t.vtype || '-',
+      driver: t.driver || '-',
+      plate: t.plate || '-',
+      recv: recv,
+      pay: Number(t.pay) || 0,
+      oil: Number(t.oil) || 0,
+      margin: margin,
+      marginPct,
+      causesRaw,
+      causesDisplay,
+      causes: causesDisplay.join(', ')
+    };
+  });
+
+  const totalLoss = rows.reduce((sum, r) => sum + (Number(r.margin) || 0), 0);
+  const topCauseMap = {};
+  rows.forEach(r => {
+    (Array.isArray(r.causesRaw) ? r.causesRaw : []).forEach(c => {
+      topCauseMap[c] = (topCauseMap[c] || 0) + 1;
+    });
+  });
+  const topCauses = Object.entries(topCauseMap).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  return {
+    title,
+    subtitle,
+    rows,
+    summary: {
+      trips: rows.length,
+      totalLoss,
+      avgLoss: rows.length > 0 ? Math.abs(totalLoss) / rows.length : 0,
+      topCauses
+    }
+  };
+}
+
+async function getLossDrillPayload(kind, row) {
+  const cacheKey = makeLossDrillKey(kind, row);
+  if (LOSS_DRILL_CACHE.has(cacheKey)) return deepClone(LOSS_DRILL_CACHE.get(cacheKey));
+  const trips = await ensureTripsReady();
+  const payload = buildLossDrillPayload(kind, row, trips);
+  LOSS_DRILL_CACHE.set(cacheKey, payload);
+  return deepClone(payload);
+}
+
+window.closeLossDrillModal = function() {
+  const modal = document.getElementById('lossDrillModal');
+  if (modal) modal.style.display = 'none';
+};
+
+window.openLossDrillModal = async function(kind, row) {
+  let modal = document.getElementById('lossDrillModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'lossDrillModal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:1001;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.74);backdrop-filter:blur(6px);';
+    modal.onclick = function(e) { if (e.target === modal) window.closeLossDrillModal(); };
+    document.body.appendChild(modal);
+  }
+
+  modal.innerHTML = `
+    <div class="loss-drill-card">
+      <div class="loss-drill-head">
+        <div class="loss-drill-title-wrap">
+          <div class="loss-drill-title">กำลังโหลดรายละเอียดเชิงลึก...</div>
+          <div class="loss-drill-sub">ระบบกำลังดึงข้อมูลเฉพาะรายการที่เลือก</div>
+        </div>
+        <button class="loss-drill-close" type="button" onclick="window.closeLossDrillModal()">&times;</button>
+      </div>
+      <div class="loss-drill-body">
+        <div class="loss-drill-loading">กำลังประมวลผลข้อมูลขาดทุนรายเที่ยว...</div>
+      </div>
+    </div>
+  `;
+  modal.style.display = 'flex';
+
+  try {
+    const payload = await getLossDrillPayload(kind, row);
+    const rowsHtml = payload.rows.length
+      ? payload.rows.map(r => `<tr>
+          <td>${fmtB(r.idx)}</td>
+          <td>${esc(r.date)}</td>
+          <td>${esc(r.customer)}</td>
+          <td title="${esc(r.route)}">${esc(r.route)}</td>
+          <td>${esc(r.vtype)}</td>
+          <td>${esc(r.driver)}</td>
+          <td>${esc(r.plate)}</td>
+          <td class="is-right">${fmt(r.recv)}</td>
+          <td class="is-right">${fmt(r.pay)}</td>
+          <td class="is-right">${fmt(r.oil)}</td>
+          <td class="is-right is-negative">${fmt(r.margin)}</td>
+          <td class="is-right is-negative">${r.marginPct == null ? '-' : fmtP(r.marginPct)}</td>
+          <td>${renderLossCauseTags(r.causesDisplay)}</td>
+        </tr>`).join('')
+      : `<tr><td colspan="13" class="audit-table-empty">ไม่พบเที่ยวขาดทุนในเงื่อนไขที่เลือก</td></tr>`;
+
+    const topCauseHtml = payload.summary.topCauses.length
+      ? payload.summary.topCauses
+        .map(([name, count]) => `<span class="loss-drill-cause-item">&bull; ${esc(name)} (${fmtB(count)} เที่ยว)</span>`)
+        .join('')
+      : '<span class="loss-drill-cause-item">-</span>';
+
+    modal.innerHTML = `
+      <div class="loss-drill-card">
+        <div class="loss-drill-head">
+          <div class="loss-drill-title-wrap">
+            <div class="loss-drill-title">${esc(payload.title)}</div>
+            <div class="loss-drill-sub">${esc(payload.subtitle)}</div>
+          </div>
+          <button class="loss-drill-close" type="button" onclick="window.closeLossDrillModal()">&times;</button>
+        </div>
+        <div class="loss-drill-kpis">
+          <div class="loss-drill-kpi metric metric-trips"><span>เที่ยวขาดทุน</span><b>${fmtB(payload.summary.trips)}</b></div>
+          <div class="loss-drill-kpi metric metric-loss"><span>มูลค่าขาดทุนรวม</span><b class="neg">${fmt(payload.summary.totalLoss)} <em class="loss-drill-unit">THB</em></b></div>
+          <div class="loss-drill-kpi causes"><span>สาเหตุหลัก</span><div class="loss-drill-cause-list">${topCauseHtml}</div></div>
+        </div>
+        <div class="loss-drill-body">
+          <div class="audit-table-wrap">
+            <table class="audit-table loss-drill-table">
+              <thead>
+                <tr>
+                  <th>#</th><th>วันที่</th><th>ลูกค้า</th><th>เส้นทาง</th><th>ประเภทรถ</th><th>พขร.</th><th>ทะเบียน</th>
+                  <th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">สำรองน้ำมัน</th>
+                  <th class="is-right">ส่วนต่าง</th><th class="is-right">กำไร %</th><th>สาเหตุที่พบ</th>
+                </tr>
+              </thead>
+              <tbody>${rowsHtml}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    modal.innerHTML = `
+      <div class="loss-drill-card">
+        <div class="loss-drill-head">
+          <div class="loss-drill-title-wrap">
+            <div class="loss-drill-title">โหลดรายละเอียดไม่สำเร็จ</div>
+            <div class="loss-drill-sub">${esc(err.message || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ')}</div>
+          </div>
+          <button class="loss-drill-close" type="button" onclick="window.closeLossDrillModal()">&times;</button>
+        </div>
+      </div>
+    `;
+  }
+};
 
 
 // KPI card
@@ -1173,7 +1403,7 @@ function buildFullTrend(d) {
   const monthMargins = monthsToShow.map(m => d.routeTrend.reduce((a, r) => a + (r.months[m]?.margin || 0), 0));
   const monthLabels = monthsToShow.map(m => MTH[m] || m);
 
-  const top10 = d.routeTrend.sort((a, b) => {
+  const top10 = d.routeTrend.slice().sort((a, b) => {
     const ta = monthsToShow.reduce((s, m) => s + (a.months[m]?.trips || 0), 0);
     const tb = monthsToShow.reduce((s, m) => s + (b.months[m]?.trips || 0), 0);
     return tb - ta;
@@ -1301,21 +1531,21 @@ function buildFullRanking(d) {
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.05);">
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
           <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(255,255,255,0.02);border-radius:10px;border:1px solid var(--border);">
-            <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#22c55e22,#22c55e11);display:flex;align-items:center;justify-content:center;font-size:16px;color:#22c55e;border:1px solid #22c55e30;font-weight:800;">+</div>
+            <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#22c55e22,#22c55e11);display:flex;align-items:center;justify-content:center;font-size:16px;color:#22c55e;border:1px solid #22c55e30;font-weight:800;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#75FB4C"><path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/></svg></div>
             <div>
               <div style="font-size:11px;color:var(--muted);font-weight:600;">กำไรสูงสุด</div>
               <div style="font-size:16px;font-weight:800;color:#22c55e;">${fmt(maxM)} THB</div>
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(255,255,255,0.02);border-radius:10px;border:1px solid var(--border);">
-            <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#ef444422,#ef444411);display:flex;align-items:center;justify-content:center;font-size:16px;color:#ef4444;border:1px solid #ef444430;font-weight:800;">-</div>
+            <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#ef444422,#ef444411);display:flex;align-items:center;justify-content:center;font-size:16px;color:#ef4444;border:1px solid #ef444430;font-weight:800;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#EA3323" style="display:block"><path d="M200-440v-80h560v80H200Z"/></svg></div>
             <div>
               <div style="font-size:11px;color:var(--muted);font-weight:600;">ขาดทุนสูงสุด</div>
               <div style="font-size:16px;font-weight:800;color:#ef4444;">${fmt(minM)} THB</div>
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(255,255,255,0.02);border-radius:10px;border:1px solid var(--border);">
-            <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#8b5cf622,#8b5cf611);display:flex;align-items:center;justify-content:center;font-size:16px;color:#8b5cf6;border:1px solid #8b5cf630;font-weight:800;">=</div>
+            <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#8b5cf622,#8b5cf611);display:flex;align-items:center;justify-content:center;font-size:16px;color:#8b5cf6;border:1px solid #8b5cf630;font-weight:800;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#75FB4C"><path d="M441-120v-86q-53-12-91.5-46T293-348l74-30q15 48 44.5 73t77.5 25q41 0 69.5-18.5T587-356q0-35-22-55.5T463-458q-86-27-118-64.5T313-614q0-65 42-101t86-41v-84h80v84q50 8 82.5 36.5T651-650l-74 32q-12-32-34-48t-60-16q-44 0-67 19.5T393-614q0 33 30 52t104 40q69 20 104.5 63.5T667-358q0 71-42 108t-104 46v84h-80Z"/></svg></div>
             <div>
               <div style="font-size:11px;color:var(--muted);font-weight:600;">ส่วนต่างรวมทุกเส้นทาง</div>
               <div style="font-size:16px;font-weight:800;color:${totalProfitMargin + totalLossMargin >= 0 ? '#22c55e' : '#ef4444'};">${fmt(totalProfitMargin + totalLossMargin)} THB</div>
@@ -1469,12 +1699,12 @@ function buildFullLoss(d) {
       </div>
     </div>
 
-    ${buildAuditTableSection('audit-loss-monthly', 'รายละเอียดขาดทุนรายเดือน', '&#8863;', '#ef4444', 'ดูจำนวนเที่ยวขาดทุน มูลค่า และค่าเฉลี่ยต่อเที่ยวตามเดือน')}
+    ${buildAuditTableSection('audit-loss-monthly', 'รายละเอียดขาดทุนรายเดือน', '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#EA3323"><path d="M200-80q-33 0-56.5-23.5T120-160v-560q0-33 23.5-56.5T200-800h40v-80h80v80h320v-80h80v80h40q33 0 56.5 23.5T840-720v560q0 33-23.5 56.5T760-80H200Zm0-80h560v-400H200v400Zm0-480h560v-80H200v80Zm0 0v-80 80Zm280 240q-17 0-28.5-11.5T440-440q0-17 11.5-28.5T480-480q17 0 28.5 11.5T520-440q0 17-11.5 28.5T480-400Zm-188.5-11.5Q280-423 280-440t11.5-28.5Q303-480 320-480t28.5 11.5Q360-457 360-440t-11.5 28.5Q337-400 320-400t-28.5-11.5ZM640-400q-17 0-28.5-11.5T600-440q0-17 11.5-28.5T640-480q17 0 28.5 11.5T680-440q0 17-11.5 28.5T640-400ZM480-240q-17 0-28.5-11.5T440-280q0-17 11.5-28.5T480-320q17 0 28.5 11.5T520-280q0 17-11.5 28.5T480-240Zm-188.5-11.5Q280-263 280-280t11.5-28.5Q303-320 320-320t28.5 11.5Q360-297 360-280t-11.5 28.5Q337-240 320-240t-28.5-11.5ZM640-240q-17 0-28.5-11.5T600-280q0-17 11.5-28.5T640-320q17 0 28.5 11.5T680-280q0 17-11.5 28.5T640-240Z"/></svg>', '#ef4444', 'ดูจำนวนเที่ยวขาดทุน มูลค่า และค่าเฉลี่ยต่อเที่ยวตามเดือน')}
 
     <!-- By Customer & Route -->
     <div class="modal-full-grid modal-full-grid-2">
-      ${buildAuditTableSection('audit-loss-customer', 'ขาดทุนแยกตามลูกค้า', '&#8855;', '#f59e0b', 'จัดลำดับลูกค้าที่เกิดเที่ยวขาดทุนมากที่สุด')}
-      ${buildAuditTableSection('audit-loss-route', 'ขาดทุนแยกตามเส้นทาง', '&#8856;', '#ef4444', 'จัดลำดับเส้นทางที่สร้างมูลค่าขาดทุนสะสมสูงสุด')}
+      ${buildAuditTableSection('audit-loss-customer', 'ขาดทุนแยกตามลูกค้า', '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#F19E39"><path d="M234-276q51-39 114-61.5T480-360q69 0 132 22.5T726-276q35-41 54.5-93T800-480q0-133-93.5-226.5T480-800q-133 0-226.5 93.5T160-480q0 59 19.5 111t54.5 93Zm146.5-204.5Q340-521 340-580t40.5-99.5Q421-720 480-720t99.5 40.5Q620-639 620-580t-40.5 99.5Q539-440 480-440t-99.5-40.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm100-95.5q47-15.5 86-44.5-39-29-86-44.5T480-280q-53 0-100 15.5T294-220q39 29 86 44.5T480-160q53 0 100-15.5ZM523-537q17-17 17-43t-17-43q-17-17-43-17t-43 17q-17 17-17 43t17 43q17 17 43 17t43-17Zm-43-43Zm0 360Z"/></svg>', '#f59e0b', 'จัดลำดับลูกค้าที่เกิดเที่ยวขาดทุนมากที่สุด')}
+      ${buildAuditTableSection('audit-loss-route', 'ขาดทุนแยกตามเส้นทาง', '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#EA3323"><path d="M320-120v-160h80v160h-80Zm0-280v-160h80v160h-80Zm0-280v-160h80v160h-80ZM80-120l100-720h80L160-120H80Zm598.5-3q-5.5-3-8.5-9l-4-9q-23-48-64-82.5T532-302q-17-26-25-55t-8-59q0-78 57-130.5T692-599q78 0 133 56t55 135q0 29-8 56t-24 50q-29 44-70.5 78.5T714-141l-4 9q-3 6-8.5 9t-11.5 3q-6 0-11.5-3Zm68-230.5Q770-377 770-410t-23.5-56.5Q723-490 690-490t-56.5 23.5Q610-443 610-410t23.5 56.5Q657-330 690-330t56.5-23.5ZM494-599l-34-241h80l26 187q-20 11-38 24t-34 30Z"/></svg>', '#ef4444', 'จัดลำดับเส้นทางที่สร้างมูลค่าขาดทุนสะสมสูงสุด')}
     </div>
   `;
 }
@@ -1571,7 +1801,7 @@ function buildFullVehicle(d) {
 /* โ”€โ”€โ”€ Compact Card Builders for Master Dashboard Grid โ”€โ”€โ”€ */
 function buildTrendCard(d) {
   const s = d.summary;
-  const topRoutes = d.routeTrend.sort((a,b) => {
+  const topRoutes = d.routeTrend.slice().sort((a,b) => {
     const ta = MONTHS.reduce((sum,m) => sum + (a.months[m]?.trips||0), 0);
     const tb = MONTHS.reduce((sum,m) => sum + (b.months[m]?.trips||0), 0);
     return tb - ta;
@@ -1862,6 +2092,10 @@ function getMasterModalTableConfigs(key, d) {
     ];
   }
   if (key === 'ranking') {
+    const topSource = Array.isArray(d.routeRanking?.top) ? d.routeRanking.top : [];
+    const bottomSource = Array.isArray(d.routeRanking?.bottom) ? d.routeRanking.bottom : [];
+    const topSorted = topSource.slice().sort((a, b) => (Number(b.margin) || 0) - (Number(a.margin) || 0));
+    const bottomSorted = bottomSource.slice().sort((a, b) => (Number(a.margin) || 0) - (Number(b.margin) || 0));
     const normalizeRankRow = (row, rank, group) => ({
       rank,
       group,
@@ -1876,7 +2110,7 @@ function getMasterModalTableConfigs(key, d) {
       {
         id: 'audit-ranking-top',
         csvName: 'ranking-top-profit-routes',
-        rows: d.routeRanking.top.slice(0, 10).map((row, idx) => normalizeRankRow(row, idx + 1, 'กำไร')),
+        rows: topSorted.slice(0, 10).map((row, idx) => normalizeRankRow(row, idx + 1, 'กำไร')),
         cols: [
           { key: 'rank', label: 'อันดับ', type: 'integer', align: 'right', strong: true, noFilter: true },
           { key: 'customer', label: 'ลูกค้า' },
@@ -1894,7 +2128,7 @@ function getMasterModalTableConfigs(key, d) {
       {
         id: 'audit-ranking-bottom',
         csvName: 'ranking-top-loss-routes',
-        rows: d.routeRanking.bottom.slice(0, 10).map((row, idx) => normalizeRankRow(row, idx + 1, 'ขาดทุน')),
+        rows: bottomSorted.slice(0, 10).map((row, idx) => normalizeRankRow(row, idx + 1, 'ขาดทุน')),
         cols: [
           { key: 'rank', label: 'อันดับ', type: 'integer', align: 'right', strong: true, noFilter: true },
           { key: 'customer', label: 'ลูกค้า' },
@@ -1990,6 +2224,7 @@ function getMasterModalTableConfigs(key, d) {
       const info = lt.byMonth[month];
       return {
         order: index,
+        monthKey: month,
         month: MTH[month] || month,
         count: Number(info.count) || 0,
         loss: Number(info.loss) || 0,
@@ -2025,7 +2260,8 @@ function getMasterModalTableConfigs(key, d) {
         ],
         defaultSort: 'month',
         defaultAsc: true,
-        perPage: 12
+        perPage: 12,
+        onRowClick: row => window.openLossDrillModal('monthly', row)
       },
       {
         id: 'audit-loss-customer',
@@ -2039,7 +2275,8 @@ function getMasterModalTableConfigs(key, d) {
         ],
         defaultSort: 'loss',
         defaultAsc: true,
-        perPage: 10
+        perPage: 10,
+        onRowClick: row => window.openLossDrillModal('customer', row)
       },
       {
         id: 'audit-loss-route',
@@ -2053,7 +2290,8 @@ function getMasterModalTableConfigs(key, d) {
         ],
         defaultSort: 'loss',
         defaultAsc: true,
-        perPage: 10
+        perPage: 10,
+        onRowClick: row => window.openLossDrillModal('route', row)
       }
     ];
   }
@@ -2315,7 +2553,7 @@ function buildDailyCompare(data) {
     const avgOil = rows.reduce((s, r) => s + (r.oil || 0), 0) / rows.length;
     const avgRecv = rows.reduce((s, r) => s + (r.recv || 0), 0) / rows.length;
     const colorMap = { red: '#ef4444', orange: '#f97316', purple: '#a855f7', blue: '#3b82f6' };
-    const causeTag = (t, c) => `<span style="display:inline-block;margin:1px 2px 1px 0;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;background:${colorMap[c] || 'var(--muted)'};color:#fff;white-space:nowrap">${t}</span>`;
+    const causeTag = (t, c) => `<span style="display:inline-block;margin:1px 2px 1px 0;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:400;background:${colorMap[c] || 'var(--muted)'};color:#fff;white-space:nowrap">${t}</span>`;
     let trs = '', totRcv = 0, totPay = 0, totOil = 0, totMg = 0;
     rows.forEach((r, idx) => {
       const mg = r.margin || 0; const mCls = mg >= 0 ? 'green' : 'red';
@@ -2328,29 +2566,37 @@ function buildDailyCompare(data) {
         if (avgOil > 0 && (r.oil || 0) > avgOil * 1.10) causes.push(causeTag('สำรองน้ำมันแพงกว่าค่าเฉลี่ย', 'orange'));
         if (avgRecv > 0 && (r.recv || 0) < avgRecv * 0.95) causes.push(causeTag('ราคารับต่ำกว่าค่าเฉลี่ย', 'blue'));
       }
-      const causeCell = causes.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px">${causes.join('')}</div>` : `<span style="color:var(--muted)">-</span>`;
+      const causeCell = causes.length ? `<div class="dc-tags-wrap">${causes.join('')}</div>` : `<span style="color:var(--muted)">-</span>`;
       const oilPrice = getOilPriceByDate(r.date);
       const oilPriceFmt = oilPrice !== null ? fmt(oilPrice) + ' <span style="font-size:10px;color:var(--muted)">บ./ล.</span>' : '<span style="color:var(--muted)">-</span>';
       trs += `<tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:9px 12px;color:var(--muted)">${idx + 1}</td>
-        <td style="padding:9px 12px">${esc(r.date || '-')}</td>
-        <td style="padding:9px 12px;font-weight:600">${esc(r.driver || '-')}</td>
-        <td style="padding:9px 12px;color:var(--muted)">${esc(r.vtype || '-')}</td>
-        <td style="padding:9px 12px;font-family:monospace;color:var(--accent)">${esc(r.plate || '-')}</td>
-        <td style="padding:9px 12px;text-align:center;font-weight:600;color:var(--text)">${oilPriceFmt}</td>
-        <td style="padding:9px 12px;text-align:right;color:var(--orange)">${fmt(r.oil)}</td>
-        <td style="padding:9px 12px;text-align:right">${fmt(r.recv)}</td>
-        <td style="padding:9px 12px;text-align:right">${fmt(r.pay)}</td>
-        <td style="padding:9px 12px;text-align:right;font-weight:700;color:var(--${mCls})">${fmt(mg)}</td>
+        <td style="padding:9px 12px;font-weight:400;color:var(--muted)">${idx + 1}</td>
+        <td style="padding:9px 12px;font-weight:400">${esc(r.date || '-')}</td>
+        <td style="padding:9px 12px;font-weight:400">${esc(r.driver || '-')}</td>
+        <td style="padding:9px 12px;font-weight:400;color:var(--muted)">${esc(r.vtype || '-')}</td>
+        <td style="padding:9px 12px;font-weight:400;font-family:monospace;color:var(--accent)">${esc(r.plate || '-')}</td>
+        <td style="padding:9px 12px;text-align:center;font-weight:400;color:var(--text)">${oilPriceFmt}</td>
+        <td style="padding:9px 12px;text-align:right;font-weight:400;color:var(--orange)">${fmt(r.oil)}</td>
+        <td style="padding:9px 12px;text-align:right;font-weight:400">${fmt(r.recv)}</td>
+        <td style="padding:9px 12px;text-align:right;font-weight:400">${fmt(r.pay)}</td>
+        <td style="padding:9px 12px;text-align:right;font-weight:400;color:var(--${mCls})">${fmt(mg)}</td>
         <td style="padding:9px 12px">${causeCell}</td>
       </tr>`;
     });
     const labelRange = dateStart === dateEnd ? dateStart : `${dateStart} → ${dateEnd}`;
+    const exportIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" width="16" height="16" fill="#5985E1" aria-hidden="true"><path d="M240-80q-33 0-56.5-23.5T160-160v-400q0-33 23.5-56.5T240-640h120v80H240v400h480v-400H600v-80h120q33 0 56.5 23.5T800-560v400q0 33-23.5 56.5T720-80H240Zm200-240v-447l-64 64-56-57 160-160 160 160-56 57-64-64v447h-80Z"/></svg>';
+    const exportBase = encodeURIComponent(`route_${routeStr || 'route'}`);
     modal.innerHTML = `
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;max-width:1060px;width:100%;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.6)">
+      <div id="dc_route_capture" data-export-root="1" style="background:var(--card);border:1px solid var(--border);border-radius:16px;max-width:1060px;width:100%;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.6)">
         <div style="background:var(--surface);padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start">
-          <div>
-            <div style="font-size:16px;font-weight:800;color:var(--accent)">${esc(routeStr)}</div>
+          <div style="min-width:0">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div style="font-size:16px;font-weight:800;color:var(--accent)">${esc(routeStr)}</div>
+              <button type="button" onclick="window.dcExportModalPng('dc_route_capture', '${exportBase}')" title="Export PNG" aria-label="Export PNG"
+                style="background:rgba(89,133,225,.10);border:1px solid rgba(89,133,225,.35);color:#dbeafe;width:28px;height:28px;border-radius:7px;cursor:pointer;line-height:1;display:inline-flex;align-items:center;justify-content:center;transition:all .2s;padding:0"
+                onmouseover="this.style.background='rgba(89,133,225,.18)';this.style.borderColor='rgba(89,133,225,.55)'"
+                onmouseout="this.style.background='rgba(89,133,225,.10)';this.style.borderColor='rgba(89,133,225,.35)'">${exportIcon}</button>
+            </div>
             <div style="font-size:12px;color:var(--muted);margin-top:4px">${labelRange} · ${rows.length} เที่ยว</div>
           </div>
           <button onclick="document.getElementById('dc_route_modal').remove()"
@@ -2377,19 +2623,19 @@ function buildDailyCompare(data) {
               <tbody>${trs}</tbody>
               <tfoot>
                 <tr style="background:rgba(59,130,246,.08);border-top:2px solid rgba(59,130,246,.3)">
-                  <td colspan="6" style="padding:11px 12px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">รวม ${rows.length} เที่ยว</td>
-                  <td style="padding:11px 12px;text-align:right;font-weight:700;color:var(--orange)">${fmt(totOil)}</td>
-                  <td style="padding:11px 12px;text-align:right;font-weight:700">${fmt(totRcv)}</td>
-                  <td style="padding:11px 12px;text-align:right;font-weight:700">${fmt(totPay)}</td>
-                  <td style="padding:11px 12px;text-align:right;font-weight:800;color:var(--${totMg >= 0 ? 'green' : 'red'})">${fmt(totMg)}</td>
+                  <td colspan="6" style="padding:11px 12px;font-weight:400;font-size:11px;text-transform:uppercase;letter-spacing:.5px">รวม ${rows.length} เที่ยว</td>
+                  <td style="padding:11px 12px;text-align:right;font-weight:400;color:var(--orange)">${fmt(totOil)}</td>
+                  <td style="padding:11px 12px;text-align:right;font-weight:400">${fmt(totRcv)}</td>
+                  <td style="padding:11px 12px;text-align:right;font-weight:400">${fmt(totPay)}</td>
+                  <td style="padding:11px 12px;text-align:right;font-weight:400;color:var(--${totMg >= 0 ? 'green' : 'red'})">${fmt(totMg)}</td>
                   <td></td>
                 </tr>
                 <tr style="background:rgba(59,130,246,.05);border-top:1px solid rgba(255,255,255,.06)">
-                  <td colspan="6" style="padding:11px 12px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">เฉลี่ย / เที่ยว</td>
-                  <td style="padding:11px 12px;text-align:right;font-weight:700;color:var(--orange)">${fmt(Math.round(totOil / rows.length))}</td>
-                  <td style="padding:11px 12px;text-align:right;font-weight:700">${fmt(Math.round(totRcv / rows.length))}</td>
-                  <td style="padding:11px 12px;text-align:right;font-weight:700">${fmt(Math.round(totPay / rows.length))}</td>
-                  <td style="padding:11px 12px;text-align:right;font-weight:800;color:var(--${totMg >= 0 ? 'green' : 'red'})">${fmt(Math.round(totMg / rows.length))}</td>
+                  <td colspan="6" style="padding:11px 12px;font-weight:400;font-size:11px;text-transform:uppercase;letter-spacing:.5px">เฉลี่ย / เที่ยว</td>
+                  <td style="padding:11px 12px;text-align:right;font-weight:400;color:var(--orange)">${fmt(Math.round(totOil / rows.length))}</td>
+                  <td style="padding:11px 12px;text-align:right;font-weight:400">${fmt(Math.round(totRcv / rows.length))}</td>
+                  <td style="padding:11px 12px;text-align:right;font-weight:400">${fmt(Math.round(totPay / rows.length))}</td>
+                  <td style="padding:11px 12px;text-align:right;font-weight:400;color:var(--${totMg >= 0 ? 'green' : 'red'})">${fmt(Math.round(totMg / rows.length))}</td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -2561,7 +2807,7 @@ function buildDailyCompare(data) {
             onmouseover="this.style.boxShadow='0 5px 18px rgba(99,102,241,.5)';this.style.transform='translateY(-1px)'"
             onmouseout="this.style.boxShadow='0 3px 12px rgba(99,102,241,.4)';this.style.transform='translateY(0)'">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Export .xls
+            Export XLSX
           </button>
           <button onclick="dcClearFilters()"
             style="padding:8px 14px;background:transparent;border:1px solid rgba(255,255,255,.08);border-radius:8px;color:#475569;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s"
@@ -2840,14 +3086,36 @@ function buildDailyCompare(data) {
 
 
 
+    let _renderMemo = { key: '', html: '' };
+    const _debounceMap = {};
+    function debounceByKey(key, fn, wait = 120) {
+      if (_debounceMap[key]) clearTimeout(_debounceMap[key]);
+      _debounceMap[key] = setTimeout(() => {
+        delete _debounceMap[key];
+        fn();
+      }, wait);
+    }
+    function renderStateKey() {
+      const fAn = Array.from(_compareStatusFilters.anomaly || []).sort().join(',');
+      const fUa = Array.from(_compareStatusFilters.unmatched_a || []).sort().join(',');
+      const fUb = Array.from(_compareStatusFilters.unmatched_b || []).sort().join(',');
+      const stAKey = _stA ? `${_stA.rows?.length || 0}|${_stA.routes?.length || 0}|${_stA.trips || 0}|${_stA.recv || 0}|${_stA.margin || 0}` : 'na';
+      const stBKey = _stB ? `${_stB.rows?.length || 0}|${_stB.routes?.length || 0}|${_stB.trips || 0}|${_stB.recv || 0}|${_stB.margin || 0}` : 'nb';
+      return [_isSingleMode ? 1 : 0, _viewMode || 'anomaly', _labelA || '', _labelB || '', stAKey, stBKey, fAn, fUa, fUb].join('||');
+    }
     function renderAll() {
       const result = document.getElementById('dc_result');
       if (!result) return;
+      const stateKey = renderStateKey();
       
       if (_isSingleMode) {
         const cards = `<div style="width:100%;margin:0 0 20px;">${renderCard(_stA, 'a', _labelA)}</div>`;
         const tbl = renderSingleTable(_stA);
-        result.innerHTML = cards + tbl;
+        const html = cards + tbl;
+        if (_renderMemo.key !== stateKey || _renderMemo.html !== html) {
+          result.innerHTML = html;
+          _renderMemo = { key: stateKey, html };
+        }
         dcAnimateSections();
         return;
       }
@@ -2859,7 +3127,11 @@ function buildDailyCompare(data) {
       if (_viewMode === 'unmatched_a') tbl = renderUnmatchedTable(_stA, _stB, 'a');
       else if (_viewMode === 'unmatched_b') tbl = renderUnmatchedTable(_stA, _stB, 'b');
       else tbl = renderAnomalyTable(_stA, _stB);
-      result.innerHTML = cards + diff + qfBar + tbl;
+      const html = cards + diff + qfBar + tbl;
+      if (_renderMemo.key !== stateKey || _renderMemo.html !== html) {
+        result.innerHTML = html;
+        _renderMemo = { key: stateKey, html };
+      }
       bindQFEvents();
       dcAnimateSections();
     }
@@ -2969,7 +3241,7 @@ function buildDailyCompare(data) {
           </label>
         `).join('');
         const filterAllHtml = `
-          <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:var(--text);font-weight:700">
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:var(--text);font-weight:400">
             <input type="checkbox" id="filter-cb-all-${cIdx}" checked onchange="window.toggleCustFilterAll(${cIdx}, this.checked)" style="accent-color:var(--accent);cursor:pointer;width:12px;height:12px;margin:0">
             ดูทั้งหมด
           </label>
@@ -2980,21 +3252,21 @@ function buildDailyCompare(data) {
           const statusList = isNormal ? 'ปกติ' : anoms.map(a => a.text.includes('ขาดทุน') ? 'ขาดทุน' : a.text).join(',');
           
           const anomHtml = isNormal
-            ? `<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:rgba(16,185,129,.15);color:#10b981;font-size:10px;font-weight:700">ปกติ</span>`
-            : `<div style="display:flex;flex-wrap:wrap;gap:3px">${anoms.map(a => `<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:600;background:${colorMap[a.color]};color:#fff;white-space:nowrap">${a.text}</span>`).join('')}</div>`;
+            ? `<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:rgba(16,185,129,.15);color:#10b981;font-size:10px;font-weight:400">ปกติ</span>`
+            : `<div class="dc-tags-wrap-sm">${anoms.map(a => `<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:400;background:${colorMap[a.color]};color:#fff;white-space:nowrap">${a.text}</span>`).join('')}</div>`;
 
           const mgClr = r.margin >= 0 ? '#10b981' : '#ef4444';
           const bgHighlight = isNormal ? 'rgba(16, 185, 129, 0.05)' : 'transparent';
 
           return `<tr class="route-row-cust-${cIdx}" data-status="${esc(statusList)}" style="background:${bgHighlight};border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;transition:all .15s" onmouseover="this.style.background='rgba(59,130,246,.06)'" onmouseout="this.style.background='${bgHighlight}'" onclick="dcOpenRouteModal('${stA.dateStart}','${stA.dateEnd}','${esc(r.route)}','${esc(r.customer)}','${esc(r.vtype)}')">
-            <td style="padding:10px 12px;font-size:12px;font-weight:600;color:var(--text);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.route)}">${esc(r.route)}</td>
-            <td style="padding:10px 12px;text-align:center;font-size:12px;color:var(--muted)">${esc(r.vtype || '-')}</td>
-            <td style="padding:10px 12px;text-align:center;font-size:12px;font-weight:700">${fmt(r.trips)}</td>
-            <td style="padding:10px 12px;text-align:right;font-size:12px">${fmt(r.recv)}</td>
-            <td style="padding:10px 12px;text-align:right;font-size:12px">${fmt(r.pay)}</td>
-            <td style="padding:10px 12px;text-align:right;font-size:12px;color:var(--orange)">${fmt(r.oil)}</td>
-            <td style="padding:10px 12px;text-align:right;font-size:12px;font-weight:700;color:${mgClr}">${fmt(r.margin)}</td>
-            <td style="padding:10px 12px;text-align:right;font-size:12px;font-weight:700;color:${mgClr}">${fmtP(r.pct)}</td>
+            <td style="padding:10px 12px;font-size:12px;font-weight:400;color:var(--text);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.route)}">${esc(r.route)}</td>
+            <td style="padding:10px 12px;text-align:center;font-size:12px;font-weight:400;color:var(--muted)">${esc(r.vtype || '-')}</td>
+            <td style="padding:10px 12px;text-align:center;font-size:12px;font-weight:400">${fmt(r.trips)}</td>
+            <td style="padding:10px 12px;text-align:right;font-size:12px;font-weight:400">${fmt(r.recv)}</td>
+            <td style="padding:10px 12px;text-align:right;font-size:12px;font-weight:400">${fmt(r.pay)}</td>
+            <td style="padding:10px 12px;text-align:right;font-size:12px;font-weight:400;color:var(--orange)">${fmt(r.oil)}</td>
+            <td style="padding:10px 12px;text-align:right;font-size:12px;font-weight:400;color:${mgClr}">${fmt(r.margin)}</td>
+            <td style="padding:10px 12px;text-align:right;font-size:12px;font-weight:400;color:${mgClr}">${fmtP(r.pct)}</td>
             <td style="padding:10px 12px;min-width:140px">${anomHtml}</td>
           </tr>`;
         }).join('');
@@ -3126,7 +3398,7 @@ function buildDailyCompare(data) {
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">กรองสถานะ:</span>
           <div style="display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.15);padding:6px 12px;border-radius:8px;border:1px solid var(--border);flex-wrap:wrap">
-            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:var(--text);font-weight:700">
+            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:var(--text);font-weight:400">
               <input type="checkbox" id="cmp-filter-all-${modeKey}" ${allChecked ? 'checked' : ''} onchange="window.dcToggleCompareStatusAll('${modeKey}', this.checked)" style="accent-color:var(--accent);cursor:pointer;width:12px;height:12px;margin:0">
               ดูทั้งหมด
             </label>
@@ -3156,7 +3428,7 @@ function buildDailyCompare(data) {
       _compareStatusFilters[modeKey] = new Set(checked);
       const allCb = document.getElementById('cmp-filter-all-' + modeKey);
       if (allCb && !fromToggleAll) allCb.checked = checked.length === cbs.length;
-      renderAll();
+      debounceByKey('dcApplyCompareStatusFilter:' + modeKey, () => renderAll(), 120);
     };
 
     function renderQFBar() {
@@ -3311,7 +3583,7 @@ function buildDailyCompare(data) {
       const rowsA = (stA.rows || []).filter(r => isValidDriver(r.driver));
       const rowsB = (stB?.rows || []).filter(r => isValidDriver(r.driver));
       const colorMap = { red: '#ef4444', orange: '#f97316', purple: '#a855f7', blue: '#3b82f6', green: '#10b981' };
-      const badge = (msg, lvl) => `<span style="display:inline-block;margin:1px 2px 1px 0;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;background:${colorMap[lvl] || 'var(--' + lvl + ')'};color:#fff;white-space:nowrap">${msg}</span>`;
+      const badge = (msg, lvl) => `<span style="display:inline-block;margin:1px 2px 1px 0;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:400;background:${colorMap[lvl] || 'var(--' + lvl + ')'};color:#fff;white-space:nowrap">${msg}</span>`;
       const thA = (t, al = 'right') => `<th style="padding:5px 9px;text-align:${al};font-size:10px;font-weight:700;color:#7dd3c7;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;background:rgba(20,184,166,.16);border-bottom:1px solid var(--border)">${t}</th>`;
       const thB = (t, al = 'right') => `<th style="padding:5px 9px;text-align:${al};font-size:10px;font-weight:700;color:#b8bdfd;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;background:rgba(99,102,241,.18);border-bottom:1px solid var(--border)">${t}</th>`;
       const thSep = `<th style="width:2px;padding:0;background:var(--border);border-bottom:1px solid var(--border)"></th>`;
@@ -3363,43 +3635,48 @@ function buildDailyCompare(data) {
           const dB = shortD(rb.date);
 
           const flags = [];
+          const flagItems = [];
           const statuses = new Set();
           if ((ra.margin || 0) < 0) {
             const lp = ra.recv > 0 ? Math.abs((ra.margin || 0) / ra.recv * 100) : 0;
-            flags.push(badge(`${dA} ขาดทุน ${lp.toFixed(0)}%`, 'red'));
+            flagItems.push({ kind: 'loss', html: badge(`${dA} ขาดทุน ${lp.toFixed(0)}%`, 'red') });
             statuses.add('loss');
           }
           if ((rb.margin || 0) < 0) {
             const lp = rb.recv > 0 ? Math.abs((rb.margin || 0) / rb.recv * 100) : 0;
-            flags.push(badge(`${dB} ขาดทุน ${lp.toFixed(0)}%`, 'red'));
+            flagItems.push({ kind: 'loss', html: badge(`${dB} ขาดทุน ${lp.toFixed(0)}%`, 'red') });
             statuses.add('loss');
           }
 
           if ((ra.oil || 0) > (ra.pay || 0) * 0.5 && (ra.pay || 0) > 0) {
-            flags.push(badge(`${dA} สำรองน้ำมัน>50%`, 'orange'));
+            flagItems.push({ kind: 'oil50', html: badge(`${dA} สำรองน้ำมัน>50%`, 'orange') });
             statuses.add('oil50');
           }
           if ((rb.oil || 0) > (rb.pay || 0) * 0.5 && (rb.pay || 0) > 0) {
-            flags.push(badge(`${dB} สำรองน้ำมัน>50%`, 'orange'));
+            flagItems.push({ kind: 'oil50', html: badge(`${dB} สำรองน้ำมัน>50%`, 'orange') });
             statuses.add('oil50');
           }
 
           if (rb.pay > 0 && (ra.pay || 0) > rb.pay * 1.05) {
-            flags.push(badge(`${dA} ราคาจ่ายแพงกว่าเดิม`, 'purple'));
+            flagItems.push({ kind: 'payHigh', html: badge(`${dA} ราคาจ่ายแพงกว่าเดิม`, 'purple') });
             statuses.add('payHigh');
           }
           if (rb.oil > 0 && (ra.oil || 0) > rb.oil * 1.05) {
-            flags.push(badge(`${dA} สำรองน้ำมันแพงกว่าเดิม`, 'orange'));
+            flagItems.push({ kind: 'oilHigh', html: badge(`${dA} สำรองน้ำมันแพงกว่าเดิม`, 'orange') });
             statuses.add('oilHigh');
           }
           if (rb.recv > 0 && (ra.recv || 0) < rb.recv * 0.95) {
-            flags.push(badge(`${dA} ราคารับต่ำกว่าเดิม`, 'blue'));
+            flagItems.push({ kind: 'recvLow', html: badge(`${dA} ราคารับต่ำกว่าเดิม`, 'blue') });
             statuses.add('recvLow');
           }
 
-          if (flags.length === 0) {
-            flags.push(`<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:rgba(16,185,129,.15);color:#10b981;font-size:10px;font-weight:700">ปกติ</span>`);
+          if (flagItems.length === 0) {
+            flags.push(`<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:rgba(16,185,129,.15);color:#10b981;font-size:10px;font-weight:400">ปกติ</span>`);
             statuses.add('normal');
+          } else {
+            // Keep "ขาดทุน ...%" at the end to improve scan order in UI.
+            flagItems.sort((a, b) => (a.kind === 'loss') - (b.kind === 'loss'));
+            flagItems.forEach(item => flags.push(item.html));
           }
           anomRows.push({ ra, rb, flags, statuses: Array.from(statuses) });
         });
@@ -3467,44 +3744,44 @@ function buildDailyCompare(data) {
           const aMClr = ra && (ra.margin || 0) >= 0 ? 'var(--green)' : 'var(--red)';
           const bMClr = rb && (rb.margin || 0) >= 0 ? 'var(--green)' : 'var(--red)';
           const aOilPct = ra && ra.pay > 0 ? (ra.oil || 0) / ra.pay * 100 : 0, aOilWarn = aOilPct > 50;
-          const aOilCell = ra && ra.oil > 0 ? `<span style="${aOilWarn ? 'color:var(--orange);font-weight:700' : ''}">${fmt(ra.oil)}${aOilWarn ? ` <span style="font-size:9px;background:var(--orange);color:#fff;padding:1px 4px;border-radius:3px">${aOilPct.toFixed(0)}%</span>` : ''}</span>` : `<span style="color:var(--muted)">-</span>`;
+          const aOilCell = ra && ra.oil > 0 ? `<span style="${aOilWarn ? 'color:var(--orange)' : ''}">${fmt(ra.oil)}${aOilWarn ? ` <span style="font-size:9px;font-weight:400;background:var(--orange);color:#fff;padding:1px 4px;border-radius:3px">${aOilPct.toFixed(0)}%</span>` : ''}</span>` : `<span style="color:var(--muted)">-</span>`;
           const aFuelPrice = getOilPriceByDate(ra?.date);
           const bOilPct = rb && rb.pay > 0 ? (rb.oil || 0) / rb.pay * 100 : 0, bOilWarn = bOilPct > 50;
-          const bOilCell = rb && rb.oil > 0 ? `<span style="${bOilWarn ? 'color:var(--orange);font-weight:700' : ''}">${fmt(rb.oil)}${bOilWarn ? ` <span style="font-size:9px;background:var(--orange);color:#fff;padding:1px 4px;border-radius:3px">${bOilPct.toFixed(0)}%</span>` : ''}</span>` : `<span style="color:var(--muted)">-</span>`;
+          const bOilCell = rb && rb.oil > 0 ? `<span style="${bOilWarn ? 'color:var(--orange)' : ''}">${fmt(rb.oil)}${bOilWarn ? ` <span style="font-size:9px;font-weight:400;background:var(--orange);color:#fff;padding:1px 4px;border-radius:3px">${bOilPct.toFixed(0)}%</span>` : ''}</span>` : `<span style="color:var(--muted)">-</span>`;
           const bFuelPrice = getOilPriceByDate(rb?.date);
 
           tripRows += `<tr style="${bg};transition:background .15s" onmouseover="this.style.background='rgba(59,130,246,.06)'" onmouseout="this.style.background='${bgHighlight}'">
-            <td style="padding:6px 9px;font-weight:600;color:${ra ? 'var(--text)' : 'var(--muted)'}">${ra ? esc(ra.driver || '-') : `<span style="font-size:10px">ไม่มีข้อมูลช่วง ${esc(_labelA || 'หลัก')}</span>`}</td>
+            <td style="padding:6px 9px;font-weight:400;color:${ra ? 'var(--text)' : 'var(--muted)'}">${ra ? esc(ra.driver || '-') : `<span style="font-size:10px">ไม่มีข้อมูลช่วง ${esc(_labelA || 'หลัก')}</span>`}</td>
             <td style="padding:6px 9px;text-align:right;color:var(--blue)">${hasNum(aFuelPrice) ? fmt(aFuelPrice) : '<span style="color:var(--muted)">-</span>'}</td>
             <td style="padding:6px 9px">${aOilCell}</td>
             <td style="padding:6px 9px;text-align:right">${ra ? fmt(ra.recv) : '<span style="color:var(--muted)">-</span>'}</td>
             <td style="padding:6px 9px;text-align:right">${ra && hasNum(ra.pay) ? fmt(ra.pay) : '<span style="color:var(--muted)">-</span>'}</td>
-            <td style="padding:6px 9px;text-align:right;font-weight:700;color:${aMClr}">${ra ? fmt(ra.margin) : '<span style="color:var(--muted)">-</span>'}</td>
+            <td style="padding:6px 9px;text-align:right;font-weight:400;color:${aMClr}">${ra ? fmt(ra.margin) : '<span style="color:var(--muted)">-</span>'}</td>
             ${tdSep}
-            <td style="padding:6px 9px;font-weight:600;color:${rb ? 'var(--text)' : 'var(--muted)'}">${rb ? esc(rb.driver || '-') : `<span style="font-size:10px">ไม่มีข้อมูลช่วง ${esc(_labelB || 'เปรียบเทียบ')}</span>`}</td>
+            <td style="padding:6px 9px;font-weight:400;color:${rb ? 'var(--text)' : 'var(--muted)'}">${rb ? esc(rb.driver || '-') : `<span style="font-size:10px">ไม่มีข้อมูลช่วง ${esc(_labelB || 'เปรียบเทียบ')}</span>`}</td>
             <td style="padding:6px 9px;text-align:right;color:var(--blue)">${hasNum(bFuelPrice) ? fmt(bFuelPrice) : '<span style="color:var(--muted)">-</span>'}</td>
             <td style="padding:6px 9px">${bOilCell}</td>
             <td style="padding:6px 9px;text-align:right">${rb ? fmt(rb.recv) : '<span style="color:var(--muted)">-</span>'}</td>
             <td style="padding:6px 9px;text-align:right">${rb && hasNum(rb.pay) ? fmt(rb.pay) : '<span style="color:var(--muted)">-</span>'}</td>
-            <td style="padding:6px 9px;text-align:right;font-weight:700;color:${bMClr}">${rb ? fmt(rb.margin) : '<span style="color:var(--muted)">-</span>'}</td>
+            <td style="padding:6px 9px;text-align:right;font-weight:400;color:${bMClr}">${rb ? fmt(rb.margin) : '<span style="color:var(--muted)">-</span>'}</td>
             <td style="padding:6px 9px 6px 14px;border-left:1px solid var(--border)">${flags.join('')}</td>
           </tr>`;
         });
 
         const sumRow = `<tr style="border-top:2px solid var(--border);background:rgba(255,255,255,.025)">
-          <td style="padding:8px 9px;font-weight:700;font-size:11.5px;color:#7dd3c7">รวม ${mTripsA.length} เที่ยว</td>
-          <td style="padding:8px 9px;text-align:right;font-size:11.5px;color:var(--muted)">-</td>
-          <td style="padding:8px 9px;font-size:11.5px;color:var(--orange)">${fmt(aSum.oil)}</td>
-          <td style="padding:8px 9px;text-align:right;font-size:11.5px">${fmt(aSum.recv)}</td>
-          <td style="padding:8px 9px;text-align:right;font-size:11.5px">${hasNum(aSum.pay) ? fmt(aSum.pay) : '-'}</td>
-          <td style="padding:8px 9px;text-align:right;font-weight:700;font-size:11.5px;color:${aSum.margin >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(aSum.margin)}</td>
+          <td style="padding:8px 9px;font-weight:400;font-size:12px;color:#7dd3c7">รวม ${mTripsA.length} เที่ยว</td>
+          <td style="padding:8px 9px;text-align:right;font-weight:400;font-size:12px;color:var(--muted)">-</td>
+          <td style="padding:8px 9px;font-weight:400;font-size:12px;color:var(--orange)">${fmt(aSum.oil)}</td>
+          <td style="padding:8px 9px;text-align:right;font-weight:400;font-size:12px">${fmt(aSum.recv)}</td>
+          <td style="padding:8px 9px;text-align:right;font-weight:400;font-size:12px">${hasNum(aSum.pay) ? fmt(aSum.pay) : '-'}</td>
+          <td style="padding:8px 9px;text-align:right;font-weight:400;font-size:12px;color:${aSum.margin >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(aSum.margin)}</td>
           ${tdSep}
-          <td style="padding:8px 9px;font-weight:700;font-size:11.5px;color:#b8bdfd">รวม ${mTripsB.length} เที่ยว</td>
-          <td style="padding:8px 9px;text-align:right;font-size:11.5px;color:var(--muted)">-</td>
-          <td style="padding:8px 9px;font-size:11.5px;color:var(--orange)">${fmt(bSum.oil)}</td>
-          <td style="padding:8px 9px;text-align:right;font-size:11.5px">${fmt(bSum.recv)}</td>
-          <td style="padding:8px 9px;text-align:right;font-size:11.5px">${hasNum(bSum.pay) ? fmt(bSum.pay) : '-'}</td>
-          <td style="padding:8px 9px;text-align:right;font-weight:700;font-size:11.5px;color:${bSum.margin >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(bSum.margin)}</td>
+          <td style="padding:8px 9px;font-weight:400;font-size:12px;color:#b8bdfd">รวม ${mTripsB.length} เที่ยว</td>
+          <td style="padding:8px 9px;text-align:right;font-weight:400;font-size:12px;color:var(--muted)">-</td>
+          <td style="padding:8px 9px;font-weight:400;font-size:12px;color:var(--orange)">${fmt(bSum.oil)}</td>
+          <td style="padding:8px 9px;text-align:right;font-weight:400;font-size:12px">${fmt(bSum.recv)}</td>
+          <td style="padding:8px 9px;text-align:right;font-weight:400;font-size:12px">${hasNum(bSum.pay) ? fmt(bSum.pay) : '-'}</td>
+          <td style="padding:8px 9px;text-align:right;font-weight:400;font-size:12px;color:${bSum.margin >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(bSum.margin)}</td>
           <td style="padding:8px 9px;border-left:1px solid var(--border);background:transparent">&nbsp;</td>
         </tr>`;
 
@@ -3512,13 +3789,13 @@ function buildDailyCompare(data) {
           <div style="background:var(--surface);padding:10px 14px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:12px">
             <div style="flex:1;min-width:240px">
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-                <span style="font-size:10px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:#9ca3af;background:rgba(148,163,184,.10);border:1px solid rgba(148,163,184,.22);border-radius:999px;padding:2px 9px">${esc(ga.customer || '-')} · ${esc(ga.vtype || '-')}</span>
+                <span style="font-size:10px;font-weight:400;letter-spacing:.6px;text-transform:uppercase;color:#9ca3af;background:rgba(148,163,184,.10);border:1px solid rgba(148,163,184,.22);border-radius:999px;padding:2px 9px">${esc(ga.customer || '-')} · ${esc(ga.vtype || '-')}</span>
               </div>
               <div style="font-size:14px;font-weight:600;color:#7aa2ff;line-height:1.35;letter-spacing:.2px;word-break:break-word">${esc(ga.route || '-')}</div>
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <span style="font-size:11px;background:rgba(20,184,166,.22);color:#7dd3c7;padding:2px 8px;border-radius:6px">${esc(_labelA)}: <b style="color:var(--text)">${mTripsA.length} เที่ยว</b></span>
-              <span style="font-size:11px;background:rgba(99,102,241,.22);color:#b8bdfd;padding:2px 8px;border-radius:6px">${esc(_labelB)}: <b style="color:var(--text)">${mTripsB.length} เที่ยว</b></span>
+              <span style="font-size:11px;font-weight:400;background:rgba(20,184,166,.22);color:#7dd3c7;padding:2px 8px;border-radius:6px">${esc(_labelA)}: <span style="color:var(--text);font-weight:400">${mTripsA.length} เที่ยว</span></span>
+              <span style="font-size:11px;font-weight:400;background:rgba(99,102,241,.22);color:#b8bdfd;padding:2px 8px;border-radius:6px">${esc(_labelB)}: <span style="color:var(--text);font-weight:400">${mTripsB.length} เที่ยว</span></span>
             </div>
           </div>
           <div style="overflow-x:auto">
@@ -3555,7 +3832,7 @@ function buildDailyCompare(data) {
       </div>`;
     }
 
-    window.dcOpenAnomalyModal = function (idx) {
+  window.dcOpenAnomalyModal = function (idx) {
       const card = window._anomalyCardsData[idx];
       if (!card) return;
       const existing = document.getElementById('dc_anom_modal');
@@ -3601,15 +3878,23 @@ function buildDailyCompare(data) {
           <td style="padding:6px 4px;text-align:right">${hasNum(rB.recv) ? fmt(rB.recv) : '-'}</td>
           <td style="padding:6px 4px;text-align:right">${hasNum(rB.pay) ? fmt(rB.pay) : '-'}</td>
           <td style="padding:6px 4px;text-align:right;font-weight:700;color:${bMClr}">${hasNum(rB.margin) ? fmt(rB.margin) : '-'}</td>
-          <td style="padding:6px 4px 6px 10px;border-left:1px solid var(--border)"><div style="display:flex;flex-wrap:wrap;gap:2px">${flags.join('')}</div></td>
+          <td style="padding:6px 4px 6px 10px;border-left:1px solid var(--border)"><div class="dc-tags-wrap-xs">${flags.join('')}</div></td>
         </tr>`;
       });
 
+      const exportIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" width="16" height="16" fill="#5985E1" aria-hidden="true"><path d="M240-80q-33 0-56.5-23.5T160-160v-400q0-33 23.5-56.5T240-640h120v80H240v400h480v-400H600v-80h120q33 0 56.5 23.5T800-560v400q0 33-23.5 56.5T720-80H240Zm200-240v-447l-64 64-56-57 160-160 160 160-56 57-64-64v447h-80Z"/></svg>';
+      const exportBase = encodeURIComponent(`anomaly_${card.ga.route || 'route'}`);
       modal.innerHTML = `
-        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:98vw;width:100%;max-height:95vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.6)">
+        <div id="dc_anom_capture" data-export-root="1" style="background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:98vw;width:100%;max-height:95vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.6)">
           <div style="background:var(--surface);padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start">
-            <div>
-              <div style="font-size:15px;font-weight:800;color:var(--accent)">รายละเอียดการเปรียบเทียบ: ${esc(card.ga.route || '-')}</div>
+            <div style="min-width:0">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <div style="font-size:15px;font-weight:800;color:#cfd5df">รายละเอียดการเปรียบเทียบ: <span style="color:#7aa2ff">${esc(card.ga.route || '-')}</span></div>
+                <button type="button" onclick="window.dcExportModalPng('dc_anom_capture', '${exportBase}')" title="Export PNG" aria-label="Export PNG"
+                  style="background:rgba(89,133,225,.10);border:1px solid rgba(89,133,225,.35);color:#dbeafe;width:28px;height:28px;border-radius:7px;cursor:pointer;line-height:1;display:inline-flex;align-items:center;justify-content:center;transition:all .2s;padding:0"
+                  onmouseover="this.style.background='rgba(89,133,225,.18)';this.style.borderColor='rgba(89,133,225,.55)'"
+                  onmouseout="this.style.background='rgba(89,133,225,.10)';this.style.borderColor='rgba(89,133,225,.35)'">${exportIcon}</button>
+              </div>
               <div style="font-size:11px;color:var(--muted);margin-top:2px">ลูกค้า: ${esc(card.ga.customer || '-')} · พบข้อมูล ${card.anomRows.length} รายการ</div>
             </div>
             <button onclick="document.getElementById('dc_anom_modal').remove()"
@@ -3657,7 +3942,7 @@ function buildDailyCompare(data) {
       const myRows = (mySt.rows || []).filter(r => isValidDriver(r.driver));
       const opRows = (opSt?.rows || []).filter(r => isValidDriver(r.driver));
       
-      const badge = (msg, lvl) => `<span style="display:inline-block;margin:1px 2px 1px 0;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;background:var(--${lvl});color:#fff;white-space:nowrap">${msg}</span>`;
+      const badge = (msg, lvl) => `<span style="display:inline-block;margin:1px 2px 1px 0;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:400;background:var(--${lvl});color:#fff;white-space:nowrap">${msg}</span>`;
       const thMy = (t, al = 'right') => `<th style="padding:5px 9px;text-align:${al};font-size:10px;font-weight:700;color:${themeColor};text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;background:${themeBg};border-bottom:1px solid var(--border)">${t}</th>`;
       
       const myGroup = {}, opGroup = {};
@@ -3709,7 +3994,7 @@ function buildDailyCompare(data) {
           }
 
           if (flags.length === 0) {
-            flags.push(`<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:rgba(16,185,129,.15);color:#10b981;font-size:11px;font-weight:700">ปกติ</span>`);
+            flags.push(`<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:rgba(16,185,129,.15);color:#10b981;font-size:11px;font-weight:400">ปกติ</span>`);
             statuses.add('normal');
           }
           unRows.push({ ra, flags, statuses: Array.from(statuses) });
@@ -3776,27 +4061,27 @@ function buildDailyCompare(data) {
           const bg = isNormal ? `background:${bgHighlight}` : (i % 2 ? 'background:rgba(255,255,255,.02)' : '');
           const aMClr = ra && (ra.margin || 0) >= 0 ? 'var(--green)' : 'var(--red)';
           const aOilPct = ra && ra.pay > 0 ? (ra.oil || 0) / ra.pay * 100 : 0, aOilWarn = aOilPct > 50;
-          const aOilCell = ra && ra.oil > 0 ? `<span style="${aOilWarn ? 'color:var(--orange);font-weight:700' : ''}">${fmt(ra.oil)}${aOilWarn ? ` <span style="font-size:9px;background:var(--orange);color:#fff;padding:1px 4px;border-radius:3px">${aOilPct.toFixed(0)}%</span>` : ''}</span>` : `<span style="color:var(--muted)">-</span>`;
+          const aOilCell = ra && ra.oil > 0 ? `<span style="${aOilWarn ? 'color:var(--orange)' : ''}">${fmt(ra.oil)}${aOilWarn ? ` <span style="font-size:9px;font-weight:400;background:var(--orange);color:#fff;padding:1px 4px;border-radius:3px">${aOilPct.toFixed(0)}%</span>` : ''}</span>` : `<span style="color:var(--muted)">-</span>`;
           const aFuelPrice = getOilPriceByDate(ra?.date);
           
           tripRows += `<tr style="${bg};transition:background .15s" onmouseover="this.style.background='${themeHover}'" onmouseout="this.style.background='${bgHighlight}'">
-            <td style="padding:6px 9px;font-weight:600;color:var(--text)">${esc(ra.driver || '-')}</td>
+            <td style="padding:6px 9px;font-weight:400;color:var(--text)">${esc(ra.driver || '-')}</td>
             <td style="padding:6px 9px;text-align:right;color:var(--blue)">${hasNum(aFuelPrice) ? fmt(aFuelPrice) : '<span style="color:var(--muted)">-</span>'}</td>
             <td style="padding:6px 9px">${aOilCell}</td>
             <td style="padding:6px 9px;text-align:right">${fmt(ra.recv)}</td>
             <td style="padding:6px 9px;text-align:right">${hasNum(ra.pay) ? fmt(ra.pay) : '<span style="color:var(--muted)">-</span>'}</td>
-            <td style="padding:6px 9px;text-align:right;font-weight:700;color:${aMClr}">${fmt(ra.margin)}</td>
-            <td style="padding:6px 9px 6px 14px;border-left:1px solid var(--border)"><div style="display:flex;flex-wrap:wrap;gap:4px">${flags.join('')}</div></td>
+            <td style="padding:6px 9px;text-align:right;font-weight:400;color:${aMClr}">${fmt(ra.margin)}</td>
+            <td style="padding:6px 9px 6px 14px;border-left:1px solid var(--border)"><div class="dc-tags-wrap">${flags.join('')}</div></td>
           </tr>`;
         });
         
         const sumRow = `<tr style="border-top:2px solid var(--border);background:rgba(255,255,255,.025)">
-          <td style="padding:8px 9px;font-weight:700;font-size:11.5px;color:#7dd3c7">รวม ${mTrips.length} เที่ยว</td>
-          <td style="padding:8px 9px;text-align:right;font-size:11.5px;color:var(--muted)">-</td>
-          <td style="padding:8px 9px;font-size:11.5px;color:var(--orange)">${fmt(mySum.oil)}</td>
-          <td style="padding:8px 9px;text-align:right;font-size:11.5px">${fmt(mySum.recv)}</td>
-          <td style="padding:8px 9px;text-align:right;font-size:11.5px">${hasNum(mySum.pay) ? fmt(mySum.pay) : '-'}</td>
-          <td style="padding:8px 9px;text-align:right;font-weight:700;font-size:11.5px;color:${mySum.margin >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(mySum.margin)}</td>
+          <td style="padding:8px 9px;font-weight:400;font-size:12px;color:#7dd3c7">รวม ${mTrips.length} เที่ยว</td>
+          <td style="padding:8px 9px;text-align:right;font-weight:400;font-size:12px;color:var(--muted)">-</td>
+          <td style="padding:8px 9px;font-weight:400;font-size:12px;color:var(--orange)">${fmt(mySum.oil)}</td>
+          <td style="padding:8px 9px;text-align:right;font-weight:400;font-size:12px">${fmt(mySum.recv)}</td>
+          <td style="padding:8px 9px;text-align:right;font-weight:400;font-size:12px">${hasNum(mySum.pay) ? fmt(mySum.pay) : '-'}</td>
+          <td style="padding:8px 9px;text-align:right;font-weight:400;font-size:12px;color:${mySum.margin >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(mySum.margin)}</td>
           <td style="padding:8px 9px;border-left:1px solid var(--border);background:transparent">&nbsp;</td>
         </tr>`;
         
@@ -3804,12 +4089,12 @@ function buildDailyCompare(data) {
           <div style="background:var(--surface);padding:10px 14px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:12px">
             <div style="flex:1;min-width:240px">
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-                <span style="font-size:10px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:#9ca3af;background:rgba(148,163,184,.10);border:1px solid rgba(148,163,184,.22);border-radius:999px;padding:2px 9px">${esc(ga.customer || '-')} · ${esc(ga.vtype || '-')}</span>
+                <span style="font-size:10px;font-weight:400;letter-spacing:.6px;text-transform:uppercase;color:#9ca3af;background:rgba(148,163,184,.10);border:1px solid rgba(148,163,184,.22);border-radius:999px;padding:2px 9px">${esc(ga.customer || '-')} · ${esc(ga.vtype || '-')}</span>
               </div>
               <div style="font-size:14px;font-weight:600;color:#7aa2ff;line-height:1.35;letter-spacing:.2px;word-break:break-word">${esc(ga.route || '-')}</div>
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <span style="font-size:11px;background:${themeBadgeBg};color:${themeColor};padding:2px 8px;border-radius:6px">${esc(myLabel)}: <b style="color:var(--text)">${mTrips.length} เที่ยว</b></span>
+              <span style="font-size:11px;font-weight:400;background:${themeBadgeBg};color:${themeColor};padding:2px 8px;border-radius:6px">${esc(myLabel)}: <span style="color:var(--text);font-weight:400">${mTrips.length} เที่ยว</span></span>
             </div>
           </div>
           <div style="overflow-x:auto">
@@ -3835,7 +4120,7 @@ function buildDailyCompare(data) {
       return `<div style="margin-top:0">
         <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:11px 16px;background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:12px">
           <h3 style="margin:0;font-size:14px">➢ ข้อมูลที่ไม่ถูกเปรียบเทียบ: ${esc(myLabel)} (รวม ${cardsData.length} เส้นทาง / ${totalRows} เที่ยว)</h3>
-          ${visibleAnom > 0 ? `<span style="font-size:11px;color:var(--red);background:rgba(239,68,68,.15);padding:2px 8px;border-radius:6px;font-weight:700">พบปัญหา ${visibleAnom} เที่ยว</span>` : ''}
+          ${visibleAnom > 0 ? `<span style="font-size:11px;color:var(--red);background:rgba(239,68,68,.15);padding:2px 8px;border-radius:6px;font-weight:400">พบปัญหา ${visibleAnom} เที่ยว</span>` : ''}
           <div style="margin-left:auto">
             ${renderCompareStatusFilter(modeKey, unmatchedOptionKeys, selectedUnmatchedStatuses)}
           </div>
@@ -3844,7 +4129,7 @@ function buildDailyCompare(data) {
       </div>`;
     }
 
-    window.dcOpenUnmatchedModal = function (idx, side) {
+  window.dcOpenUnmatchedModal = function (idx, side) {
       const card = window._unmatchedCardsData[idx];
       if (!card) return;
       const isA = side === 'a';
@@ -3871,23 +4156,31 @@ function buildDailyCompare(data) {
         
         trs += `<tr style="${bg};border-bottom:1px solid rgba(255,255,255,.05)">
           <td style="padding:8px 6px;white-space:nowrap">${esc(ra.date || '-')}</td>
-          <td style="padding:8px 6px;font-weight:600;min-width:90px">${esc(ra.driver || '-')}</td>
+          <td style="padding:8px 6px;font-weight:400;min-width:90px">${esc(ra.driver || '-')}</td>
           <td style="padding:8px 6px;color:var(--muted);white-space:nowrap">${esc(ra.vtype || '-')}</td>
           <td style="padding:8px 6px;font-family:monospace;white-space:nowrap">${esc(ra.plate || '-')}</td>
           <td style="padding:8px 6px;text-align:right;color:var(--blue)">${hasNum(pA) ? fmt(pA) : '-'}</td>
           <td style="padding:8px 6px;text-align:right;color:var(--orange)">${hasNum(ra.oil) ? fmt(ra.oil) : '-'}</td>
           <td style="padding:8px 6px;text-align:right">${hasNum(ra.recv) ? fmt(ra.recv) : '-'}</td>
           <td style="padding:8px 6px;text-align:right">${hasNum(ra.pay) ? fmt(ra.pay) : '-'}</td>
-          <td style="padding:8px 6px;text-align:right;font-weight:700;color:${aMClr}">${hasNum(ra.margin) ? fmt(ra.margin) : '-'}</td>
-          <td style="padding:8px 6px 8px 10px;border-left:1px solid var(--border)"><div style="display:flex;flex-wrap:wrap;gap:4px">${flags.join('')}</div></td>
+          <td style="padding:8px 6px;text-align:right;font-weight:400;color:${aMClr}">${hasNum(ra.margin) ? fmt(ra.margin) : '-'}</td>
+          <td style="padding:8px 6px 8px 10px;border-left:1px solid var(--border)"><div class="dc-tags-wrap">${flags.join('')}</div></td>
         </tr>`;
       });
 
+      const exportIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" width="16" height="16" fill="#5985E1" aria-hidden="true"><path d="M240-80q-33 0-56.5-23.5T160-160v-400q0-33 23.5-56.5T240-640h120v80H240v400h480v-400H600v-80h120q33 0 56.5 23.5T800-560v400q0 33-23.5 56.5T720-80H240Zm200-240v-447l-64 64-56-57 160-160 160 160-56 57-64-64v447h-80Z"/></svg>';
+      const exportBase = encodeURIComponent(`unmatched_${card.ga.route || 'route'}`);
       modal.innerHTML = `
-        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:900px;width:100%;max-height:95vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.6)">
+        <div id="dc_unm_capture" data-export-root="1" style="background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:900px;width:100%;max-height:95vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.6)">
           <div style="background:var(--surface);padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start">
-            <div>
-              <div style="font-size:15px;font-weight:800;color:var(--accent)">รายละเอียดเที่ยวที่ไม่มีคู่ (${esc(myLabel)}): ${esc(card.ga.route || '-')}</div>
+            <div style="min-width:0">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <div style="font-size:15px;font-weight:800;color:#cfd5df">รายละเอียดเที่ยวที่ไม่มีคู่ (${esc(myLabel)}): <span style="color:#7aa2ff">${esc(card.ga.route || '-')}</span></div>
+                <button type="button" onclick="window.dcExportModalPng('dc_unm_capture', '${exportBase}')" title="Export PNG" aria-label="Export PNG"
+                  style="background:rgba(89,133,225,.10);border:1px solid rgba(89,133,225,.35);color:#dbeafe;width:28px;height:28px;border-radius:7px;cursor:pointer;line-height:1;display:inline-flex;align-items:center;justify-content:center;transition:all .2s;padding:0"
+                  onmouseover="this.style.background='rgba(89,133,225,.18)';this.style.borderColor='rgba(89,133,225,.55)'"
+                  onmouseout="this.style.background='rgba(89,133,225,.10)';this.style.borderColor='rgba(89,133,225,.35)'">${exportIcon}</button>
+              </div>
               <div style="font-size:11px;color:var(--muted);margin-top:2px">ลูกค้า: ${esc(card.ga.customer || '-')} · พบข้อมูล ${card.unRows.length} รายการ</div>
             </div>
             <button onclick="document.getElementById('dc_unm_modal').remove()"
@@ -3900,7 +4193,7 @@ function buildDailyCompare(data) {
               <thead style="position:sticky;top:0;z-index:5;background:var(--surface)">
                 <tr>
                   <th colspan="9" style="padding:8px 6px;text-align:center;font-size:12px;font-weight:800;color:${themeColor};background:${themeBg};border-bottom:1px solid var(--border)">ช่วงข้อมูล: ${esc(myLabel)}</th>
-                  <th style="padding:8px 6px;background:${themeBg};border-bottom:1px solid var(--border)"></th>
+                  <th style="padding:8px 6px;background:rgba(236,72,153,.16);border-bottom:1px solid var(--border);border-left:1px solid var(--border)"></th>
                 </tr>
                 <tr>
                   ${thMy('วันที่','left')}${thMy('พขร.','left')}${thMy('รถ','left')}${thMy('ทะเบียน','left')}${thMy('ราคาน้ำมัน')}${thMy('สำรองน้ำมัน')}${thMy('รับ')}${thMy('จ่าย')}${thMy('ส่วนต่าง')}
@@ -3912,6 +4205,123 @@ function buildDailyCompare(data) {
           </div>
         </div>`;
       document.body.appendChild(modal);
+    };
+
+    let _dcHtml2CanvasPromise = null;
+    function ensureDcHtml2Canvas() {
+      if (window.html2canvas) return Promise.resolve(window.html2canvas);
+      if (_dcHtml2CanvasPromise) return _dcHtml2CanvasPromise;
+      _dcHtml2CanvasPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+        script.async = true;
+        script.onload = () => window.html2canvas ? resolve(window.html2canvas) : reject(new Error('โหลด html2canvas ไม่สำเร็จ'));
+        script.onerror = () => reject(new Error('ไม่สามารถโหลดไลบรารีสำหรับ Export PNG ได้'));
+        document.head.appendChild(script);
+      });
+      return _dcHtml2CanvasPromise;
+    }
+
+    function dcShowExportOverlay(message) {
+      const old = document.getElementById('dc_export_loading_overlay');
+      if (old) old.remove();
+      const overlay = document.createElement('div');
+      overlay.id = 'dc_export_loading_overlay';
+      overlay.style = 'position:fixed;inset:0;background:rgba(2,6,23,.62);backdrop-filter:blur(2px);z-index:10050;display:flex;align-items:center;justify-content:center;padding:20px';
+      overlay.innerHTML = `<div style="min-width:240px;max-width:360px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;color:var(--text);box-shadow:0 24px 64px rgba(0,0,0,.45)">
+        <div style="font-size:13px;font-weight:600;color:#cbd5e1">${esc(message || 'กำลังสร้างภาพ PNG...')}</div>
+        <div style="margin-top:10px;height:6px;border-radius:999px;background:rgba(148,163,184,.22);overflow:hidden">
+          <div style="width:42%;height:100%;background:linear-gradient(90deg,#5985E1,#7AA2FF);animation:dcExportPulse 1.2s ease-in-out infinite"></div>
+        </div>
+      </div>`;
+      document.body.appendChild(overlay);
+      return overlay;
+    }
+
+    window.dcExportModalPng = async function(targetId, baseName) {
+      let clone = null;
+      let overlay = null;
+      try {
+        const target = document.getElementById(targetId);
+        if (!target) return;
+        overlay = dcShowExportOverlay('กำลังเตรียมไฟล์ PNG...');
+        const html2canvas = await ensureDcHtml2Canvas();
+
+        // Capture full content (including horizontal/vertical overflow) via off-screen clone.
+        clone = target.cloneNode(true);
+        clone.removeAttribute('id');
+        clone.style.position = 'fixed';
+        clone.style.left = '-100000px';
+        clone.style.top = '0';
+        clone.style.margin = '0';
+        clone.style.maxWidth = 'none';
+        clone.style.maxHeight = 'none';
+        clone.style.width = 'auto';
+        clone.style.height = 'auto';
+        clone.style.overflow = 'visible';
+        clone.style.zIndex = '-1';
+        clone.style.pointerEvents = 'none';
+        document.body.appendChild(clone);
+
+        const descendants = Array.from(clone.querySelectorAll('*'));
+        descendants.forEach(el => {
+          const cs = window.getComputedStyle(el);
+          if (cs.position === 'sticky') {
+            el.style.position = 'static';
+            el.style.top = 'auto';
+          }
+          const hasScroll =
+            /auto|scroll/.test(cs.overflowX) ||
+            /auto|scroll/.test(cs.overflowY) ||
+            /auto|scroll/.test(cs.overflow);
+          if (hasScroll) {
+            el.style.overflow = 'visible';
+            el.style.overflowX = 'visible';
+            el.style.overflowY = 'visible';
+            if (el.scrollWidth > el.clientWidth) el.style.width = `${el.scrollWidth}px`;
+            if (el.scrollHeight > el.clientHeight) el.style.height = `${el.scrollHeight}px`;
+            el.style.maxWidth = 'none';
+            el.style.maxHeight = 'none';
+          }
+        });
+
+        const fullWidth = Math.max(clone.scrollWidth, clone.offsetWidth, 1);
+        const fullHeight = Math.max(clone.scrollHeight, clone.offsetHeight, 1);
+        clone.style.width = `${fullWidth}px`;
+        clone.style.height = `${fullHeight}px`;
+        const pxArea = fullWidth * fullHeight;
+        const exportScale = pxArea > 12000000 ? 1 : (pxArea > 7000000 ? 1.25 : 1.75);
+
+        await new Promise(r => requestAnimationFrame(r));
+
+        const canvas = await html2canvas(clone, {
+          backgroundColor: '#0f172a',
+          scale: exportScale,
+          useCORS: true,
+          logging: false,
+          width: fullWidth,
+          height: fullHeight,
+          windowWidth: fullWidth,
+          windowHeight: fullHeight,
+          scrollX: 0,
+          scrollY: 0
+        });
+        let decodedBase = String(baseName || 'compare');
+        try { decodedBase = decodeURIComponent(decodedBase); } catch (_) {}
+        const safeBase = decodedBase.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_');
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL('image/png');
+        a.download = `${safeBase}_${stamp}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } catch (err) {
+        alert(err?.message || 'Export PNG ไม่สำเร็จ');
+      } finally {
+        if (clone && clone.parentNode) clone.parentNode.removeChild(clone);
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      }
     };
 
     window.dcExportXls = function() {
@@ -4329,7 +4739,7 @@ function buildDailyCompare(data) {
       }
       ws1Data.push([]);
       ws1Data.push([cCell('สร้างเมื่อ: ' + new Date().toLocaleString('th-TH'), { color: '6B7280', sz: 9 })]);
-      ws1Data.push([cCell('รูปแบบไฟล์: .xls สำหรับการเปิดใช้งานทั่วไป และมีข้อมูลชีทครบถ้วน', { color: '6B7280', sz: 9 })]);
+      ws1Data.push([cCell('รูปแบบไฟล์: .xlsx สำหรับการเปิดใช้งานทั่วไป และมีข้อมูลชีทครบถ้วน', { color: '6B7280', sz: 9 })]);
 
       const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
       ws1['!cols'] = [{ wch: 32 }, { wch: 24 }, { wch: 24 }, { wch: 24 }];
@@ -4705,7 +5115,7 @@ function buildDailyCompare(data) {
       if (ws6) XLSX.utils.book_append_sheet(wb, ws6, 'ไม่ถูกเทียบช่วงหลัง');
 
       const safeFilePart = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_');
-      const fileName = 'วิเคราะห์ผลการดำเนินงาน_' + safeFilePart(periodALabel) + (_isSingleMode ? '' : '_vs_' + safeFilePart(periodBLabel)) + '_' + new Date().toISOString().slice(0,10) + '.xls';
+      const fileName = 'วิเคราะห์ผลการดำเนินงาน_' + safeFilePart(periodALabel) + (_isSingleMode ? '' : '_vs_' + safeFilePart(periodBLabel)) + '_' + new Date().toISOString().slice(0,10) + '.xlsx';
       XLSX.writeFile(wb, fileName, { bookType: 'xlsx', cellStyles: true });
     };
 
@@ -5418,5 +5828,3 @@ async function init() {
   showPage(0);
 }
 init();
-
-

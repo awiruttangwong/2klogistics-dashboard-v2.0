@@ -1,7 +1,7 @@
-﻿const PAGES = [
-  { id: 'master', title: 'ภาพรวมผลประกอบการ' },
-  { id: 'daily', title: 'วิเคราะห์และเปรียบเทียบผลการดำเนินงาน' },
-  { id: 'oilprice', title: 'ตรวจสอบราคาน้ำมันดีเซล' }
+const PAGES = [
+  { id: 'master', title: 'ภาพรวมผลประกอบการ', icon: '1' },
+  { id: 'daily', title: 'วิเคราะห์และเปรียบเทียบผลการดำเนินงาน', icon: '2' },
+  { id: 'oilprice', title: 'ตรวจสอบราคาน้ำมันดีเซล', icon: '3' }
 ];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const MTH = { January: 'ม.ค.', February: 'ก.พ.', March: 'มี.ค.', April: 'เม.ย.', May: 'พ.ค.', June: 'มิ.ย.', July: 'ก.ค.', August: 'ส.ค.', September: 'ก.ย.', October: 'ต.ค.', November: 'พ.ย.', December: 'ธ.ค.' };
@@ -1276,17 +1276,12 @@ function buildFullRanking(d) {
       </div>
 
       <!-- Summary Cards -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
         <div style="background:linear-gradient(180deg, rgba(34,197,94,0.06), rgba(34,197,94,0.02));border:1px solid rgba(34,197,94,0.2);border-radius:12px;padding:16px;text-align:center;">
           <div style="font-size:11px;color:#22c55e;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">เส้นทางกำไร</div>
           <div style="font-size:24px;font-weight:800;color:#22c55e;margin-bottom:2px;">${fmt(profitCount)}</div>
           <div style="font-size:12px;color:var(--muted);">${profitPct}% ของทั้งหมด</div>
           <div style="font-size:13px;color:var(--text);font-weight:700;margin-top:6px;">${fmt(totalProfitMargin)} THB</div>
-        </div>
-        <div style="background:linear-gradient(180deg, rgba(245,158,11,0.06), rgba(245,158,11,0.02));border:1px solid rgba(245,158,11,0.2);border-radius:12px;padding:16px;text-align:center;">
-          <div style="font-size:11px;color:#f59e0b;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">เท่าทุน</div>
-          <div style="font-size:24px;font-weight:800;color:#f59e0b;margin-bottom:2px;">${fmt(zeroCount)}</div>
-          <div style="font-size:12px;color:var(--muted);">${zeroPct}% ของทั้งหมด</div>
         </div>
         <div style="background:linear-gradient(180deg, rgba(239,68,68,0.06), rgba(239,68,68,0.02));border:1px solid rgba(239,68,68,0.2);border-radius:12px;padding:16px;text-align:center;">
           <div style="font-size:11px;color:#ef4444;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">เส้นทางขาดทุน</div>
@@ -2587,14 +2582,6 @@ function buildDailyCompare(data) {
   setTimeout(() => {
     let _stA = null, _stB = null, _labelA = '', _labelB = '';
     let _compareRunToken = 0;
-    let _autoCompareTimer = null;
-    function scheduleRunCompare() {
-      if (_autoCompareTimer) clearTimeout(_autoCompareTimer);
-      _autoCompareTimer = setTimeout(() => {
-        _autoCompareTimer = null;
-        if (typeof window.dcRunCompare === 'function') window.dcRunCompare();
-      }, 150);
-    }
 
     // โ”€โ”€ Initialize Flatpickr โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
     if (typeof flatpickr !== 'undefined') {
@@ -2607,7 +2594,6 @@ function buildDailyCompare(data) {
         allowInput: false,
         onClose: () => {
           if (typeof window.dcUpdateFilters === 'function') window.dcUpdateFilters(false);
-          scheduleRunCompare();
         }
       };
       // flatpickr automatically applies the original input's class to the altInput
@@ -2729,7 +2715,6 @@ function buildDailyCompare(data) {
         else lbl.textContent = `เลือก ${vals.length} รายการ`;
       }
       dcUpdateFilters(false);
-      scheduleRunCompare();
     };
 
     window.dcMsSearch = function(id, query) {
@@ -2819,7 +2804,6 @@ function buildDailyCompare(data) {
         if (lbl) lbl.textContent = 'ทั้งหมด';
       });
       dcUpdateFilters(false);
-      scheduleRunCompare();
     };
 
     // Initial cascade populate
@@ -3484,17 +3468,21 @@ function buildDailyCompare(data) {
           const bMClr = rb && (rb.margin || 0) >= 0 ? 'var(--green)' : 'var(--red)';
           const aOilPct = ra && ra.pay > 0 ? (ra.oil || 0) / ra.pay * 100 : 0, aOilWarn = aOilPct > 50;
           const aOilCell = ra && ra.oil > 0 ? `<span style="${aOilWarn ? 'color:var(--orange);font-weight:700' : ''}">${fmt(ra.oil)}${aOilWarn ? ` <span style="font-size:9px;background:var(--orange);color:#fff;padding:1px 4px;border-radius:3px">${aOilPct.toFixed(0)}%</span>` : ''}</span>` : `<span style="color:var(--muted)">-</span>`;
+          const aFuelPrice = getOilPriceByDate(ra?.date);
           const bOilPct = rb && rb.pay > 0 ? (rb.oil || 0) / rb.pay * 100 : 0, bOilWarn = bOilPct > 50;
           const bOilCell = rb && rb.oil > 0 ? `<span style="${bOilWarn ? 'color:var(--orange);font-weight:700' : ''}">${fmt(rb.oil)}${bOilWarn ? ` <span style="font-size:9px;background:var(--orange);color:#fff;padding:1px 4px;border-radius:3px">${bOilPct.toFixed(0)}%</span>` : ''}</span>` : `<span style="color:var(--muted)">-</span>`;
+          const bFuelPrice = getOilPriceByDate(rb?.date);
 
           tripRows += `<tr style="${bg};transition:background .15s" onmouseover="this.style.background='rgba(59,130,246,.06)'" onmouseout="this.style.background='${bgHighlight}'">
             <td style="padding:6px 9px;font-weight:600;color:${ra ? 'var(--text)' : 'var(--muted)'}">${ra ? esc(ra.driver || '-') : `<span style="font-size:10px">ไม่มีข้อมูลช่วง ${esc(_labelA || 'หลัก')}</span>`}</td>
+            <td style="padding:6px 9px;text-align:right;color:var(--blue)">${hasNum(aFuelPrice) ? fmt(aFuelPrice) : '<span style="color:var(--muted)">-</span>'}</td>
             <td style="padding:6px 9px">${aOilCell}</td>
             <td style="padding:6px 9px;text-align:right">${ra ? fmt(ra.recv) : '<span style="color:var(--muted)">-</span>'}</td>
             <td style="padding:6px 9px;text-align:right">${ra && hasNum(ra.pay) ? fmt(ra.pay) : '<span style="color:var(--muted)">-</span>'}</td>
             <td style="padding:6px 9px;text-align:right;font-weight:700;color:${aMClr}">${ra ? fmt(ra.margin) : '<span style="color:var(--muted)">-</span>'}</td>
             ${tdSep}
             <td style="padding:6px 9px;font-weight:600;color:${rb ? 'var(--text)' : 'var(--muted)'}">${rb ? esc(rb.driver || '-') : `<span style="font-size:10px">ไม่มีข้อมูลช่วง ${esc(_labelB || 'เปรียบเทียบ')}</span>`}</td>
+            <td style="padding:6px 9px;text-align:right;color:var(--blue)">${hasNum(bFuelPrice) ? fmt(bFuelPrice) : '<span style="color:var(--muted)">-</span>'}</td>
             <td style="padding:6px 9px">${bOilCell}</td>
             <td style="padding:6px 9px;text-align:right">${rb ? fmt(rb.recv) : '<span style="color:var(--muted)">-</span>'}</td>
             <td style="padding:6px 9px;text-align:right">${rb && hasNum(rb.pay) ? fmt(rb.pay) : '<span style="color:var(--muted)">-</span>'}</td>
@@ -3505,12 +3493,14 @@ function buildDailyCompare(data) {
 
         const sumRow = `<tr style="border-top:2px solid var(--border);background:rgba(255,255,255,.025)">
           <td style="padding:8px 9px;font-weight:700;font-size:11.5px;color:#7dd3c7">รวม ${mTripsA.length} เที่ยว</td>
+          <td style="padding:8px 9px;text-align:right;font-size:11.5px;color:var(--muted)">-</td>
           <td style="padding:8px 9px;font-size:11.5px;color:var(--orange)">${fmt(aSum.oil)}</td>
           <td style="padding:8px 9px;text-align:right;font-size:11.5px">${fmt(aSum.recv)}</td>
           <td style="padding:8px 9px;text-align:right;font-size:11.5px">${hasNum(aSum.pay) ? fmt(aSum.pay) : '-'}</td>
           <td style="padding:8px 9px;text-align:right;font-weight:700;font-size:11.5px;color:${aSum.margin >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(aSum.margin)}</td>
           ${tdSep}
           <td style="padding:8px 9px;font-weight:700;font-size:11.5px;color:#b8bdfd">รวม ${mTripsB.length} เที่ยว</td>
+          <td style="padding:8px 9px;text-align:right;font-size:11.5px;color:var(--muted)">-</td>
           <td style="padding:8px 9px;font-size:11.5px;color:var(--orange)">${fmt(bSum.oil)}</td>
           <td style="padding:8px 9px;text-align:right;font-size:11.5px">${fmt(bSum.recv)}</td>
           <td style="padding:8px 9px;text-align:right;font-size:11.5px">${hasNum(bSum.pay) ? fmt(bSum.pay) : '-'}</td>
@@ -3533,18 +3523,18 @@ function buildDailyCompare(data) {
           </div>
           <div style="overflow-x:auto">
             <table style="width:100%;min-width:max-content;border-collapse:collapse;font-size:12px;table-layout:auto;white-space:nowrap">
-              <colgroup><col style="min-width:110px"><col style="width:90px"><col style="width:85px"><col style="width:85px"><col style="width:85px"><col style="width:2px"><col style="min-width:110px"><col style="width:90px"><col style="width:85px"><col style="width:85px"><col style="width:85px"><col style="min-width:230px"></colgroup>
+              <colgroup><col style="min-width:110px"><col style="width:90px"><col style="width:90px"><col style="width:85px"><col style="width:85px"><col style="width:85px"><col style="width:2px"><col style="min-width:110px"><col style="width:90px"><col style="width:90px"><col style="width:85px"><col style="width:85px"><col style="width:85px"><col style="min-width:230px"></colgroup>
               <thead>
                 <tr>
-                  <th colspan="5" style="padding:5px 9px;text-align:left;font-size:11px;font-weight:700;color:#7dd3c7;background:rgba(20,184,166,.16);border-bottom:1px solid var(--border)">${esc(_labelA)}</th>
+                  <th colspan="6" style="padding:5px 9px;text-align:left;font-size:11px;font-weight:700;color:#7dd3c7;background:rgba(20,184,166,.16);border-bottom:1px solid var(--border)">${esc(_labelA)}</th>
                   ${thSep}
-                  <th colspan="5" style="padding:5px 9px;text-align:left;font-size:11px;font-weight:700;color:#b8bdfd;background:rgba(99,102,241,.18);border-bottom:1px solid var(--border)">${esc(_labelB)}</th>
+                  <th colspan="6" style="padding:5px 9px;text-align:left;font-size:11px;font-weight:700;color:#b8bdfd;background:rgba(99,102,241,.18);border-bottom:1px solid var(--border)">${esc(_labelB)}</th>
                   <th style="padding:5px 9px;background:rgba(236,72,153,.16);border-bottom:1px solid var(--border);border-left:1px solid var(--border)"></th>
                 </tr>
                 <tr>
-                  ${thA('พขร.', 'left')}${thA('สำรองน้ำมัน', 'left')}${thA('ราคารับ')}${thA('ราคาจ่าย')}${thA('ส่วนต่าง')}
+                  ${thA('พขร.', 'left')}${thA('ราคาน้ำมัน')}${thA('สำรองน้ำมัน', 'left')}${thA('ราคารับ')}${thA('ราคาจ่าย')}${thA('ส่วนต่าง')}
                   ${thSep}
-                  ${thB('พขร.', 'left')}${thB('สำรองน้ำมัน', 'left')}${thB('ราคารับ')}${thB('ราคาจ่าย')}${thB('ส่วนต่าง')}
+                  ${thB('พขร.', 'left')}${thB('ราคาน้ำมัน')}${thB('สำรองน้ำมัน', 'left')}${thB('ราคารับ')}${thB('ราคาจ่าย')}${thB('ส่วนต่าง')}
                   <th style="padding:5px 9px 5px 14px;font-size:10px;font-weight:700;color:#f3b2c9;opacity:0.95;text-transform:uppercase;letter-spacing:.4px;background:rgba(236,72,153,.16);border-bottom:1px solid var(--border);border-left:1px solid var(--border)">สาเหตุความผิดปกติ</th>
                 </tr>
               </thead>
@@ -3588,12 +3578,15 @@ function buildDailyCompare(data) {
         
         const rA = ra || {};
         const rB = rb || {};
+        const pA = getOilPriceByDate(rA.date);
+        const pB = getOilPriceByDate(rB.date);
         
         trs += `<tr style="${bg};border-bottom:1px solid rgba(255,255,255,.05)">
           <td style="padding:6px 4px;white-space:nowrap">${esc(rA.date || '-')}</td>
           <td style="padding:6px 4px;font-weight:600;min-width:90px">${esc(rA.driver || '-')}</td>
           <td style="padding:6px 4px;color:var(--muted);white-space:nowrap">${esc(rA.vtype || '-')}</td>
           <td style="padding:6px 4px;font-family:monospace;white-space:nowrap">${esc(rA.plate || '-')}</td>
+          <td style="padding:6px 4px;text-align:right;color:var(--blue)">${hasNum(pA) ? fmt(pA) : '-'}</td>
           <td style="padding:6px 4px;text-align:right;color:var(--orange)">${hasNum(rA.oil) ? fmt(rA.oil) : '-'}</td>
           <td style="padding:6px 4px;text-align:right">${hasNum(rA.recv) ? fmt(rA.recv) : '-'}</td>
           <td style="padding:6px 4px;text-align:right">${hasNum(rA.pay) ? fmt(rA.pay) : '-'}</td>
@@ -3603,6 +3596,7 @@ function buildDailyCompare(data) {
           <td style="padding:6px 4px;font-weight:600;min-width:90px">${esc(rB.driver || '-')}</td>
           <td style="padding:6px 4px;color:var(--muted);white-space:nowrap">${esc(rB.vtype || '-')}</td>
           <td style="padding:6px 4px;font-family:monospace;white-space:nowrap">${esc(rB.plate || '-')}</td>
+          <td style="padding:6px 4px;text-align:right;color:var(--blue)">${hasNum(pB) ? fmt(pB) : '-'}</td>
           <td style="padding:6px 4px;text-align:right;color:var(--orange)">${hasNum(rB.oil) ? fmt(rB.oil) : '-'}</td>
           <td style="padding:6px 4px;text-align:right">${hasNum(rB.recv) ? fmt(rB.recv) : '-'}</td>
           <td style="padding:6px 4px;text-align:right">${hasNum(rB.pay) ? fmt(rB.pay) : '-'}</td>
@@ -3627,15 +3621,15 @@ function buildDailyCompare(data) {
             <table style="width:100%;min-width:max-content;border-collapse:collapse;font-size:11px">
               <thead style="position:sticky;top:0;z-index:5;background:var(--surface)">
                 <tr>
-                  <th colspan="8" style="padding:6px 4px;text-align:center;font-size:11px;font-weight:800;color:#7dd3c7;background:rgba(20,184,166,.16);border-bottom:1px solid var(--border)">${_labelA}</th>
+                  <th colspan="9" style="padding:6px 4px;text-align:center;font-size:11px;font-weight:800;color:#7dd3c7;background:rgba(20,184,166,.16);border-bottom:1px solid var(--border)">${_labelA}</th>
                   ${thSep}
-                  <th colspan="8" style="padding:6px 4px;text-align:center;font-size:11px;font-weight:800;color:#b8bdfd;background:rgba(99,102,241,.18);border-bottom:1px solid var(--border)">${_labelB}</th>
+                  <th colspan="9" style="padding:6px 4px;text-align:center;font-size:11px;font-weight:800;color:#b8bdfd;background:rgba(99,102,241,.18);border-bottom:1px solid var(--border)">${_labelB}</th>
                   <th style="padding:6px 4px;background:rgba(236,72,153,.16);border-bottom:1px solid var(--border);border-left:1px solid var(--border)"></th>
                 </tr>
                 <tr>
-                  ${thA('วันที่','left')}${thA('พขร.','left')}${thA('รถ','left')}${thA('ทะเบียน','left')}${thA('สำรองน้ำมัน')}${thA('รับ')}${thA('จ่าย')}${thA('ส่วนต่าง')}
+                  ${thA('วันที่','left')}${thA('พขร.','left')}${thA('รถ','left')}${thA('ทะเบียน','left')}${thA('ราคาน้ำมัน')}${thA('สำรองน้ำมัน')}${thA('รับ')}${thA('จ่าย')}${thA('ส่วนต่าง')}
                   ${thSep}
-                  ${thB('วันที่','left')}${thB('พขร.','left')}${thB('รถ','left')}${thB('ทะเบียน','left')}${thB('สำรองน้ำมัน')}${thB('รับ')}${thB('จ่าย')}${thB('ส่วนต่าง')}
+                  ${thB('วันที่','left')}${thB('พขร.','left')}${thB('รถ','left')}${thB('ทะเบียน','left')}${thB('ราคาน้ำมัน')}${thB('สำรองน้ำมัน')}${thB('รับ')}${thB('จ่าย')}${thB('ส่วนต่าง')}
                   <th style="padding:5px 4px 5px 10px;font-size:10px;font-weight:700;color:#f3b2c9;opacity:0.95;background:rgba(236,72,153,.16);border-bottom:1px solid var(--border);border-left:1px solid var(--border)">ความผิดปกติ</th>
                 </tr>
               </thead>
@@ -3783,9 +3777,11 @@ function buildDailyCompare(data) {
           const aMClr = ra && (ra.margin || 0) >= 0 ? 'var(--green)' : 'var(--red)';
           const aOilPct = ra && ra.pay > 0 ? (ra.oil || 0) / ra.pay * 100 : 0, aOilWarn = aOilPct > 50;
           const aOilCell = ra && ra.oil > 0 ? `<span style="${aOilWarn ? 'color:var(--orange);font-weight:700' : ''}">${fmt(ra.oil)}${aOilWarn ? ` <span style="font-size:9px;background:var(--orange);color:#fff;padding:1px 4px;border-radius:3px">${aOilPct.toFixed(0)}%</span>` : ''}</span>` : `<span style="color:var(--muted)">-</span>`;
+          const aFuelPrice = getOilPriceByDate(ra?.date);
           
           tripRows += `<tr style="${bg};transition:background .15s" onmouseover="this.style.background='${themeHover}'" onmouseout="this.style.background='${bgHighlight}'">
             <td style="padding:6px 9px;font-weight:600;color:var(--text)">${esc(ra.driver || '-')}</td>
+            <td style="padding:6px 9px;text-align:right;color:var(--blue)">${hasNum(aFuelPrice) ? fmt(aFuelPrice) : '<span style="color:var(--muted)">-</span>'}</td>
             <td style="padding:6px 9px">${aOilCell}</td>
             <td style="padding:6px 9px;text-align:right">${fmt(ra.recv)}</td>
             <td style="padding:6px 9px;text-align:right">${hasNum(ra.pay) ? fmt(ra.pay) : '<span style="color:var(--muted)">-</span>'}</td>
@@ -3796,6 +3792,7 @@ function buildDailyCompare(data) {
         
         const sumRow = `<tr style="border-top:2px solid var(--border);background:rgba(255,255,255,.025)">
           <td style="padding:8px 9px;font-weight:700;font-size:11.5px;color:#7dd3c7">รวม ${mTrips.length} เที่ยว</td>
+          <td style="padding:8px 9px;text-align:right;font-size:11.5px;color:var(--muted)">-</td>
           <td style="padding:8px 9px;font-size:11.5px;color:var(--orange)">${fmt(mySum.oil)}</td>
           <td style="padding:8px 9px;text-align:right;font-size:11.5px">${fmt(mySum.recv)}</td>
           <td style="padding:8px 9px;text-align:right;font-size:11.5px">${hasNum(mySum.pay) ? fmt(mySum.pay) : '-'}</td>
@@ -3817,14 +3814,14 @@ function buildDailyCompare(data) {
           </div>
           <div style="overflow-x:auto">
             <table style="width:100%;min-width:max-content;border-collapse:collapse;font-size:12px;table-layout:auto;white-space:nowrap">
-              <colgroup><col style="min-width:110px"><col style="width:100px"><col style="width:90px"><col style="width:90px"><col style="width:90px"><col></colgroup>
+              <colgroup><col style="min-width:110px"><col style="width:90px"><col style="width:100px"><col style="width:90px"><col style="width:90px"><col style="width:90px"><col></colgroup>
               <thead>
                 <tr>
-                  <th colspan="5" style="padding:5px 9px;text-align:left;font-size:11px;font-weight:700;color:${themeColor};background:${themeBg};border-bottom:1px solid var(--border)">${esc(myLabel)}</th>
+                  <th colspan="6" style="padding:5px 9px;text-align:left;font-size:11px;font-weight:700;color:${themeColor};background:${themeBg};border-bottom:1px solid var(--border)">${esc(myLabel)}</th>
                   <th style="padding:5px 9px;background:rgba(236,72,153,.16);border-bottom:1px solid var(--border);border-left:1px solid var(--border)"></th>
                 </tr>
                 <tr>
-                  ${thMy('พขร.', 'left')}${thMy('สำรองน้ำมัน', 'left')}${thMy('ราคารับ')}${thMy('ราคาจ่าย')}${thMy('ส่วนต่าง')}
+                  ${thMy('พขร.', 'left')}${thMy('ราคาน้ำมัน')}${thMy('สำรองน้ำมัน', 'left')}${thMy('ราคารับ')}${thMy('ราคาจ่าย')}${thMy('ส่วนต่าง')}
                   <th style="padding:5px 9px 5px 14px;font-size:10px;font-weight:700;color:#f3b2c9;opacity:0.95;text-transform:uppercase;letter-spacing:.4px;background:rgba(236,72,153,.16);border-bottom:1px solid var(--border);border-left:1px solid var(--border)">สาเหตุความผิดปกติ</th>
                 </tr>
               </thead>
@@ -3870,12 +3867,14 @@ function buildDailyCompare(data) {
       card.unRows.forEach(({ ra, flags }, i) => {
         const bg = i % 2 ? 'background:rgba(255,255,255,.02)' : '';
         const aMClr = ra && (ra.margin || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+        const pA = getOilPriceByDate(ra?.date);
         
         trs += `<tr style="${bg};border-bottom:1px solid rgba(255,255,255,.05)">
           <td style="padding:8px 6px;white-space:nowrap">${esc(ra.date || '-')}</td>
           <td style="padding:8px 6px;font-weight:600;min-width:90px">${esc(ra.driver || '-')}</td>
           <td style="padding:8px 6px;color:var(--muted);white-space:nowrap">${esc(ra.vtype || '-')}</td>
           <td style="padding:8px 6px;font-family:monospace;white-space:nowrap">${esc(ra.plate || '-')}</td>
+          <td style="padding:8px 6px;text-align:right;color:var(--blue)">${hasNum(pA) ? fmt(pA) : '-'}</td>
           <td style="padding:8px 6px;text-align:right;color:var(--orange)">${hasNum(ra.oil) ? fmt(ra.oil) : '-'}</td>
           <td style="padding:8px 6px;text-align:right">${hasNum(ra.recv) ? fmt(ra.recv) : '-'}</td>
           <td style="padding:8px 6px;text-align:right">${hasNum(ra.pay) ? fmt(ra.pay) : '-'}</td>
@@ -3900,11 +3899,11 @@ function buildDailyCompare(data) {
             <table style="width:100%;border-collapse:collapse;font-size:11px">
               <thead style="position:sticky;top:0;z-index:5;background:var(--surface)">
                 <tr>
-                  <th colspan="8" style="padding:8px 6px;text-align:center;font-size:12px;font-weight:800;color:${themeColor};background:${themeBg};border-bottom:1px solid var(--border)">ช่วงข้อมูล: ${esc(myLabel)}</th>
+                  <th colspan="9" style="padding:8px 6px;text-align:center;font-size:12px;font-weight:800;color:${themeColor};background:${themeBg};border-bottom:1px solid var(--border)">ช่วงข้อมูล: ${esc(myLabel)}</th>
                   <th style="padding:8px 6px;background:${themeBg};border-bottom:1px solid var(--border)"></th>
                 </tr>
                 <tr>
-                  ${thMy('วันที่','left')}${thMy('พขร.','left')}${thMy('รถ','left')}${thMy('ทะเบียน','left')}${thMy('สำรองน้ำมัน')}${thMy('รับ')}${thMy('จ่าย')}${thMy('ส่วนต่าง')}
+                  ${thMy('วันที่','left')}${thMy('พขร.','left')}${thMy('รถ','left')}${thMy('ทะเบียน','left')}${thMy('ราคาน้ำมัน')}${thMy('สำรองน้ำมัน')}${thMy('รับ')}${thMy('จ่าย')}${thMy('ส่วนต่าง')}
                   <th style="padding:5px 6px 5px 10px;font-size:10px;font-weight:700;color:#f3b2c9;opacity:0.95;background:rgba(236,72,153,.16);border-bottom:1px solid var(--border);border-left:1px solid var(--border)">ความผิดปกติ</th>
                 </tr>
               </thead>
@@ -4221,7 +4220,7 @@ function buildDailyCompare(data) {
         wsData.push([]);
         const headers = [
           'ลูกค้า', 'เส้นทาง', 'ประเภทรถ', 'วันที่', 'พขร.', 'ทะเบียน',
-          'ราคารับ', 'ราคาจ่าย', 'สำรองน้ำมัน', 'ส่วนต่าง', 'กำไร %', 'สถานะ'
+          'ราคาน้ำมัน', 'ราคารับ', 'ราคาจ่าย', 'สำรองน้ำมัน', 'ส่วนต่าง', 'กำไร %', 'สถานะ'
         ];
         const headerRow = wsData.length;
         wsData.push(headers.map(t => hCell(t)));
@@ -4235,7 +4234,7 @@ function buildDailyCompare(data) {
             cCell('รวม ' + (card.rows || []).length + ' เที่ยว', { bold: true, fill: 'DBEAFE' }),
             cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }),
             cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }),
-            cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' })
+            cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' })
           ];
           wsData.push(top);
           rowIdx++;
@@ -4244,6 +4243,7 @@ function buildDailyCompare(data) {
             const r = entry.ra || {};
             const mar = (r.margin == null || isNaN(r.margin)) ? ((r.recv || 0) - (r.pay || 0) - (r.oil || 0)) : r.margin;
             const pct = (r.recv || 0) > 0 ? mar / (r.recv || 0) : 0;
+            const oilPrice = getOilPriceByDate(r.date);
             const statusText = (entry.reasons || []).join(', ');
             const zf = (rowIdx % 2 === 0) ? 'F9FAFB' : null;
             let statusCell;
@@ -4257,6 +4257,7 @@ function buildDailyCompare(data) {
               cCell(r.date || '-', { fill: zf }),
               cCell(r.driver || '-', { fill: zf }),
               cCell(r.plate || '-', { fill: zf }),
+              hasNum(oilPrice) ? cCell(oilPrice, { numFmt: nTHB, align: 'right', fill: zf }) : cCell('-', { align: 'right', fill: zf }),
               cCell(r.recv, { numFmt: nTHB, align: 'right', fill: zf }),
               cCell(r.pay, { numFmt: nTHB, align: 'right', fill: zf }),
               cCell(r.oil, { numFmt: nTHB, align: 'right', fill: zf }),
@@ -4271,21 +4272,21 @@ function buildDailyCompare(data) {
 
         if (cards.length === 0) {
           const noData = [mCell('ไม่พบข้อมูลตามเงื่อนไขที่เลือก', { align: 'center', bold: true })];
-          for (let i = 1; i < 12; i++) noData.push(cCell(''));
+          for (let i = 1; i < 13; i++) noData.push(cCell(''));
           wsData.push(noData);
         }
 
         const ws = XLSX.utils.aoa_to_sheet(wsData);
         ws['!cols'] = [
           { wch: 14 }, { wch: 34 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 13 },
-          { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 40 }
+          { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 40 }
         ];
         ws['!merges'] = [
-          { s: { r: 0, c: 0 }, e: { r: 0, c: 11 } },
-          { s: { r: 1, c: 0 }, e: { r: 1, c: 11 } },
-          { s: { r: 2, c: 0 }, e: { r: 2, c: 11 } }
+          { s: { r: 0, c: 0 }, e: { r: 0, c: 12 } },
+          { s: { r: 1, c: 0 }, e: { r: 1, c: 12 } },
+          { s: { r: 2, c: 0 }, e: { r: 2, c: 12 } }
         ];
-        ws['!autofilter'] = { ref: 'A5:L5' };
+        ws['!autofilter'] = { ref: 'A5:M5' };
         ws['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
         return ws;
       }
@@ -4298,6 +4299,7 @@ function buildDailyCompare(data) {
         filterSummaryText(),
         { color: '6B7280', sz: 9 }
       ), cCell(''), cCell(''), cCell('')]);
+      ws1Data.push([cCell('หมายเหตุ: ไฟล์นี้สร้างจากข้อมูลในหน้าวิเคราะห์และเปรียบเทียบผลการดำเนินงาน', { color: '6B7280', sz: 9 }), cCell(''), cCell(''), cCell('')]);
       ws1Data.push([]);
 
       if (_isSingleMode) {
@@ -4327,11 +4329,13 @@ function buildDailyCompare(data) {
       }
       ws1Data.push([]);
       ws1Data.push([cCell('สร้างเมื่อ: ' + new Date().toLocaleString('th-TH'), { color: '6B7280', sz: 9 })]);
+      ws1Data.push([cCell('รูปแบบไฟล์: .xls สำหรับการเปิดใช้งานทั่วไป และมีข้อมูลชีทครบถ้วน', { color: '6B7280', sz: 9 })]);
 
       const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
       ws1['!cols'] = [{ wch: 32 }, { wch: 24 }, { wch: 24 }, { wch: 24 }];
-      ws1['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }, { s: { r: 2, c: 0 }, e: { r: 2, c: 3 } }];
-      ws1['!freeze'] = { xSplit: 0, ySplit: 4, topLeftCell: 'A5', activePane: 'bottomLeft', state: 'frozen' };
+      ws1['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }, { s: { r: 2, c: 0 }, e: { r: 2, c: 3 } }, { s: { r: 3, c: 0 }, e: { r: 3, c: 3 } }];
+      ws1['!autofilter'] = { ref: 'A5:D5' };
+      ws1['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
 
       // Sheet 2: รายละเอียดเส้นทาง
       const ws2Data = [];
@@ -4598,8 +4602,8 @@ function buildDailyCompare(data) {
         ws4Data.push([]);
         const h4 = [
           'ลูกค้า', 'เส้นทาง', 'ประเภทรถ',
-          addPeriod('วันที่', periodALabel), addPeriod('พขร.', periodALabel), addPeriod('ราคารับ', periodALabel), addPeriod('ราคาจ่าย', periodALabel), addPeriod('สำรองน้ำมัน', periodALabel), addPeriod('ส่วนต่าง', periodALabel),
-          addPeriod('วันที่', periodBLabel), addPeriod('พขร.', periodBLabel), addPeriod('ราคารับ', periodBLabel), addPeriod('ราคาจ่าย', periodBLabel), addPeriod('สำรองน้ำมัน', periodBLabel), addPeriod('ส่วนต่าง', periodBLabel),
+          addPeriod('วันที่', periodALabel), addPeriod('พขร.', periodALabel), addPeriod('ราคาน้ำมัน', periodALabel), addPeriod('ราคารับ', periodALabel), addPeriod('ราคาจ่าย', periodALabel), addPeriod('สำรองน้ำมัน', periodALabel), addPeriod('ส่วนต่าง', periodALabel),
+          addPeriod('วันที่', periodBLabel), addPeriod('พขร.', periodBLabel), addPeriod('ราคาน้ำมัน', periodBLabel), addPeriod('ราคารับ', periodBLabel), addPeriod('ราคาจ่าย', periodBLabel), addPeriod('สำรองน้ำมัน', periodBLabel), addPeriod('ส่วนต่าง', periodBLabel),
           'Δ ส่วนต่าง', 'สัญญาณผิดปกติ'
         ];
         const headerRow4 = ws4Data.length;
@@ -4612,8 +4616,8 @@ function buildDailyCompare(data) {
             cCell(card.ga.route || '-', { bold: true, fill: 'DBEAFE' }),
             cCell(card.ga.vtype || '-', { bold: true, fill: 'DBEAFE' }),
             cCell('พบผิดปกติ ' + (card.rows || []).length + ' รายการ', { bold: true, fill: 'DBEAFE' }),
-            cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }),
             cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }),
+            cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }),
             cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' })
           ];
           ws4Data.push(top);
@@ -4626,6 +4630,8 @@ function buildDailyCompare(data) {
             const mB = (rb.margin == null || isNaN(rb.margin)) ? ((rb.recv || 0) - (rb.pay || 0) - (rb.oil || 0)) : rb.margin;
             const dM = mA - mB;
             const reasons = (entry.reasons || []).join(', ');
+            const oilPriceA = getOilPriceByDate(ra.date);
+            const oilPriceB = getOilPriceByDate(rb.date);
             const zf = (rowIdx4 % 2 === 0) ? 'F9FAFB' : null;
             const row = [
               cCell(ra.customer || rb.customer || '-', { fill: zf }),
@@ -4633,12 +4639,14 @@ function buildDailyCompare(data) {
               cCell(ra.vtype || rb.vtype || '-', { fill: zf }),
               cCell(ra.date || '-', { fill: zf }),
               cCell(ra.driver || '-', { fill: zf }),
+              hasNum(oilPriceA) ? cCell(oilPriceA, { numFmt: nTHB, align: 'right', fill: zf }) : cCell('-', { align: 'right', fill: zf }),
               cCell(ra.recv, { numFmt: nTHB, align: 'right', fill: zf }),
               cCell(ra.pay, { numFmt: nTHB, align: 'right', fill: zf }),
               cCell(ra.oil, { numFmt: nTHB, align: 'right', fill: zf }),
               mA < 0 ? rCell(mA, { numFmt: nTHB, align: 'right', fill: zf }) : gCell(mA, { numFmt: nTHB, align: 'right', fill: zf }),
               cCell(rb.date || '-', { fill: zf }),
               cCell(rb.driver || '-', { fill: zf }),
+              hasNum(oilPriceB) ? cCell(oilPriceB, { numFmt: nTHB, align: 'right', fill: zf }) : cCell('-', { align: 'right', fill: zf }),
               cCell(rb.recv, { numFmt: nTHB, align: 'right', fill: zf }),
               cCell(rb.pay, { numFmt: nTHB, align: 'right', fill: zf }),
               cCell(rb.oil, { numFmt: nTHB, align: 'right', fill: zf }),
@@ -4653,23 +4661,23 @@ function buildDailyCompare(data) {
 
         if (anomalyCards.length === 0) {
           const noData4 = [mCell('ไม่พบความผิดปกติในช่วงเวลาที่เลือก', { align: 'center', bold: true })];
-          for (let i = 1; i < 17; i++) noData4.push(cCell(''));
+          for (let i = 1; i < 19; i++) noData4.push(cCell(''));
           ws4Data.push(noData4);
         }
 
         ws4 = XLSX.utils.aoa_to_sheet(ws4Data);
         ws4['!cols'] = [
           { wch: 14 }, { wch: 34 }, { wch: 12 },
-          { wch: 12 }, { wch: 15 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
-          { wch: 12 }, { wch: 15 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+          { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+          { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
           { wch: 14 }, { wch: 40 }
         ];
         ws4['!merges'] = [
-          { s: { r: 0, c: 0 }, e: { r: 0, c: 16 } },
-          { s: { r: 1, c: 0 }, e: { r: 1, c: 16 } },
-          { s: { r: 2, c: 0 }, e: { r: 2, c: 16 } }
+          { s: { r: 0, c: 0 }, e: { r: 0, c: 18 } },
+          { s: { r: 1, c: 0 }, e: { r: 1, c: 18 } },
+          { s: { r: 2, c: 0 }, e: { r: 2, c: 18 } }
         ];
-        ws4['!autofilter'] = { ref: 'A5:Q5' };
+        ws4['!autofilter'] = { ref: 'A5:S5' };
         ws4['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
 
         const unmatchedACards = buildUnmatchedExportCards(_stA.rows, _stB.rows);
@@ -4697,7 +4705,7 @@ function buildDailyCompare(data) {
       if (ws6) XLSX.utils.book_append_sheet(wb, ws6, 'ไม่ถูกเทียบช่วงหลัง');
 
       const safeFilePart = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_');
-      const fileName = 'วิเคราะห์ผลการดำเนินงาน_' + safeFilePart(periodALabel) + (_isSingleMode ? '' : '_vs_' + safeFilePart(periodBLabel)) + '_' + new Date().toISOString().slice(0,10) + '.xlsx';
+      const fileName = 'วิเคราะห์ผลการดำเนินงาน_' + safeFilePart(periodALabel) + (_isSingleMode ? '' : '_vs_' + safeFilePart(periodBLabel)) + '_' + new Date().toISOString().slice(0,10) + '.xls';
       XLSX.writeFile(wb, fileName, { bookType: 'xlsx', cellStyles: true });
     };
 
@@ -5024,13 +5032,68 @@ function buildOilPricePage(d) {
 
 function initNav() {
   const nav = document.getElementById('navList');
-  nav.innerHTML = PAGES.map((p, i) => `<div class="nav-item${i === 0 ? ' active' : ''}" data-idx="${i}"><span class="nav-num">${i + 1}</span>${p.title}</div>`).join('');
+  const sidebarToggle = document.getElementById('sidebarToggle');
+  const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+  const sidebar = document.querySelector('.sidebar');
+  if (!nav || !sidebar) return;
+
+  let sidebarAnimating = false;
+  let pendingSidebarState = null;
+  const applySidebarState = (collapsed) => {
+    document.body.classList.toggle('sidebar-collapsed', collapsed);
+    updateSidebarMeta();
+  };
+  const setSidebarState = (collapsed) => {
+    pendingSidebarState = collapsed;
+    if (sidebarAnimating) return;
+    sidebarAnimating = true;
+    window.requestAnimationFrame(() => {
+      const next = pendingSidebarState;
+      pendingSidebarState = null;
+      applySidebarState(next);
+      const finish = () => {
+        sidebar.removeEventListener('transitionend', finish);
+        sidebarAnimating = false;
+        if (pendingSidebarState !== null && pendingSidebarState !== document.body.classList.contains('sidebar-collapsed')) {
+          const queued = pendingSidebarState;
+          pendingSidebarState = null;
+          setSidebarState(queued);
+        }
+      };
+      sidebar.addEventListener('transitionend', finish);
+      window.setTimeout(() => {
+        sidebar.removeEventListener('transitionend', finish);
+        finish();
+      }, 380);
+    });
+  };
+
+  nav.innerHTML = PAGES.map((p, idx) => `<button type="button" class="nav-item${idx === 0 ? ' active' : ''}" data-idx="${idx}" aria-label="${p.title}">
+    <span class="nav-icon" aria-hidden="true">${p.icon}</span>
+    <span class="nav-copy">
+      <span class="nav-label">${p.title}</span>
+    </span>
+  </button>`).join('');
+
   nav.addEventListener('click', e => {
     const item = e.target.closest('.nav-item');
     if (!item) return;
     nav.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     item.classList.add('active');
     showPage(+item.dataset.idx);
+    document.body.classList.remove('sidebar-open');
+  });
+
+  sidebarToggle?.addEventListener('click', () => {
+    const collapsed = !document.body.classList.contains('sidebar-collapsed');
+    setSidebarState(collapsed);
+    document.body.classList.remove('sidebar-open');
+  });
+  sidebarBackdrop?.addEventListener('click', () => {
+    document.body.classList.remove('sidebar-open');
+  });
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.body.classList.remove('sidebar-open');
   });
 }
 
@@ -5053,13 +5116,16 @@ function showPage(idx) {
   // Toggle master-no-scroll class for fixed card grid
   if (idx === 0) {
     c.classList.add('master-no-scroll');
+    c.classList.add('page-master');
     c.style.padding = '12px';
     c.style.overflow = 'hidden';
   } else {
     c.classList.remove('master-no-scroll');
+    c.classList.remove('page-master');
     c.style.padding = '';
     c.style.overflow = '';
   }
+  document.body.classList.remove('sidebar-open');
   const builders = [buildMasterDashboard, buildDailyCompare, buildOilPricePage];
   c.innerHTML = `${renderDataSourceNotice()}${builders[idx](DATA)}`;
   c.scrollTop = 0;
@@ -5098,6 +5164,10 @@ function updateSidebarMeta() {
   const label = months.length > 1 ? `${first} - ${last} ${year}` : `${first} ${year}`;
   const el = document.getElementById('sidebarMeta');
   if (el) el.textContent = `${label} | ${fmt(total)} เที่ยว`;
+  const titleEl = document.getElementById('sidebarBrand');
+  if (titleEl && document.body.classList.contains('sidebar-collapsed')) {
+    titleEl.title = `2K Logistics Analytics · ${label} | ${fmt(total)} เที่ยว`;
+  }
 }
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));

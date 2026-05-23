@@ -15,7 +15,6 @@ var SHEET_SOURCES = {
   'DATA(M4)': 'https://docs.google.com/spreadsheets/d/1RW7EQyzgYjPREZsxyBs3_EbZ8tKOHbBeSxPDxJ3G3yU/edit?gid=1824601668#gid=1824601668',
   'DATA(M5)': 'https://docs.google.com/spreadsheets/d/1wt8x2XsfvT-gSOmrI0HnNFcS27w-OuvzEYItGP3xn48/edit?gid=1824601668#gid=1824601668',
   'DATA(M6)': '',
-  
   'DATA(M7)': '',
   'DATA(M8)': '',
   'DATA(M9)': '',

@@ -321,9 +321,31 @@ function deriveRevenueConcentrationFromCustomers(customerRows) {
 }
 
 function isCompanyTrip(row) {
-  const payee = normalizeText(row?.payee, '-');
-  const driver = normalizeText(row?.driver, '-');
-  return payee === '-' || payee === driver || payee.includes('บริษัท');
+  const payee = String(row?.payee || '').trim();
+  const driver = String(row?.driver || '').trim();
+  const plate = String(row?.plate || '').trim().toUpperCase().replace(/\s+/g, '');
+  const vtype = String(row?.vtype || '').trim().toUpperCase();
+
+  if (payee === driver || payee.indexOf('บริษัท') !== -1 || payee === '-' || payee === '') {
+    return true;
+  }
+
+  const companyPairs = {
+    '3บท2757|4W': true,
+    '3ฒท2757|4W': true,
+    '3บย7931|4WJ': true,
+    '3ฒย7931|4WJ': true,
+    '3บย7928|4WJ': true,
+    '3ฒย7928|4WJ': true,
+    '707616|6W': true,
+    '707613|6W': true,
+    '717486|6W': true,
+    '3บท2758|4W': true,
+    '3ฒท2758|4W': true,
+    '73-2203/73-2204|เทรลเลอร์': true
+  };
+
+  return !!companyPairs[plate + '|' + vtype];
 }
 
 function deriveOwnVsOutsourceFromTrips(trips) {
@@ -2893,16 +2915,18 @@ function buildDailyCompare(data) {
     _isSingleMode = mode === 'single';
     const sSingle = document.getElementById('dc_mode_single').style;
     const sCompare = document.getElementById('dc_mode_compare').style;
-    sSingle.background = _isSingleMode ? 'linear-gradient(135deg,#3b82f6,#1d4ed8)' : 'transparent';
-    sSingle.color = _isSingleMode ? '#fff' : 'var(--muted)';
-    sSingle.boxShadow = _isSingleMode ? '0 2px 8px rgba(59,130,246,.4)' : 'none';
+    sSingle.background = _isSingleMode ? 'linear-gradient(135deg,#1e3a8a,#1e2554)' : 'transparent';
+    sSingle.color = _isSingleMode ? '#dbeafe' : 'var(--muted)';
+    sSingle.boxShadow = _isSingleMode ? '0 2px 8px rgba(0,0,0,.4)' : 'none';
+    sSingle.border = _isSingleMode ? '1px solid rgba(59,130,246,.2)' : '1px solid transparent';
     sSingle.fontSize = '12px';
     sSingle.fontWeight = '700';
     sSingle.fontFamily = 'inherit';
 
-    sCompare.background = !_isSingleMode ? 'linear-gradient(135deg,#3b82f6,#1d4ed8)' : 'transparent';
-    sCompare.color = !_isSingleMode ? '#fff' : 'var(--muted)';
-    sCompare.boxShadow = !_isSingleMode ? '0 2px 8px rgba(59,130,246,.4)' : 'none';
+    sCompare.background = !_isSingleMode ? 'linear-gradient(135deg,#1e3a8a,#1e2554)' : 'transparent';
+    sCompare.color = !_isSingleMode ? '#dbeafe' : 'var(--muted)';
+    sCompare.boxShadow = !_isSingleMode ? '0 2px 8px rgba(0,0,0,.4)' : 'none';
+    sCompare.border = !_isSingleMode ? '1px solid rgba(59,130,246,.2)' : '1px solid transparent';
     sCompare.fontSize = '12px';
     sCompare.fontWeight = '700';
     sCompare.fontFamily = 'inherit';
@@ -3118,10 +3142,10 @@ function buildDailyCompare(data) {
     .dc-date-input.period-b:focus { border-color: #818cf8; }
     .dc-date-input.period-b:focus { border-color: #818cf8; }
     .dc-ms-btn {
-      padding:9px 12px; background:var(--surface); border:1px solid rgba(255,255,255,.08);
-      border-radius:8px; color:var(--text); font-size:12.5px; cursor:pointer;
+      padding:6px 10px; background:var(--surface); border:1px solid rgba(255,255,255,.08);
+      border-radius:6px; color:var(--text); font-size:11.5px; cursor:pointer;
       display:flex; justify-content:space-between; align-items:center; gap:8px;
-      transition:all .2s; height:36px; box-sizing:border-box;
+      transition:all .2s; height:32px; box-sizing:border-box;
     }
     .dc-ms-btn:hover { border-color:rgba(255,255,255,.22); }
     .dc-ms-panel {
@@ -3132,7 +3156,7 @@ function buildDailyCompare(data) {
     }
     .dc-ms-panel.show { display:block; }
     .dc-ms-item {
-      padding:6px 12px; font-size:12.5px; cursor:pointer; color:var(--text);
+      padding:5px 10px; font-size:11.5px; cursor:pointer; color:var(--text);
       display:flex; align-items:flex-start; gap:8px; transition:background .15s;
     }
     .dc-ms-item:hover { background:rgba(59,130,246,.1); }
@@ -3160,10 +3184,11 @@ function buildDailyCompare(data) {
     }
     .dc-action-btn {
       width: auto;
-      min-height: 36px;
-      padding: 6px 12px;
+      height: 32px;
+      box-sizing: border-box;
+      padding: 5px 12px;
       border: none;
-      border-radius: 10px;
+      border-radius: 6px;
       color: #e8eef8;
       font-size: 11px;
       font-weight: 600;
@@ -3182,49 +3207,119 @@ function buildDailyCompare(data) {
       filter: brightness(1.03);
     }
     .dc-action-btn-7d {
-      /* Manual color controls for 7D button:
-         1) Edit the 4 variable groups below to change theme quickly.
-         2) Keep contrast readable against white text.
-         Suggested palettes:
-         - Teal:   #0f8f88 -> #0f766e | active #0f6f69 -> #0d5f5a | outline rgba(45,212,191,.32)
-         - Orange: #c97316 -> #b45309 | active #92400e -> #7c2d12 | outline rgba(251,191,36,.35)
-         - Slate:  #4b5e7a -> #334155 | active #334155 -> #1f2937 | outline rgba(148,163,184,.34)
-         - Rose:   #be185d -> #9d174d | active #831843 -> #701a75 | outline rgba(244,114,182,.34)
-      */
-      --dc7d-bg-start: #2a3950;
-      --dc7d-bg-end: #1d2a3d;
-      --dc7d-shadow-rgb: 29, 40, 55;
-      --dc7d-active-start: #1e3a8a;
-      --dc7d-active-end: #312e81;
-      --dc7d-active-shadow-rgb: 49, 46, 129;
-      --dc7d-active-outline: rgba(129,140,248,.42);
-      background: linear-gradient(135deg,var(--dc7d-bg-start),var(--dc7d-bg-end));
-      box-shadow: 0 3px 12px rgba(var(--dc7d-shadow-rgb),.34);
-      outline: 1px solid rgba(99,102,241,.18);
+      position: relative;
+      background: linear-gradient(135deg, #1e2538, #161b2e);
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.4);
+      border: 1px solid rgba(99, 102, 241, 0.18);
+      z-index: 0;
+      overflow: hidden;
     }
     .dc-action-btn-7d:hover {
-      box-shadow: 0 5px 18px rgba(var(--dc7d-shadow-rgb),.46);
+      border-color: rgba(99, 102, 241, 0.32);
+    }
+    /* Rotating gradient layer — clipped to border only via inner mask */
+    .dc-action-btn-7d::before {
+      content: '';
+      position: absolute;
+      inset: -60%;
+      background: linear-gradient(0deg, transparent 30%, rgba(99,102,241,0.55) 50%, rgba(167,139,250,0.4) 55%, transparent 70%);
+      border-radius: 50%;
+      opacity: 0;
+      transition: opacity 0.35s ease;
+      pointer-events: none;
+      will-change: transform;
+    }
+    /* Inner cutout so only the border ring shows */
+    .dc-action-btn-7d::after {
+      content: '';
+      position: absolute;
+      inset: 1px;
+      border-radius: 5px;
+      background: linear-gradient(135deg, #1a1840, #151230);
+      opacity: 0;
+      transition: opacity 0.35s ease;
+      pointer-events: none;
+      z-index: 0;
     }
     .dc-action-btn-7d.is-active {
-      background: linear-gradient(135deg,var(--dc7d-active-start),var(--dc7d-active-end));
-      box-shadow: inset 0 2px 8px rgba(2,6,23,.38), 0 1px 5px rgba(var(--dc7d-active-shadow-rgb),.42);
-      outline: 1px solid var(--dc7d-active-outline);
-      transform: translateY(1px);
-      filter: brightness(.98);
+      border-color: transparent;
+    }
+    .dc-action-btn-7d.is-active::before {
+      opacity: 1;
+      animation: dc7d-spin 4s linear infinite;
+    }
+    .dc-action-btn-7d.is-active::after {
+      opacity: 1;
+    }
+    .dc-action-btn-7d.is-active .dc7d-text {
+      color: #c7d2fe;
+    }
+    .dc7d-text {
+      position: relative;
+      z-index: 1;
+      color: #94a3b8;
+      transition: color 0.3s;
+    }
+    .dc-action-btn-7d:hover .dc7d-text {
+      color: #c7d2fe;
+    }
+    @keyframes dc7d-spin {
+      to { transform: rotate(360deg); }
     }
     .dc-action-btn-check {
-      background: linear-gradient(135deg,#16a07e,#0f8569);
-      box-shadow: 0 3px 12px rgba(15,133,105,.34);
+      position: relative;
+      background: linear-gradient(135deg, #0a4f3e, #073a2d);
+      border: 1px solid rgba(16, 185, 129, 0.18);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+      overflow: hidden;
+    }
+    .dc-action-btn-check::before {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%;
+      width: 60%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+      transition: left 0.5s ease;
+      pointer-events: none;
     }
     .dc-action-btn-check:hover {
-      box-shadow: 0 5px 18px rgba(15,133,105,.46);
+      background: linear-gradient(135deg, #0c5f4a, #094538);
+      border-color: rgba(16, 185, 129, 0.32);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+    }
+    .dc-action-btn-check:hover::before {
+      left: 160%;
+    }
+    .dc-action-btn-check.is-loading {
+      background: linear-gradient(135deg, #07382c, #052821);
+      border-color: rgba(16, 185, 129, 0.12);
+      box-shadow: none;
     }
     .dc-action-btn-export {
-      background: linear-gradient(135deg,#5e66dc,#4b53c7);
-      box-shadow: 0 3px 12px rgba(75,83,199,.34);
+      position: relative;
+      background: linear-gradient(135deg, #1f2454, #181c42);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+      overflow: hidden;
+    }
+    .dc-action-btn-export::before {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%;
+      width: 60%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+      transition: left 0.5s ease;
+      pointer-events: none;
     }
     .dc-action-btn-export:hover {
-      box-shadow: 0 5px 18px rgba(75,83,199,.46);
+      background: linear-gradient(135deg, #272d66, #1e2350);
+      border-color: rgba(99, 102, 241, 0.34);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+    }
+    .dc-action-btn-export:hover::before {
+      left: 160%;
     }
     @media (max-width: 720px) {
       .dc-action-btn {
@@ -3264,10 +3359,10 @@ function buildDailyCompare(data) {
       </div>
 
       <!-- Row 2: Filters -->
-      <div style="border-top:1px solid rgba(255,255,255,.05);padding:11px 20px;display:grid;grid-template-columns:1fr 2fr 1fr auto;gap:12px;align-items:end">
+      <div style="border-top:1px solid rgba(255,255,255,.05);padding:8px 20px;display:grid;grid-template-columns:1fr 2fr 1fr auto;gap:12px;align-items:end">
 
         <div style="position:relative;z-index:50">
-          <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#475569;margin-bottom:5px">ลูกค้า</div>
+          <div style="font-size:10.2px;font-weight:450;color:#94a3b8;margin-bottom:5px;letter-spacing:0.3px">ลูกค้า</div>
           <div id="ms_btn_cust" class="dc-ms-btn" onclick="dcToggleMs('cust',event)">
             <span id="ms_lbl_cust" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">ทั้งหมด</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -3276,7 +3371,7 @@ function buildDailyCompare(data) {
         </div>
 
         <div style="position:relative;z-index:50">
-          <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#475569;margin-bottom:5px">เส้นทาง</div>
+          <div style="font-size:10.2px;font-weight:450;color:#94a3b8;margin-bottom:5px;letter-spacing:0.3px">เส้นทาง</div>
           <div id="ms_btn_route" class="dc-ms-btn" onclick="dcToggleMs('route',event)">
             <span id="ms_lbl_route" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">ทั้งหมด</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -3285,7 +3380,7 @@ function buildDailyCompare(data) {
         </div>
 
         <div style="position:relative;z-index:50">
-          <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#475569;margin-bottom:5px">ประเภทรถ</div>
+          <div style="font-size:10.2px;font-weight:450;color:#94a3b8;margin-bottom:5px;letter-spacing:0.3px">ประเภทรถ</div>
           <div id="ms_btn_vtype" class="dc-ms-btn" onclick="dcToggleMs('vtype',event)">
             <span id="ms_lbl_vtype" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">ทั้งหมด</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -3293,19 +3388,19 @@ function buildDailyCompare(data) {
           <div id="ms_pnl_vtype" class="dc-ms-panel"></div>
         </div>
 
-        <div style="display:flex;align-items:center;gap:10px;padding-bottom:1px">
-          <div style="display:flex;background:rgba(0,0,0,.2);border-radius:8px;padding:3px;border:1px solid rgba(255,255,255,.05)">
+        <div style="display:flex;align-items:center;gap:8px;padding-bottom:1px">
+          <div style="display:flex;background:rgba(0,0,0,.2);border-radius:6px;padding:2px;border:1px solid rgba(255,255,255,.05);height:32px;box-sizing:border-box;align-items:center">
             <button id="dc_mode_single" onclick="dcSetMode('single')"
-              style="padding:8px 14px;background:transparent;color:var(--muted);border:none;border-radius:6px;font-weight:700;font-size:12px;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s">
+              style="padding:0 12px;background:transparent;color:var(--muted);border:1px solid transparent;border-radius:4px;font-weight:700;font-size:11px;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s;height:100%;display:flex;align-items:center">
               มุมมองปกติ
             </button>
             <button id="dc_mode_compare" onclick="dcSetMode('compare')"
-              style="padding:8px 14px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;border:none;border-radius:6px;font-weight:700;font-size:12px;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s">
+              style="padding:0 12px;background:linear-gradient(135deg,#1e3a8a,#1e2554);color:#dbeafe;border:1px solid rgba(59,130,246,.2);border-radius:4px;font-weight:700;font-size:11px;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s;box-shadow:0 2px 8px rgba(0,0,0,.4);height:100%;display:flex;align-items:center">
               เปรียบเทียบ
             </button>
           </div>
           <button id="dc_rolling_toggle_btn" class="dc-action-btn dc-action-btn-7d" type="button" onclick="dcToggleRollingPreset()">
-            7D vs Previous
+            <span class="dc7d-text">7D vs Previous</span>
           </button>
           <button id="dc_check_btn" class="dc-action-btn dc-action-btn-check" onclick="dcRunCompare()">
             <span id="dc_check_text">ตรวจสอบ</span>
@@ -3316,7 +3411,7 @@ function buildDailyCompare(data) {
             Export XLSX
           </button>
           <button onclick="dcClearFilters()"
-            style="padding:8px 14px;background:transparent;border:1px solid rgba(255,255,255,.08);border-radius:8px;color:#475569;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s"
+            style="padding:0 12px;background:transparent;border:1px solid rgba(255,255,255,.08);border-radius:6px;color:#475569;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s;height:32px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center"
             onmouseover="this.style.borderColor='rgba(239,68,68,.5)';this.style.color='#ef4444';this.style.background='rgba(239,68,68,.05)'"
             onmouseout="this.style.borderColor='rgba(255,255,255,.08)';this.style.color='#475569';this.style.background='transparent'">
             ล้างตัวกรอง
@@ -3925,17 +4020,22 @@ function buildDailyCompare(data) {
         </div>`;
       }).join('');
 
-      return `<div style="margin-top:28px">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
-          <div style="width:4px;height:28px;background:linear-gradient(180deg,#3b82f6,#8b5cf6);border-radius:3px"></div>
-          <div style="font-size:17px;font-weight:800;color:var(--text);letter-spacing:.3px">รายงานวิเคราะห์เส้นทางประจำวัน</div>
-          <div style="flex:1;height:1px;background:linear-gradient(90deg,var(--border),transparent)"></div>
-          <div style="display:flex;gap:10px;align-items:center">
-            ${totalAnomalies > 0 ? `<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:20px;padding:5px 14px;display:flex;align-items:center;gap:6px">
-              <span style="width:6px;height:6px;border-radius:50%;background:#ef4444"></span>
-              <span style="font-size:11px;font-weight:700;color:#ef4444">พบ ${totalAnomalies} รายการผิดปกติ</span>
+      return `<div style="margin-top:24px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:3px;height:20px;background:var(--accent);border-radius:2px;flex-shrink:0"></div>
+            <span style="font-size:13px;font-weight:500;color:var(--text);letter-spacing:.2px">รายงานวิเคราะห์เส้นทางประจำวัน</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            ${totalAnomalies > 0 ? `<div style="display:flex;align-items:center;gap:6px;padding:4px 12px;border-radius:6px;border:1px solid rgba(239,68,68,.2);background:rgba(239,68,68,.06)">
+              <span style="width:5px;height:5px;border-radius:50%;background:#ef4444;flex-shrink:0"></span>
+              <span style="font-size:11px;font-weight:400;color:#f87171;letter-spacing:.1px">พบ ${totalAnomalies} รายการผิดปกติ</span>
             </div>` : ''}
-            <div style="font-size:11px;color:var(--muted);background:var(--surface);padding:5px 14px;border-radius:20px;border:1px solid var(--border);font-weight:600">${routes.length} เส้นทาง · ${stA.trips || 0} เที่ยว</div>
+            <div style="display:flex;align-items:center;gap:10px;padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface)">
+              <span style="font-size:11px;font-weight:400;color:var(--muted)">${routes.length} เส้นทาง</span>
+              <span style="width:1px;height:10px;background:var(--border)"></span>
+              <span style="font-size:11px;font-weight:400;color:var(--muted)">${stA.trips || 0} เที่ยว</span>
+            </div>
           </div>
         </div>
         ${cardsHtml}
@@ -4632,7 +4732,7 @@ function buildDailyCompare(data) {
           <div style="background:var(--surface);padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start">
             <div style="min-width:0">
               <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                <div style="font-size:15px;font-weight:800;color:#cfd5df">รายละเอียดการเปรียบเทียบ: <span style="color:#7aa2ff">${esc(card.ga.route || '-')}</span></div>
+                <div style="font-size:15px;font-weight:700;color:#f1f5f9">รายละเอียดการเปรียบเทียบ: <span style="color:#7aa2ff">${esc(card.ga.route || '-')}</span></div>
                 <button type="button" onclick="window.dcExportModalPng('dc_anom_capture', '${exportBase}')" title="Export PNG" aria-label="Export PNG"
                   style="background:rgba(89,133,225,.10);border:1px solid rgba(89,133,225,.35);color:#dbeafe;width:28px;height:28px;border-radius:7px;cursor:pointer;line-height:1;display:inline-flex;align-items:center;justify-content:center;transition:all .2s;padding:0"
                   onmouseover="this.style.background='rgba(89,133,225,.18)';this.style.borderColor='rgba(89,133,225,.55)'"
@@ -4928,7 +5028,7 @@ function buildDailyCompare(data) {
           <div style="background:var(--surface);padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start">
             <div style="min-width:0">
               <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                <div style="font-size:15px;font-weight:800;color:#cfd5df">รายละเอียดเที่ยวที่ไม่มีคู่ (${esc(myLabel)}): <span style="color:#7aa2ff">${esc(card.ga.route || '-')}</span></div>
+                <div style="font-size:15px;font-weight:700;color:#f1f5f9">รายละเอียดเที่ยวที่ไม่มีคู่เทียบ (${esc(myLabel)}): <span style="color:#7aa2ff">${esc(card.ga.route || '-')}</span></div>
                 <button type="button" onclick="window.dcExportModalPng('dc_unm_capture', '${exportBase}')" title="Export PNG" aria-label="Export PNG"
                   style="background:rgba(89,133,225,.10);border:1px solid rgba(89,133,225,.35);color:#dbeafe;width:28px;height:28px;border-radius:7px;cursor:pointer;line-height:1;display:inline-flex;align-items:center;justify-content:center;transition:all .2s;padding:0"
                   onmouseover="this.style.background='rgba(89,133,225,.18)';this.style.borderColor='rgba(89,133,225,.55)'"
@@ -5254,6 +5354,12 @@ function buildDailyCompare(data) {
           if (!groupB[k]) return;
           const ga = groupA[k];
           const gb = groupB[k];
+          const tripsB = gb.trips || [];
+          const validPayB = tripsB.filter(r => (r.pay || 0) > 0);
+          const validOilB = tripsB.filter(r => (r.oil || 0) > 0);
+          const avgPayB = validPayB.length > 0 ? validPayB.reduce((sum, r) => sum + (r.pay || 0), 0) / validPayB.length : 0;
+          const avgOilB = validOilB.length > 0 ? validOilB.reduce((sum, r) => sum + (r.oil || 0), 0) / validOilB.length : 0;
+
           const usedB = new Set();
           const rows = [];
           ga.trips.forEach(ra => {
@@ -5281,12 +5387,16 @@ function buildDailyCompare(data) {
               reasons.push(`${rb.date || '-'} สำรองน้ำมัน>50%`);
               statuses.add('oil50');
             }
-            if (rb.pay > 0 && (ra.pay || 0) > rb.pay * 1.05) {
-              reasons.push(`${ra.date || '-'} ราคาจ่ายแพงกว่าเดิม`);
+
+            const baselinePay = (avgPayB > 0) ? avgPayB : (rb.pay || 0);
+            const baselineOil = (avgOilB > 0) ? avgOilB : (rb.oil || 0);
+
+            if (baselinePay > 0 && (ra.pay || 0) > baselinePay * 1.05) {
+              reasons.push(`${ra.date || '-'} ราคาจ่ายสูงผิดปกติ`);
               statuses.add('payHigh');
             }
-            if (rb.oil > 0 && (ra.oil || 0) > rb.oil * 1.05) {
-              reasons.push(`${ra.date || '-'} สำรองน้ำมันแพงกว่าเดิม`);
+            if (baselineOil > 0 && (ra.oil || 0) > baselineOil * 1.05) {
+              reasons.push(`${ra.date || '-'} สำรองน้ำมันสูงผิดปกติ`);
               statuses.add('oilHigh');
             }
             const oilPriceA = getOilPriceByDate(ra?.date);
@@ -5340,12 +5450,21 @@ function buildDailyCompare(data) {
           const opTrips = gb ? gb.trips : [];
           const used = new Set();
           const rows = [];
+          const unmatchedTrips = [];
           ga.trips.forEach(ra => {
             const idx = opTrips.findIndex((rb, i) => !used.has(i) && normDriver(rb.driver) === normDriver(ra.driver));
             if (idx >= 0) {
               used.add(idx);
               return;
             }
+            unmatchedTrips.push(ra);
+          });
+          // Calculate avgPay/avgOil from unmatched-only peer group (same period, same route)
+          const validPayPeers = unmatchedTrips.filter(r => (r.pay || 0) > 0);
+          const validOilPeers = unmatchedTrips.filter(r => (r.oil || 0) > 0);
+          const unmAvgPay = validPayPeers.length > 0 ? validPayPeers.reduce((s, r) => s + (r.pay || 0), 0) / validPayPeers.length : 0;
+          const unmAvgOil = validOilPeers.length > 0 ? validOilPeers.reduce((s, r) => s + (r.oil || 0), 0) / validOilPeers.length : 0;
+          unmatchedTrips.forEach(ra => {
             const reasons = [];
             const statuses = new Set();
             if ((ra.margin || 0) < 0) {
@@ -5356,6 +5475,16 @@ function buildDailyCompare(data) {
             if ((ra.oil || 0) > (ra.pay || 0) * 0.5 && (ra.pay || 0) > 0) {
               reasons.push('สำรองน้ำมัน>50%');
               statuses.add('oil50');
+            }
+            if (unmatchedTrips.length > 1) {
+              if (unmAvgPay > 0 && (ra.pay || 0) > unmAvgPay * 1.05) {
+                reasons.push('ราคาจ่ายสูงผิดปกติ');
+                statuses.add('payHigh');
+              }
+              if (unmAvgOil > 0 && (ra.oil || 0) > unmAvgOil * 1.10) {
+                reasons.push('สำรองน้ำมันสูงผิดปกติ');
+                statuses.add('oilHigh');
+              }
             }
             if (reasons.length === 0) {
               reasons.push('ปกติ');
@@ -5897,7 +6026,7 @@ function buildDailyCompare(data) {
       return {
         loss: 'ขาดทุน',
         oil50: 'สำรองน้ำมัน>50%',
-        payHigh: 'จ่ายสูงผิดปกติ',
+        payHigh: 'ราคาจ่ายสูงผิดปกติ',
         oilHigh: 'สำรองน้ำมันสูงผิดปกติ',
         recvLow: 'ราคารับผิดปกติ',
         normal: 'ปกติ'
@@ -5953,8 +6082,16 @@ function buildDailyCompare(data) {
       if ((trip.margin || 0) < 0) statuses.add('loss');
       if ((trip.oil || 0) > (trip.pay || 0) * 0.5 && (trip.pay || 0) > 0) statuses.add('oil50');
       if (peers.length > 1) {
-        const avgPay = peers.reduce((s, r) => s + (r.pay || 0), 0) / peers.length;
-        const avgOil = peers.reduce((s, r) => s + (r.oil || 0), 0) / peers.length;
+        const validPayPeers = peers.filter(r => (r.pay || 0) > 0);
+        const validOilPeers = peers.filter(r => (r.oil || 0) > 0);
+
+        const avgPay = validPayPeers.length > 0
+          ? validPayPeers.reduce((s, r) => s + (r.pay || 0), 0) / validPayPeers.length
+          : 0;
+        const avgOil = validOilPeers.length > 0
+          ? validOilPeers.reduce((s, r) => s + (r.oil || 0), 0) / validOilPeers.length
+          : 0;
+
         if (avgPay > 0 && (trip.pay || 0) > avgPay * 1.05) statuses.add('payHigh');
         if (avgOil > 0 && (trip.oil || 0) > avgOil * 1.10) statuses.add('oilHigh');
       }
@@ -5962,13 +6099,18 @@ function buildDailyCompare(data) {
       return [...statuses];
     }
 
-    function dcQaCompareStatuses(ra, rb) {
+    function dcQaCompareStatuses(ra, rb, avgPayB = 0, avgOilB = 0) {
       const statuses = new Set();
       if ((ra.margin || 0) < 0 || (rb.margin || 0) < 0) statuses.add('loss');
       if (((ra.oil || 0) > (ra.pay || 0) * 0.5 && (ra.pay || 0) > 0) ||
         ((rb.oil || 0) > (rb.pay || 0) * 0.5 && (rb.pay || 0) > 0)) statuses.add('oil50');
-      if ((rb.pay || 0) > 0 && (ra.pay || 0) > (rb.pay || 0) * 1.05) statuses.add('payHigh');
-      if ((rb.oil || 0) > 0 && (ra.oil || 0) > (rb.oil || 0) * 1.05) statuses.add('oilHigh');
+
+      const baselinePay = (avgPayB > 0) ? avgPayB : (rb.pay || 0);
+      const baselineOil = (avgOilB > 0) ? avgOilB : (rb.oil || 0);
+
+      if (baselinePay > 0 && (ra.pay || 0) > baselinePay * 1.05) statuses.add('payHigh');
+      if (baselineOil > 0 && (ra.oil || 0) > baselineOil * 1.05) statuses.add('oilHigh');
+
       const oilPriceA = getOilPriceByDate(ra?.date);
       const oilPriceB = getOilPriceByDate(rb?.date);
       if (hasNum(oilPriceA) && hasNum(oilPriceB) && Math.abs((oilPriceA || 0) - (oilPriceB || 0)) < 0.0001 &&
@@ -5977,20 +6119,50 @@ function buildDailyCompare(data) {
       return [...statuses];
     }
 
-    function dcQaPairNotes(ra, rb, statuses) {
+    function dcQaPairNotes(ra, rb, statuses, avgPayB = 0, avgOilB = 0) {
       const labels = [];
       if (statuses.includes('loss')) labels.push('ตรวจส่วนต่าง');
       if (statuses.includes('oil50')) labels.push('ตรวจสำรองน้ำมัน');
-      if (statuses.includes('payHigh')) labels.push(`จ่าย A สูงกว่า B ${fmt((ra.pay || 0) - (rb.pay || 0))}`);
-      if (statuses.includes('oilHigh')) labels.push(`น้ำมัน A สูงกว่า B ${fmt((ra.oil || 0) - (rb.oil || 0))}`);
+
+      const baselinePay = (avgPayB > 0) ? avgPayB : (rb.pay || 0);
+      const baselineOil = (avgOilB > 0) ? avgOilB : (rb.oil || 0);
+
+      if (statuses.includes('payHigh')) labels.push(`จ่าย A สูงกว่าเฉลี่ย B ${fmt((ra.pay || 0) - baselinePay)}`);
+      if (statuses.includes('oilHigh')) labels.push(`น้ำมัน A สูงกว่าเฉลี่ย B ${fmt((ra.oil || 0) - baselineOil)}`);
       if (statuses.includes('recvLow')) labels.push(`ราคารับ A/B ไม่เท่ากัน ${fmt(Math.abs((ra.recv || 0) - (rb.recv || 0)))}`);
       return labels.length ? labels.join(', ') : 'ไม่มีสัญญาณเพิ่ม';
     }
 
-    function dcQaPairCell(a, b, cls = '') {
+    function dcQaPairTextCell(a, b, cls = '') {
       return `<div class="dc-qa-pair-cell ${cls}">
-        <span>${dcQaNum(a, false)}</span>
-        <span>${dcQaNum(b, false)}</span>
+        <div class="dc-qa-ab-row"><i class="dc-qa-ab-dot is-a"></i><span>${esc(a || '-')}</span></div>
+        <div class="dc-qa-ab-row"><i class="dc-qa-ab-dot is-b"></i><span>${esc(b || '-')}</span></div>
+      </div>`;
+    }
+
+    function dcQaPairCell(a, b, cls = '', isModal = false) {
+      const canDiff = hasNum(a) && hasNum(b);
+      const diff = canDiff ? (Number(a) - Number(b)) : 0;
+      const diffClass = !canDiff ? 'is-muted' : (Math.abs(diff) < 0.0001 ? 'is-zero' : (diff > 0 ? 'is-positive' : 'is-negative'));
+      const diffText = canDiff ? `${diff > 0 ? '+' : ''}${fmt(diff)}` : '-';
+      return `<div class="dc-qa-pair-cell ${cls} ${isModal && canDiff && Math.abs(diff) >= 0.0001 ? 'has-inline-delta' : ''}">
+        <div class="dc-qa-ab-row">
+          <i class="dc-qa-ab-dot is-a"></i>
+          <span>${dcQaNum(a, false)}</span>${isModal && canDiff && Math.abs(diff) >= 0.0001 ? ` <span class="dc-qa-inline-delta ${diffClass}">&Delta;&nbsp;${diffText}</span>` : ''}
+        </div>
+        <div class="dc-qa-ab-row">
+          <i class="dc-qa-ab-dot is-b"></i>
+          <span>${dcQaNum(b, false)}</span>
+        </div>
+      </div>`;
+    }
+
+    function dcQaPairDiffCell(a, b) {
+      const classA = (a || 0) >= 0 ? 'is-positive' : 'is-negative';
+      const classB = (b || 0) >= 0 ? 'is-positive' : 'is-negative';
+      return `<div class="dc-qa-pair-cell is-diff">
+        <div class="dc-qa-ab-row"><i class="dc-qa-ab-dot is-a"></i><span class="${classA}">${dcQaNum(a, false)}</span></div>
+        <div class="dc-qa-ab-row"><i class="dc-qa-ab-dot is-b"></i><span class="${classB}">${dcQaNum(b, false)}</span></div>
       </div>`;
     }
 
@@ -6015,7 +6187,7 @@ function buildDailyCompare(data) {
           <div class="dc-normal-customer-score">
             <div><span>ส่วนต่างรวม</span><b style="color:${tone}">${fmt(margin)}</b></div>
             <div><span>กำไร %</span><b style="color:${tone}">${pct.toFixed(1)}%</b></div>
-            ${anoms > 0 ? `<span class="dc-normal-alert"><i></i>${anoms} ความผิดปกติ</span>` : '<span class="dc-normal-ok">ปกติ</span>'}
+            ${anoms > 0 ? `<span class="dc-normal-alert"><svg xmlns="http://www.w3.org/2000/svg" height="12px" viewBox="0 -960 960 960" width="12px" fill="currentColor" style="margin-right:6px;display:inline-block;vertical-align:middle;margin-top:-2px"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg>${anoms} ความผิดปกติ</span>` : '<span class="dc-normal-ok">ปกติ</span>'}
           </div>
         </div>
         <div class="dc-normal-customer-metrics">
@@ -6032,17 +6204,20 @@ function buildDailyCompare(data) {
       return `<header class="dc-normal-summary-head">
         <div class="dc-normal-title-wrap"><span></span><h2>รายงานวิเคราะห์เส้นทางประจำวัน</h2></div>
         <div class="dc-normal-summary-meta">
-          ${totalAnoms > 0 ? `<span class="dc-normal-total-alert"><i></i>พบ&nbsp; <b id="dc-summary-anoms-normal">${totalAnoms}</b> &nbsp;รายการผิดปกติ</span>` : '<span class="dc-normal-ok">ปกติ</span>'}
-          <span><b id="dc-summary-routes-normal">${cases.length}</b>&nbsp; เส้นทาง &nbsp;·&nbsp; <b id="dc-summary-trips-normal">${stA.trips || 0}</b>&nbsp; เที่ยว</span>
+          ${totalAnoms > 0 ? `<span class="dc-normal-total-alert"><svg xmlns="http://www.w3.org/2000/svg" height="12px" viewBox="0 -960 960 960" width="12px" fill="currentColor" style="margin-right:6px;display:inline-block;vertical-align:middle;margin-top:-2px"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg>พบ&nbsp; <b id="dc-summary-anoms-normal">${totalAnoms}</b> &nbsp;รายการผิดปกติ</span>` : '<span class="dc-normal-ok">ปกติ</span>'}
+          <span><span id="dc-summary-routes-normal">${cases.length}</span>&nbsp;เส้นทาง&nbsp;<span id="dc-summary-trips-normal">${stA.trips || 0}</span>&nbsp;เที่ยว</span>
         </div>
       </header>`;
     }
 
-    function dcQaSingleTripRow(r, statuses) {
+    function dcQaSingleTripRow(r, statuses, isModal = false) {
       const marginClass = (r.margin || 0) >= 0 ? 'is-positive' : 'is-negative';
+      const isCompany = isModal && isCompanyTrip(r);
+      const driverClass = isCompany ? 'dc-qa-driver is-company' : 'dc-qa-driver';
       return `<tr>
         <td class="dc-qa-date">${esc(dcQaShortDate(r.date))}</td>
-        <td class="dc-qa-driver" title="${esc(r.driver || '-')}">${esc(r.driver || '-')}</td>
+        <td class="${driverClass}" title="${esc(r.driver || '-')}">${esc(r.driver || '-')}</td>
+        ${isModal ? `<td>${esc(r.vtype || '-')}</td><td>${esc(r.plate || '-')}</td>` : ''}
         <td class="is-right">${dcQaOilPrice(r.date)}</td>
         <td class="is-right is-oil">${dcQaNum(r.oil)}</td>
         <td class="is-right">${dcQaNum(r.recv)}</td>
@@ -6052,18 +6227,21 @@ function buildDailyCompare(data) {
       </tr>`;
     }
 
-    function dcQaPairRow(row) {
+    function dcQaPairRow(row, isModal = false) {
       const { ra, rb, statuses } = row;
+      const isCompany = isModal && (isCompanyTrip(ra) || isCompanyTrip(rb));
+      const driverClass = isCompany ? 'dc-qa-driver is-company' : 'dc-qa-driver';
       return `<tr>
-        <td class="dc-qa-date">${esc(dcQaShortDate(ra.date))}</td>
-        <td class="dc-qa-date">${esc(dcQaShortDate(rb.date))}</td>
-        <td class="dc-qa-driver" title="${esc(ra.driver || rb.driver || '-')}">${esc(ra.driver || rb.driver || '-')}</td>
-        <td>${dcQaPairCell(getOilPriceByDate(ra.date), getOilPriceByDate(rb.date), 'is-blue')}</td>
-        <td>${dcQaPairCell(ra.oil, rb.oil, 'is-oil')}</td>
-        <td>${dcQaPairCell(ra.recv, rb.recv)}</td>
-        <td>${dcQaPairCell(ra.pay, rb.pay)}</td>
-        <td>${dcQaPairCell(ra.margin, rb.margin, ((ra.margin || 0) < 0 || (rb.margin || 0) < 0) ? 'is-negative' : 'is-positive')}</td>
-        <td>${dcQaStatusBadges(statuses)}</td>
+        <td class="dc-qa-date"><span class="dc-qa-date-chip is-a">${esc(dcQaShortDate(ra.date))}</span></td>
+        <td class="dc-qa-date"><span class="dc-qa-date-chip is-b">${esc(dcQaShortDate(rb.date))}</span></td>
+        <td class="${driverClass}" title="${esc(ra.driver || rb.driver || '-')}">${esc(ra.driver || rb.driver || '-')}</td>
+        ${isModal ? `<td>${dcQaPairTextCell(ra.vtype, rb.vtype)}</td><td>${dcQaPairTextCell(ra.plate, rb.plate)}</td>` : ''}
+        <td>${dcQaPairCell(getOilPriceByDate(ra.date), getOilPriceByDate(rb.date), 'is-blue', isModal)}</td>
+        <td>${dcQaPairCell(ra.oil, rb.oil, 'is-oil', isModal)}</td>
+        <td>${dcQaPairCell(ra.recv, rb.recv, '', isModal)}</td>
+        <td>${dcQaPairCell(ra.pay, rb.pay, '', isModal)}</td>
+        <td class="dc-qa-td-diff">${dcQaPairDiffCell(ra.margin, rb.margin)}</td>
+        <td class="dc-qa-td-flag">${dcQaStatusBadges(statuses)}</td>
       </tr>`;
     }
 
@@ -6113,6 +6291,11 @@ function buildDailyCompare(data) {
       Object.keys(groupA).filter(k => groupB[k]).forEach(key => {
         const ga = groupA[key];
         const gb = groupB[key];
+        const tripsB = gb.trips || [];
+        const validPayB = tripsB.filter(r => (r.pay || 0) > 0);
+        const validOilB = tripsB.filter(r => (r.oil || 0) > 0);
+        const avgPayB = validPayB.length > 0 ? validPayB.reduce((sum, r) => sum + (r.pay || 0), 0) / validPayB.length : 0;
+        const avgOilB = validOilB.length > 0 ? validOilB.reduce((sum, r) => sum + (r.oil || 0), 0) / validOilB.length : 0;
         const usedB = new Set();
         const norm = d => String(d || '').trim().toLowerCase();
         const anomRows = [];
@@ -6121,13 +6304,18 @@ function buildDailyCompare(data) {
           if (idx < 0) return;
           usedB.add(idx);
           const rb = gb.trips[idx];
-          const statuses = dcQaCompareStatuses(ra, rb);
+          const statuses = dcQaCompareStatuses(ra, rb, avgPayB, avgOilB);
           anomRows.push({ ra, rb, statuses });
         });
         if (!anomRows.length) return;
         const statusSet = new Set();
         anomRows.forEach(row => row.statuses.forEach(s => statusSet.add(s)));
-        anomRows.sort((a, b) => dcQaStatusRank(b.statuses) - dcQaStatusRank(a.statuses));
+        anomRows.sort((a, b) => {
+          const rankA = dcQaStatusRank(a.statuses);
+          const rankB = dcQaStatusRank(b.statuses);
+          if (rankB !== rankA) return rankB - rankA;
+          return String(a.ra.date || '').localeCompare(String(b.ra.date || ''));
+        });
         cards.push({ key, ga, anomRows, statuses: [...statusSet], severity: Math.max(...anomRows.map(r => dcQaStatusRank(r.statuses))) });
       });
       cards.sort((a, b) => {
@@ -6170,10 +6358,16 @@ function buildDailyCompare(data) {
           else unmatched.push(rmy);
         });
         if (!unmatched.length) return;
+        // Use unmatched-only peer group (same period, same route) for fair comparison
         const unRows = unmatched.map(ra => {
           const statuses = dcQaTripStatuses(ra, unmatched);
           return { ra, statuses };
-        }).sort((a, b) => dcQaStatusRank(b.statuses) - dcQaStatusRank(a.statuses));
+        }).sort((a, b) => {
+          const rankA = dcQaStatusRank(a.statuses);
+          const rankB = dcQaStatusRank(b.statuses);
+          if (rankB !== rankA) return rankB - rankA;
+          return String(a.ra.date || '').localeCompare(String(b.ra.date || ''));
+        });
         const statusSet = new Set();
         unRows.forEach(row => row.statuses.forEach(s => statusSet.add(s)));
         cards.push({ key, ga, unRows, statuses: [...statusSet], severity: Math.max(...unRows.map(r => dcQaStatusRank(r.statuses))) });
@@ -6215,7 +6409,13 @@ function buildDailyCompare(data) {
       const cases = stA.routes.map(route => {
         const trips = (stA.rows || []).filter(r => r.customer === route.customer && r.route === route.route && r.vtype === route.vtype)
           .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
-        const rows = trips.map(ra => ({ ra, statuses: dcQaTripStatuses(ra, trips) }));
+        const rows = trips.map(ra => ({ ra, statuses: dcQaTripStatuses(ra, trips) }))
+          .sort((a, b) => {
+            const rankA = dcQaStatusRank(a.statuses);
+            const rankB = dcQaStatusRank(b.statuses);
+            if (rankB !== rankA) return rankB - rankA;
+            return String(a.ra.date || '').localeCompare(String(b.ra.date || ''));
+          });
         const anomCount = rows.filter(r => !r.statuses.includes('normal')).length;
         const statusSet = new Set();
         rows.forEach(r => r.statuses.forEach(s => statusSet.add(s)));
@@ -6253,7 +6453,7 @@ function buildDailyCompare(data) {
           <div class="dc-qa-table-wrap">
             <table class="dc-qa-table">
               <thead><tr><th>วันที่</th><th>พขร.</th><th class="is-right">ราคาน้ำมัน</th><th class="is-right">สำรองน้ำมัน</th><th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">ส่วนต่าง</th><th>ความผิดปกติ</th></tr></thead>
-              <tbody>${previewRows.map(row => dcQaSingleTripRow(row.ra, row.statuses)).join('')}</tbody>
+              <tbody>${previewRows.map(row => dcQaSingleTripRow(row.ra, row.statuses, false)).join('')}</tbody>
             </table>
           </div>
           ${hiddenCount > 0 ? `<div class="dc-qa-more">มีเที่ยววิ่งเพิ่มเติมอีก ${hiddenCount} เที่ยว (คลิกเพื่อดูรายละเอียด)</div>` : ''}
@@ -6307,11 +6507,11 @@ function buildDailyCompare(data) {
             </div>
             <div class="dc-qa-head-actions"></div>
           </header>
-          <div class="dc-qa-case-strip"><span>A ${esc(_labelA)}</span><span>B ${esc(_labelB)}</span>${anomCount ? `<span>ต้องตรวจสอบ ${anomCount} คู่เทียบ</span>` : '<span>คู่ข้อมูลปกติ</span>'}</div>
+          <div class="dc-qa-case-strip"><span>${esc(_labelA)}</span><span>${esc(_labelB)}</span>${anomCount ? `<span>ต้องตรวจสอบ ${anomCount} คู่เทียบ</span>` : '<span>คู่ข้อมูลปกติ</span>'}</div>
           <div class="dc-qa-table-wrap">
             <table class="dc-qa-table dc-qa-pair-table">
-              <thead><tr><th>วันที่ A</th><th>วันที่ B</th><th>พขร.</th><th>น้ำมัน A/B</th><th>สำรอง A/B</th><th>ราคารับ A/B</th><th>ราคาจ่าย A/B</th><th>ส่วนต่าง A/B</th><th>ความผิดปกติ</th></tr></thead>
-              <tbody>${card.anomRows.slice(0, 6).map(dcQaPairRow).join('')}</tbody>
+              <thead><tr><th>วันที่หลัก</th><th>วันที่เปรียบเทียบ</th><th>พขร.</th><th>ราคาน้ำมัน</th><th>สำรองน้ำมัน</th><th>ราคารับ</th><th>ราคาจ่าย</th><th class="dc-qa-th-diff">ส่วนต่าง</th><th class="dc-qa-th-flag">ความผิดปกติ</th></tr></thead>
+              <tbody>${card.anomRows.slice(0, 6).map(row => dcQaPairRow(row, false)).join('')}</tbody>
             </table>
           </div>
           ${card.anomRows.length > 6 ? `<div class="dc-qa-more">มีคู่เปรียบเทียบเพิ่มเติมอีก ${card.anomRows.length - 6} คู่ (คลิกเพื่อดูรายละเอียด)</div>` : ''}
@@ -6356,7 +6556,7 @@ function buildDailyCompare(data) {
           <div class="dc-qa-table-wrap">
             <table class="dc-qa-table">
               <thead><tr><th>วันที่</th><th>พขร.</th><th class="is-right">ราคาน้ำมัน</th><th class="is-right">สำรองน้ำมัน</th><th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">ส่วนต่าง</th><th>ความผิดปกติ</th></tr></thead>
-              <tbody>${card.unRows.slice(0, 6).map(row => dcQaSingleTripRow(row.ra, row.statuses)).join('')}</tbody>
+              <tbody>${card.unRows.slice(0, 6).map(row => dcQaSingleTripRow(row.ra, row.statuses, false)).join('')}</tbody>
             </table>
           </div>
           ${card.unRows.length > 6 ? `<div class="dc-qa-more">มีเที่ยววิ่งเพิ่มเติมอีก ${card.unRows.length - 6} เที่ยว (คลิกเพื่อดูรายละเอียด)</div>` : ''}
@@ -6378,16 +6578,22 @@ function buildDailyCompare(data) {
         (!specificVtype || r.vtype === specificVtype)
       ).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
       if (!rows.length) return;
-      const modalRows = rows.map(ra => ({ ra, statuses: dcQaTripStatuses(ra, rows) }));
-      const body = `<div class="dc-qa-table-wrap is-modal"><table class="dc-qa-table"><thead><tr><th>วันที่</th><th>พขร.</th><th class="is-right">ราคาน้ำมัน</th><th class="is-right">สำรองน้ำมัน</th><th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">ส่วนต่าง</th><th>ความผิดปกติ</th></tr></thead><tbody>${modalRows.map(row => dcQaSingleTripRow(row.ra, row.statuses)).join('')}</tbody></table></div>`;
+      const modalRows = rows.map(ra => ({ ra, statuses: dcQaTripStatuses(ra, rows) }))
+        .sort((a, b) => {
+          const rankA = dcQaStatusRank(a.statuses);
+          const rankB = dcQaStatusRank(b.statuses);
+          if (rankB !== rankA) return rankB - rankA;
+          return String(a.ra.date || '').localeCompare(String(b.ra.date || ''));
+        });
+      const body = `<div class="dc-qa-table-wrap is-modal"><table class="dc-qa-table"><thead><tr><th>วันที่</th><th>พขร.</th><th>ประเภทรถ</th><th>ทะเบียน</th><th class="is-right">ราคาน้ำมัน</th><th class="is-right">สำรองน้ำมัน</th><th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">ส่วนต่าง</th><th>ความผิดปกติ</th></tr></thead><tbody>${modalRows.map(row => dcQaSingleTripRow(row.ra, row.statuses, true)).join('')}</tbody></table></div>`;
       dcQaModalShell('dc_route_modal', 'dc_route_capture', esc(routeStr || '-'), `${esc(specificCust || '-')} · ${esc(specificVtype || '-')} · ${esc(fmtRange(dateStart, dateEnd))}`, encodeURIComponent(`route_${routeStr || 'route'}`), body);
     };
 
     window.dcOpenAnomalyModal = function (idx) {
       const card = window._anomalyCardsData?.[idx];
       if (!card) return;
-      const body = `<div class="dc-qa-table-wrap is-modal"><table class="dc-qa-table dc-qa-pair-table"><thead><tr><th>วันที่ A</th><th>วันที่ B</th><th>พขร.</th><th>น้ำมัน A/B</th><th>สำรอง A/B</th><th>ราคารับ A/B</th><th>ราคาจ่าย A/B</th><th>ส่วนต่าง A/B</th><th>ความผิดปกติ</th></tr></thead><tbody>${card.anomRows.map(dcQaPairRow).join('')}</tbody></table></div>`;
-      dcQaModalShell('dc_anom_modal', 'dc_anom_capture', `รายละเอียดการเปรียบเทียบ: ${esc(card.ga.route || '-')}`, `${esc(card.ga.customer || '-')} · ${esc(card.ga.vtype || '-')} · A ${esc(_labelA)} / B ${esc(_labelB)}`, encodeURIComponent(`anomaly_${card.ga.route || 'route'}`), body);
+      const body = `<div class="dc-qa-table-wrap is-modal"><table class="dc-qa-table dc-qa-pair-table"><thead><tr><th>วันที่หลัก</th><th>วันที่เปรียบเทียบ</th><th>พขร.</th><th>ประเภทรถ</th><th>ทะเบียน</th><th>ราคาน้ำมัน</th><th>สำรองน้ำมัน</th><th>ราคารับ</th><th>ราคาจ่าย</th><th class="dc-qa-th-diff">ส่วนต่าง</th><th class="dc-qa-th-flag">ความผิดปกติ</th></tr></thead><tbody>${card.anomRows.map(row => dcQaPairRow(row, true)).join('')}</tbody></table></div>`;
+      dcQaModalShell('dc_anom_modal', 'dc_anom_capture', `รายละเอียดการเปรียบเทียบ: ${esc(card.ga.route || '-')}`, `${esc(card.ga.customer || '-')} · ${esc(card.ga.vtype || '-')} · ${esc(_labelA)} / ${esc(_labelB)}`, encodeURIComponent(`anomaly_${card.ga.route || 'route'}`), body);
     };
 
     window.dcOpenUnmatchedModal = function (idx, side) {
@@ -6395,7 +6601,7 @@ function buildDailyCompare(data) {
       if (!card) return;
       const isA = side === 'a';
       const myLabel = isA ? _labelA : _labelB;
-      const body = `<div class="dc-qa-table-wrap is-modal"><table class="dc-qa-table"><thead><tr><th>วันที่</th><th>พขร.</th><th class="is-right">ราคาน้ำมัน</th><th class="is-right">สำรองน้ำมัน</th><th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">ส่วนต่าง</th><th>ความผิดปกติ</th></tr></thead><tbody>${card.unRows.map(row => dcQaSingleTripRow(row.ra, row.statuses)).join('')}</tbody></table></div>`;
+      const body = `<div class="dc-qa-table-wrap is-modal"><table class="dc-qa-table"><thead><tr><th>วันที่</th><th>พขร.</th><th>ประเภทรถ</th><th>ทะเบียน</th><th class="is-right">ราคาน้ำมัน</th><th class="is-right">สำรองน้ำมัน</th><th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">ส่วนต่าง</th><th>ความผิดปกติ</th></tr></thead><tbody>${card.unRows.map(row => dcQaSingleTripRow(row.ra, row.statuses, true)).join('')}</tbody></table></div>`;
       dcQaModalShell('dc_unm_modal', 'dc_unm_capture', `รายละเอียดเที่ยวที่ไม่มีคู่: ${esc(card.ga.route || '-')}`, `${esc(card.ga.customer || '-')} · ${esc(card.ga.vtype || '-')} · ${esc(myLabel)}`, encodeURIComponent(`unmatched_${card.ga.route || 'route'}`), body);
     };
 
@@ -6732,12 +6938,13 @@ function initNav() {
   let pendingSidebarState = null;
   const applySidebarState = (collapsed) => {
     document.body.classList.toggle('sidebar-collapsed', collapsed);
-    updateSidebarMeta();
   };
   const setSidebarState = (collapsed) => {
     pendingSidebarState = collapsed;
     if (sidebarAnimating) return;
     sidebarAnimating = true;
+    // Hint compositor only during animation, then release to free GPU memory
+    sidebar.style.willChange = 'width';
     window.requestAnimationFrame(() => {
       const next = pendingSidebarState;
       pendingSidebarState = null;
@@ -6745,6 +6952,9 @@ function initNav() {
       const finish = () => {
         sidebar.removeEventListener('transitionend', finish);
         sidebarAnimating = false;
+        sidebar.style.willChange = '';
+        // Defer non-critical meta update until after animation completes
+        updateSidebarMeta();
         if (pendingSidebarState !== null && pendingSidebarState !== document.body.classList.contains('sidebar-collapsed')) {
           const queued = pendingSidebarState;
           pendingSidebarState = null;

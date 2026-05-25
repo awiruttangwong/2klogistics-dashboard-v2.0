@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QA Comparison Table</title>
+<style>
+  :root {
+    --bg-page:       #1a1a2e;
+    --bg-surface:    #16213e;
+    --bg-row:        #1e2a45;
+    --bg-row-hover:  #243354;
+    --bg-diff:       rgba(55,138,221,0.10);
+    --bg-diff-hover: rgba(55,138,221,0.18);
+    --bg-flag:       rgba(186,117,23,0.10);
+    --bg-flag-hover: rgba(186,117,23,0.18);
+    --border:        rgba(255,255,255,0.07);
+    --border-flag:   rgba(239,159,39,0.40);
+    --text-primary:  #e8eaf0;
+    --text-muted:    #7a859a;
+    --text-head:     #5a6a85;
+    --blue-chip-bg:  rgba(55,138,221,0.15);
+    --blue-chip-txt: #7dbff5;
+    --green-chip-bg: rgba(99,153,34,0.15);
+    --green-chip-txt:#8fd460;
+    --dot-a:         #378ADD;
+    --dot-b:         #639922;
+    --pos:           #6dbf67;
+    --neg:           #e05c5c;
+    --badge-loss-bg: rgba(224,92,92,0.15);
+    --badge-loss-txt:#f08080;
+    --badge-loss-br: rgba(224,92,92,0.35);
+    --badge-fuel-bg: rgba(239,159,39,0.15);
+    --badge-fuel-txt:#f0b840;
+    --badge-fuel-br: rgba(239,159,39,0.35);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg-page);
+    font-family: 'Noto Sans Thai', 'Sarabun', sans-serif;
+    color: var(--text-primary);
+    padding: 24px;
+  }
+
+  .tbl-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 900px;
+    background: var(--bg-surface);
+  }
+
+  thead th {
+    font-size: 11px;
+    color: var(--text-head);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-weight: 500;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+    background: var(--bg-surface);
+  }
+  thead th.th-diff { background: rgba(55,138,221,0.07); color: #6aaee0; }
+  thead th.th-flag { background: rgba(186,117,23,0.07); color: #c99a40; border-left: 1px solid var(--border-flag); }
+
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .12s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover td             { background: var(--bg-row-hover); }
+  tbody tr:hover td.td-diff     { background: var(--bg-diff-hover); }
+  tbody tr:hover td.td-flag     { background: var(--bg-flag-hover); }
+
+  td {
+    padding: 10px 14px;
+    vertical-align: middle;
+    font-size: 13px;
+    background: var(--bg-row);
+    color: var(--text-primary);
+  }
+  td.td-diff { background: var(--bg-diff); }
+  td.td-flag { background: var(--bg-flag); border-left: 1px solid var(--border-flag); }
+
+  .dc {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+  .dc-a { background: var(--blue-chip-bg);  color: var(--blue-chip-txt); }
+  .dc-b { background: var(--green-chip-bg); color: var(--green-chip-txt); }
+
+  .dname { font-weight: 500; white-space: nowrap; }
+
+  .ab-pair { display: flex; flex-direction: column; gap: 4px; }
+  .ab-row  { display: flex; align-items: center; gap: 6px; }
+  .dot     { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  .dot-a   { background: var(--dot-a); }
+  .dot-b   { background: var(--dot-b); }
+  .v-a     { color: var(--text-primary); }
+  .v-b     { color: var(--text-muted); }
+
+  .diff-pair { display: flex; flex-direction: column; gap: 4px; }
+  .diff-row  { display: flex; align-items: center; gap: 6px; }
+  .dl        { font-size: 10px; font-weight: 500; color: var(--blue-chip-txt); width: 12px; flex-shrink: 0; }
+  .dl-b      { color: var(--green-chip-txt); }
+  .dv        { font-size: 13px; font-weight: 500; }
+  .pos       { color: var(--pos); }
+  .neg       { color: var(--neg); }
+
+  .flags { display: flex; flex-direction: column; gap: 5px; }
+  .flag  {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; padding: 2px 8px; border-radius: 4px;
+    white-space: nowrap; width: fit-content; border: 1px solid;
+  }
+  .f-loss { background: var(--badge-loss-bg); color: var(--badge-loss-txt); border-color: var(--badge-loss-br); }
+  .f-fuel { background: var(--badge-fuel-bg); color: var(--badge-fuel-txt); border-color: var(--badge-fuel-br); }
+</style>
+</head>
+<body>
+
+<div class="tbl-wrap">
+<table>
+  <thead>
+    <tr>
+      <th>วันที่ A</th>
+      <th>วันที่ B</th>
+      <th>พขร.</th>
+      <th>น้ำมัน (ลิตร)</th>
+      <th>สำรอง (บาท)</th>
+      <th>ราคารับ (บาท)</th>
+      <th>ราคาจ่าย (บาท)</th>
+      <th class="th-diff">ส่วนต่าง (บาท)</th>
+      <th class="th-flag">ความผิดปกติ</th>
+    </tr>
+  </thead>
+  <tbody>
+
+    <tr>
+      <td><span class="dc dc-a">16/05/26</span></td>
+      <td><span class="dc dc-b">12/05/26</span></td>
+      <td class="dname">สุชาติ คนดี</td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">41.45</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">39.95</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">4,000</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">4,000</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">7,432</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">7,277</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">7,500</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">7,300</span></div>
+      </div></td>
+      <td class="td-diff"><div class="diff-pair">
+        <div class="diff-row"><span class="dl">A</span><span class="dv neg">−68</span></div>
+        <div class="diff-row"><span class="dl dl-b">B</span><span class="dv neg">−23</span></div>
+      </div></td>
+      <td class="td-flag"><div class="flags">
+        <span class="flag f-loss">ขาดทุน</span>
+        <span class="flag f-fuel">น้ำมัน&gt;50%</span>
+      </div></td>
+    </tr>
+
+    <tr>
+      <td><span class="dc dc-a">17/05/26</span></td>
+      <td><span class="dc dc-b">11/05/26</span></td>
+      <td class="dname">สุพรรณ พักสุข</td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">41.45</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">39.95</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">4,000</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">4,000</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">7,432</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">7,277</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">7,500</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">7,500</span></div>
+      </div></td>
+      <td class="td-diff"><div class="diff-pair">
+        <div class="diff-row"><span class="dl">A</span><span class="dv neg">−68</span></div>
+        <div class="diff-row"><span class="dl dl-b">B</span><span class="dv neg">−223</span></div>
+      </div></td>
+      <td class="td-flag"><div class="flags">
+        <span class="flag f-loss">ขาดทุน</span>
+        <span class="flag f-fuel">น้ำมัน&gt;50%</span>
+      </div></td>
+    </tr>
+
+    <tr>
+      <td><span class="dc dc-a">18/05/26</span></td>
+      <td><span class="dc dc-b">09/05/26</span></td>
+      <td class="dname">สุชาติ คนดี</td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">41.45</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">39.95</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">4,000</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">4,000</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">7,432</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">7,276</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">7,500</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">7,300</span></div>
+      </div></td>
+      <td class="td-diff"><div class="diff-pair">
+        <div class="diff-row"><span class="dl">A</span><span class="dv neg">−68</span></div>
+        <div class="diff-row"><span class="dl dl-b">B</span><span class="dv neg">−24</span></div>
+      </div></td>
+      <td class="td-flag"><div class="flags">
+        <span class="flag f-loss">ขาดทุน</span>
+        <span class="flag f-fuel">น้ำมัน&gt;50%</span>
+      </div></td>
+    </tr>
+
+    <tr>
+      <td><span class="dc dc-a">20/05/26</span></td>
+      <td><span class="dc dc-b">13/05/26</span></td>
+      <td class="dname">ประพัฒนพงษ์ จูโภคาทรัพย์</td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">42.20</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">40.75</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">4,000</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">4,000</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">7,510</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">7,354</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">7,500</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">7,400</span></div>
+      </div></td>
+      <td class="td-diff"><div class="diff-pair">
+        <div class="diff-row"><span class="dl">A</span><span class="dv pos">+10</span></div>
+        <div class="diff-row"><span class="dl dl-b">B</span><span class="dv neg">−46</span></div>
+      </div></td>
+      <td class="td-flag"><div class="flags">
+        <span class="flag f-loss">ขาดทุน</span>
+        <span class="flag f-fuel">น้ำมัน&gt;50%</span>
+      </div></td>
+    </tr>
+
+    <tr>
+      <td><span class="dc dc-a">21/05/26</span></td>
+      <td><span class="dc dc-b">10/05/26</span></td>
+      <td class="dname">สมเกียรติ ทองน้อย</td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">42.20</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">39.95</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">4,000</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">4,000</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">7,509</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">7,277</span></div>
+      </div></td>
+      <td><div class="ab-pair">
+        <div class="ab-row"><div class="dot dot-a"></div><span class="v-a">7,500</span></div>
+        <div class="ab-row"><div class="dot dot-b"></div><span class="v-b">7,300</span></div>
+      </div></td>
+      <td class="td-diff"><div class="diff-pair">
+        <div class="diff-row"><span class="dl">A</span><span class="dv pos">+9</span></div>
+        <div class="diff-row"><span class="dl dl-b">B</span><span class="dv neg">−23</span></div>
+      </div></td>
+      <td class="td-flag"><div class="flags">
+        <span class="flag f-loss">ขาดทุน</span>
+        <span class="flag f-fuel">น้ำมัน&gt;50%</span>
+      </div></td>
+    </tr>
+
+  </tbody>
+</table>
+</div>
+
+</body>
+</html>

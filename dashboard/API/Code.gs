@@ -74,7 +74,7 @@ function showHelpV2() {
   lines.push('- MASTER is the merged table across configured months');
   lines.push('- SUMMARY_CACHE and TRIPS_CACHE are API read models for frontend');
   lines.push('- OIL_DIESEL_DATA is auto-refreshed for PTTOR Diesel price (with safe fallback)');
-  lines.push('- SYNC_AUDIT_LOG and SYNC_AUDIT_DETAIL store before/after diff every Refresh Full Dashboard run');
+  lines.push('- SYNC_AUDIT_DETAIL stores before/after diff every Refresh Full Dashboard run');
   lines.push('- Frontend must set scripts/api-config.js to your GAS Web App URL');
   ui.alert(lines.join('\n'));
 }
@@ -943,15 +943,13 @@ function makeAuditDetailRow_(changeType, key, beforeRec, afterRec, changedFields
     beforeOil: beforeRec ? beforeRec.oil : null,
     afterOil: afterRec ? afterRec.oil : null,
     beforeMargin: beforeRec ? beforeRec.margin : null,
-    afterMargin: afterRec ? afterRec.margin : null,
-    beforePct: beforeRec ? beforeRec.pct : null,
-    afterPct: afterRec ? afterRec.pct : null
+    afterMargin: afterRec ? afterRec.margin : null
   };
 }
 
 function writeSyncAuditReport_(runId, beforeSnap, afterSnap, context) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var logSheet = getOrCreateSheet(ss, SHEET_SYNC_AUDIT_LOG);
+  hideSyncAuditLogSheet_(ss);
   var detailSheet = getOrCreateSheet(ss, SHEET_SYNC_AUDIT_DETAIL);
   var diff = diffAuditSnapshots_(beforeSnap, afterSnap, AUDIT_MAX_DETAIL_ROWS);
   var nowIso = new Date().toISOString();
@@ -960,37 +958,7 @@ function writeSyncAuditReport_(runId, beforeSnap, afterSnap, context) {
   var hasSyncErrors = context && context.syncErrors && context.syncErrors.length > 0;
   var status = hasErrors ? 'FAILED' : (hasSyncErrors ? 'PARTIAL' : 'SUCCESS');
 
-  ensureAuditLogHeader_(logSheet);
   ensureAuditDetailHeader_(detailSheet);
-
-  logSheet.appendRow([
-    nowIso,
-    runId,
-    status,
-    (context && context.durationMs) || 0,
-    (beforeSnap && beforeSnap.rows) || 0,
-    (afterSnap && afterSnap.rows) || 0,
-    ((afterSnap && afterSnap.rows) || 0) - ((beforeSnap && beforeSnap.rows) || 0),
-    diff.added,
-    diff.removed,
-    diff.changed,
-    (beforeSnap && beforeSnap.totals ? beforeSnap.totals.recv : 0),
-    (afterSnap && afterSnap.totals ? afterSnap.totals.recv : 0),
-    ((afterSnap && afterSnap.totals ? afterSnap.totals.recv : 0) - (beforeSnap && beforeSnap.totals ? beforeSnap.totals.recv : 0)),
-    (beforeSnap && beforeSnap.totals ? beforeSnap.totals.pay : 0),
-    (afterSnap && afterSnap.totals ? afterSnap.totals.pay : 0),
-    ((afterSnap && afterSnap.totals ? afterSnap.totals.pay : 0) - (beforeSnap && beforeSnap.totals ? beforeSnap.totals.pay : 0)),
-    (beforeSnap && beforeSnap.totals ? beforeSnap.totals.oil : 0),
-    (afterSnap && afterSnap.totals ? afterSnap.totals.oil : 0),
-    ((afterSnap && afterSnap.totals ? afterSnap.totals.oil : 0) - (beforeSnap && beforeSnap.totals ? beforeSnap.totals.oil : 0)),
-    (beforeSnap && beforeSnap.totals ? beforeSnap.totals.margin : 0),
-    (afterSnap && afterSnap.totals ? afterSnap.totals.margin : 0),
-    ((afterSnap && afterSnap.totals ? afterSnap.totals.margin : 0) - (beforeSnap && beforeSnap.totals ? beforeSnap.totals.margin : 0)),
-    (context && context.stepErrors ? context.stepErrors.join(' | ') : ''),
-    (context && context.syncErrors ? context.syncErrors.map(function(x){ return x.sheet + ':' + x.error; }).join(' | ') : '')
-  ]);
-
-  formatLastAuditLogRow_(logSheet);
 
   var detailRowsWritten = 0;
   if (diff.details.length > 0) {
@@ -1017,9 +985,7 @@ function writeSyncAuditReport_(runId, beforeSnap, afterSnap, context) {
         d.beforeOil,
         d.afterOil,
         d.beforeMargin,
-        d.afterMargin,
-        d.beforePct,
-        d.afterPct
+        d.afterMargin
       ]);
     }
     var startRow = detailSheet.getLastRow() + 1;
@@ -1085,32 +1051,33 @@ function ensureAuditDetailHeader_(sheet) {
     'Before Recv', 'After Recv',
     'Before Pay', 'After Pay',
     'Before Oil', 'After Oil',
-    'Before Margin', 'After Margin',
-    'Before Pct', 'After Pct'
+    'Before Margin', 'After Margin'
   ]];
-  var current = sheet.getRange(1, 1, 1, headers[0].length).getDisplayValues()[0];
+  var headerCount = headers[0].length;
+  var current = sheet.getRange(1, 1, 1, headerCount).getDisplayValues()[0];
   var changed = false;
-  for (var i = 0; i < headers[0].length; i++) {
+  for (var i = 0; i < headerCount; i++) {
     if (String(current[i] || '') !== headers[0][i]) {
       changed = true;
       break;
     }
   }
   if (changed || sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, headers[0].length).setValues(headers);
+    sheet.getRange(1, 1, 1, headerCount).setValues(headers);
   }
-  var hr = sheet.getRange(1, 1, 1, headers[0].length);
+  var hr = sheet.getRange(1, 1, 1, headerCount);
   hr.setFontWeight('bold')
     .setBackground('#111827')
     .setFontColor('#f9fafb')
     .setHorizontalAlignment('center');
   sheet.setFrozenRows(1);
   if (changed || sheet.getLastRow() <= 1) {
-    var widthMap = [180, 130, 90, 100, 260, 100, 130, 180, 110, 150, 120, 180, 110, 110, 110, 110, 110, 110, 110, 110, 100, 100];
+    var widthMap = [180, 130, 90, 100, 260, 100, 130, 180, 110, 150, 120, 180, 110, 110, 110, 110, 110, 110, 110, 110];
     for (var w = 0; w < widthMap.length; w++) {
       sheet.setColumnWidth(w + 1, widthMap[w]);
     }
   }
+  hideAuditDetailTrailingColumns_(sheet, headerCount);
 }
 
 function formatLastAuditLogRow_(sheet) {
@@ -1127,10 +1094,10 @@ function formatLastAuditLogRow_(sheet) {
 
 function formatAuditDetailRows_(sheet, startRow, rowCount) {
   if (rowCount <= 0) return;
-  var colCount = 22;
+  var colCount = 20;
   var range = sheet.getRange(startRow, 1, rowCount, colCount);
   range.setFontWeight('normal').setFontColor('#0f172a').setBackground('#ffffff');
-  sheet.getRange(startRow, 13, rowCount, 10).setNumberFormat('#,##0.00');
+  sheet.getRange(startRow, 13, rowCount, 8).setNumberFormat('#,##0.00');
   var typeValues = sheet.getRange(startRow, 4, rowCount, 1).getDisplayValues();
   for (var i = 0; i < rowCount; i++) {
     var type = String(typeValues[i][0] || '');
@@ -1182,6 +1149,7 @@ var AUDIT_MAX_DETAIL_ROWS = 400;
 
 function dailyBatchJobCore_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  hideSyncAuditLogSheet_(ss);
   Logger.log('[dailyBatchJob] === START ===');
   var t0 = new Date().getTime();
   ss.toast('Starting daily batch...', 'Running', 5);
@@ -2206,6 +2174,36 @@ function getOrCreateSheet(ss, name) {
   return sheet;
 }
 
+function hideSyncAuditLogSheet_(ss) {
+  try {
+    var spreadsheet = ss || SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = spreadsheet.getSheetByName(SHEET_SYNC_AUDIT_LOG);
+    if (!sheet || sheet.isSheetHidden()) return false;
+    var visibleSheets = spreadsheet.getSheets().filter(function(s) {
+      return !s.isSheetHidden();
+    });
+    if (visibleSheets.length <= 1) return false;
+    sheet.hideSheet();
+    return true;
+  } catch (e) {
+    Logger.log('[hideSyncAuditLogSheet_] skipped: ' + (e && e.message ? e.message : String(e)));
+    return false;
+  }
+}
+
+function hideAuditDetailTrailingColumns_(sheet, headerCount) {
+  try {
+    var lastCol = sheet.getLastColumn();
+    if (lastCol <= headerCount) return;
+    var lastRow = Math.max(sheet.getLastRow(), 1);
+    var trailingCols = lastCol - headerCount;
+    sheet.getRange(1, headerCount + 1, lastRow, trailingCols).clearContent();
+    sheet.hideColumns(headerCount + 1, trailingCols);
+  } catch (e) {
+    Logger.log('[hideAuditDetailTrailingColumns_] skipped: ' + (e && e.message ? e.message : String(e)));
+  }
+}
+
 // ============================================
 // LARGE JSON CACHE HELPERS
 // ============================================
@@ -3122,22 +3120,17 @@ function testSyncAuditReadiness() {
       changed: sameDiff.changed
     };
 
-    // 3) Ensure audit sheets + styled headers exist
-    var logSheet = withSpreadsheetRetry_(function() {
-      return getOrCreateSheet(ss, SHEET_SYNC_AUDIT_LOG);
-    }, 'getOrCreateSheet(LOG)', 3);
+    // 3) Ensure audit detail sheet + styled header exists
+    hideSyncAuditLogSheet_(ss);
     var detailSheet = withSpreadsheetRetry_(function() {
       return getOrCreateSheet(ss, SHEET_SYNC_AUDIT_DETAIL);
     }, 'getOrCreateSheet(DETAIL)', 3);
     withSpreadsheetRetry_(function() {
-      ensureAuditLogHeader_(logSheet);
       ensureAuditDetailHeader_(detailSheet);
       return true;
     }, 'ensureAuditHeaders', 3);
     report.details.auditSheets = {
-      logSheet: SHEET_SYNC_AUDIT_LOG,
       detailSheet: SHEET_SYNC_AUDIT_DETAIL,
-      logLastRow: logSheet.getLastRow(),
       detailLastRow: detailSheet.getLastRow()
     };
 

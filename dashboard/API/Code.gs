@@ -364,8 +364,22 @@ function removeAllTriggers() {
 // ============================================
 
 function dailyBatchJob() {
-  // Keep the original function name for menus/triggers, but route to the safe core implementation.
-  return dailyBatchJobCore_();
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    Logger.log('[dailyBatchJob] skipped: another dailyBatchJob run is already active');
+    return {
+      ok: false,
+      skipped: true,
+      error: 'dailyBatchJob is already running',
+      checkedAt: new Date().toISOString()
+    };
+  }
+  try {
+    // Keep the original function name for menus/triggers, but route to the safe core implementation.
+    return dailyBatchJobCore_();
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function importAllConfiguredSheetsSilent() {
@@ -1004,45 +1018,6 @@ function writeSyncAuditReport_(runId, beforeSnap, afterSnap, context) {
   };
 }
 
-function ensureAuditLogHeader_(sheet) {
-  var headers = [[
-    'Timestamp', 'Run ID', 'Status', 'Duration (ms)',
-    'Before Rows', 'After Rows', 'Delta Rows',
-    'Added', 'Removed', 'Changed',
-    'Before Recv', 'After Recv', 'Delta Recv',
-    'Before Pay', 'After Pay', 'Delta Pay',
-    'Before Oil', 'After Oil', 'Delta Oil',
-    'Before Margin', 'After Margin', 'Delta Margin',
-    'Step Errors', 'Sync Errors'
-  ]];
-  var current = sheet.getRange(1, 1, 1, headers[0].length).getDisplayValues()[0];
-  var changed = false;
-  for (var i = 0; i < headers[0].length; i++) {
-    if (String(current[i] || '') !== headers[0][i]) {
-      changed = true;
-      break;
-    }
-  }
-  if (changed || sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, headers[0].length).setValues(headers);
-  }
-  var hr = sheet.getRange(1, 1, 1, headers[0].length);
-  hr.setFontWeight('bold')
-    .setBackground('#0f172a')
-    .setFontColor('#f8fafc')
-    .setHorizontalAlignment('center');
-  sheet.setFrozenRows(1);
-  if (sheet.getLastColumn() < headers[0].length) {
-    sheet.insertColumnsAfter(sheet.getLastColumn(), headers[0].length - sheet.getLastColumn());
-  }
-  if (changed || sheet.getLastRow() <= 1) {
-    var widthMap = [180, 130, 90, 110, 100, 100, 100, 90, 90, 90, 110, 110, 110, 110, 110, 110, 110, 110, 110, 120, 120, 120, 260, 260];
-    for (var w = 0; w < widthMap.length; w++) {
-      sheet.setColumnWidth(w + 1, widthMap[w]);
-    }
-  }
-}
-
 function ensureAuditDetailHeader_(sheet) {
   var headers = [[
     'Timestamp', 'Run ID', 'Status', 'Change Type', 'Record Key',
@@ -1078,18 +1053,6 @@ function ensureAuditDetailHeader_(sheet) {
     }
   }
   hideAuditDetailTrailingColumns_(sheet, headerCount);
-}
-
-function formatLastAuditLogRow_(sheet) {
-  var r = sheet.getLastRow();
-  if (r < 2) return;
-  var rowRange = sheet.getRange(r, 1, 1, sheet.getLastColumn());
-  rowRange.setFontWeight('normal').setFontColor('#0f172a').setBackground('#ffffff');
-  sheet.getRange(r, 3).setFontWeight('bold');
-  var status = String(sheet.getRange(r, 3).getDisplayValue() || '');
-  var color = status === 'SUCCESS' ? '#166534' : (status === 'PARTIAL' ? '#9a3412' : '#991b1b');
-  sheet.getRange(r, 3).setFontColor(color);
-  sheet.getRange(r, 4, 1, 18).setNumberFormat('#,##0.00');
 }
 
 function formatAuditDetailRows_(sheet, startRow, rowCount) {
@@ -2377,11 +2340,14 @@ function doGet(e) {
 
     return jsonOut(result);
   } catch(err) {
-    return jsonOut({
+    var errorPayload = {
       error: err.message,
-      stack: err.stack,
       timestamp: new Date().toISOString()
-    });
+    };
+    if (typeof API_DEBUG_ERRORS !== 'undefined' && API_DEBUG_ERRORS) {
+      errorPayload.stack = err.stack;
+    }
+    return jsonOut(errorPayload);
   }
 }
 

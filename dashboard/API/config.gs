@@ -131,6 +131,7 @@ var SHEET_OIL_DIESEL = 'OIL_DIESEL_DATA';
 var SHEET_CONFIG = 'CONFIG';
 var ENFORCE_DOMAIN_RESTRICTION = false;
 var ALLOWED_DOMAIN = '2klogistics.co.th';
+var API_DEBUG_ERRORS = false;
 
 // -------------------------------------------------------------------------
 // API Response Helper

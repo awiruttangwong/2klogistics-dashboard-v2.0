@@ -1,0 +1,7 @@
+# Git ignore rules for logistics dashboard
+backups/
+test-results/
+.tmp/
+.windsurf/
+.vscode/
+**/node_modules/

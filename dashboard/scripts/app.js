@@ -156,11 +156,15 @@ function getActiveMonthsFromLoss(lt) {
   if (!lt || !lt.byMonth) return [];
   return MONTHS.filter(m => lt.byMonth[m] && ((lt.byMonth[m].count || 0) > 0 || (lt.byMonth[m].loss || 0) !== 0));
 }
-function monthRangeLabel(activeMonths) {
+function monthRangeLabel(activeMonths, data) {
   if (!activeMonths || activeMonths.length === 0) return '-';
   const first = MTH[activeMonths[0]] || activeMonths[0];
   const last = MTH[activeMonths[activeMonths.length - 1]] || activeMonths[activeMonths.length - 1];
-  return `${first} - ${last} ${new Date().getFullYear() + 543}`;
+  // Year-aware: derive years from data if available, else fall back to current calendar year
+  const years = (data && Array.isArray(data.daily)) ? getYearsFromRows(data.daily) : [];
+  const beYears = years.length > 0 ? years.map(y => y + 543) : [new Date().getFullYear() + 543];
+  const yearLabel = beYears.length > 1 ? `${beYears[0]}–${beYears[beYears.length - 1]}` : `${beYears[0]}`;
+  return activeMonths.length > 1 ? `${first} - ${last} ${yearLabel}` : `${first} ${yearLabel}`;
 }
 function monthCountLabel(count) {
   return `รายได้รวม ${count} เดือน`;
@@ -212,6 +216,15 @@ const mapCustomer = name => {
   const alias = CUSTOMER_ALIAS[raw] || CUSTOMER_ALIAS[raw.toLowerCase()];
   if (alias) return alias;
   return raw;
+};
+const getCustomerColor = name => {
+  const n = String(name || '').toUpperCase();
+  if (n.includes('FLASH')) return '#3b82f6'; // Blue
+  if (n.includes('J&T')) return '#8b5cf6'; // Indigo/Purple
+  if (n.includes('SPX')) return '#f59e0b'; // Orange
+  if (n.includes('KEX') || n.includes('KERRY')) return '#f97316'; // Orange/Red
+  if (n.includes('BEST')) return '#ef4444'; // Red
+  return '#10b981'; // Emerald/Green for others
 };
 
 function getMonthNameFromDate(dateStr) {
@@ -591,7 +604,7 @@ async function loadLegacySummaryData() {
 async function loadLegacyTripsData() {
   await loadScriptOnce('data/fraud_data.js', 'FRAUD_DATA');
   if (typeof FRAUD_DATA === 'undefined' || !Array.isArray(FRAUD_DATA)) throw new Error('FRAUD_DATA unavailable');
-  return deepClone(FRAUD_DATA);
+  return FRAUD_DATA;
 }
 
 async function loadLegacyOilData() {
@@ -903,9 +916,7 @@ function renderAuditTable(id, config, opts = {}) {
   shell.innerHTML = `
     <div class="audit-table-toolbar">
       <div class="audit-table-toolbar-main">
-        <div class="audit-table-status">
-          <span class="audit-table-meta">${fmtB(total)} รายการ • หน้า ${state.page + 1}/${pages}${activeFilterCount ? ` • ใช้ตัวกรอง ${activeFilterCount}` : ''}</span>
-        </div>
+        ${filterHtml ? `<div class="audit-table-filter-row">${filterHtml}</div>` : ''}
       </div>
       <div class="audit-table-toolbar-side">
         <div class="audit-table-actions">
@@ -915,9 +926,11 @@ function renderAuditTable(id, config, opts = {}) {
           <select id="${id}_perpage" class="audit-table-select audit-table-select-sm">
             ${[10, 12, 25, 50].map(size => `<option value="${size}"${size === state.perPage ? ' selected' : ''}>${size} แถว</option>`).join('')}
           </select>
+          <div class="audit-table-status">
+            <span class="audit-table-meta">${fmtB(total)} รายการ • หน้า ${state.page + 1}/${pages}${activeFilterCount ? ` • ใช้ตัวกรอง ${activeFilterCount}` : ''}</span>
+          </div>
         </div>
       </div>
-      ${filterHtml ? `<div class="audit-table-filter-row audit-table-filter-row-full">${filterHtml}</div>` : ''}
     </div>
     <div class="audit-table-wrap${config.compact ? ' compact' : ''}">
       <table class="audit-table${config.compact ? ' audit-table-compact' : ''}">
@@ -1013,12 +1026,34 @@ function buildAuditTableSection(id, title, icon, color, note = '') {
 
 // Loss drill-down (on-demand + cache)
 const LOSS_DRILL_CACHE = new Map();
-const LOSS_FILTER_YEAR = 2026;
-const LOSS_FILTER_MONTH_OPTIONS = MONTHS.map((monthName, index) => ({
-  value: String(index + 1),
-  monthName,
-  label: `${String(index + 1).padStart(2, '0')} - ${(MTH[monthName] || monthName)} ${LOSS_FILTER_YEAR}`
-}));
+
+// Year-aware loss filter — detect year(s) from data instead of hardcoding 2026
+function getYearsFromRows(rows) {
+  const set = new Set();
+  (rows || []).forEach(row => {
+    const iso = normalizeIsoDate(row?.date);
+    const m = iso.match(/^(\d{4})-/);
+    if (m) set.add(Number(m[1]));
+  });
+  return Array.from(set).sort((a, b) => a - b);
+}
+
+function getPrimaryYearFromRows(rows) {
+  const years = getYearsFromRows(rows);
+  if (!years.length) return new Date().getFullYear();
+  // Pick the latest year that has data (most recent)
+  return years[years.length - 1];
+}
+
+function getLossFilterMonthOptions(year) {
+  const y = Number(year) || new Date().getFullYear();
+  return MONTHS.map((monthName, index) => ({
+    value: String(index + 1),
+    monthName,
+    year: y,
+    label: `${String(index + 1).padStart(2, '0')} - ${(MTH[monthName] || monthName)} ${y}`
+  }));
+}
 
 function lossDrillNorm(value) {
   return String(value == null ? '' : value).trim().toLowerCase();
@@ -1095,15 +1130,16 @@ function summarizeLossDrillRows(rows) {
 function buildLossDrillFilterMeta(rows) {
   const customerOptions = Array.from(new Set(rows.map(row => row.customer).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'th'));
   const routeOptions = Array.from(new Set(rows.map(row => row.route).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'th'));
+  const filterYear = getPrimaryYearFromRows(rows);
   const monthCounts = {};
   rows.forEach(row => {
     const iso = normalizeIsoDate(row.date);
     const m = iso.match(/^(\d{4})-(\d{2})-/);
-    if (!m || Number(m[1]) !== LOSS_FILTER_YEAR) return;
+    if (!m || Number(m[1]) !== filterYear) return;
     const monthNum = String(Number(m[2]));
     monthCounts[monthNum] = (monthCounts[monthNum] || 0) + 1;
   });
-  return { customerOptions, routeOptions, monthCounts };
+  return { customerOptions, routeOptions, monthCounts, filterYear };
 }
 
 function normalizeLossDrillFilterDates(filters) {
@@ -1118,7 +1154,8 @@ function normalizeLossDrillFilterDates(filters) {
 function applyLossDrillFilters(rows, filters) {
   const monthNumber = Number(filters.month);
   const hasMonth = Number.isFinite(monthNumber) && monthNumber >= 1 && monthNumber <= 12;
-  const monthRange = hasMonth ? getMonthDateRange(LOSS_FILTER_YEAR, monthNumber) : { start: '', end: '' };
+  const filterYear = filters.filterYear || getPrimaryYearFromRows(rows);
+  const monthRange = hasMonth ? getMonthDateRange(filterYear, monthNumber) : { start: '', end: '' };
   const filterCustomer = String(filters.customer || '').trim();
   const filterRoute = String(filters.route || '').trim();
 
@@ -1138,8 +1175,10 @@ function applyLossDrillFilters(rows, filters) {
 function renderLossDrillFilters(meta, filters, resultCount, totalCount, kind) {
   const showCustomer = kind !== 'customer';
   const showRoute = kind !== 'route';
-  const monthOptionsHtml = ['<option value="">ทุกเดือน (ปี 2026)</option>']
-    .concat(LOSS_FILTER_MONTH_OPTIONS.map(monthOption => {
+  const filterYear = meta.filterYear || new Date().getFullYear();
+  const monthOptions = getLossFilterMonthOptions(filterYear);
+  const monthOptionsHtml = [`<option value="">ทุกเดือน (ปี ${filterYear})</option>`]
+    .concat(monthOptions.map(monthOption => {
       const count = Number(meta.monthCounts[monthOption.value] || 0);
       const countLabel = count > 0 ? ` (${fmtB(count)} เที่ยว)` : '';
       return `<option value="${monthOption.value}"${String(filters.month) === monthOption.value ? ' selected' : ''}>${esc(monthOption.label)}${countLabel}</option>`;
@@ -1364,7 +1403,7 @@ window.openLossDrillModal = async function (kind, row, opts = {}) {
             <table class="audit-table loss-drill-table">
               <thead>
                 <tr>
-                  <th>#</th><th>วันที่</th><th>ลูกค้า</th><th>เส้นทาง</th><th>ประเภทรถ</th><th>พขร.</th><th>ทะเบียน</th>
+                  <th>ลำดับ</th><th>วันที่</th><th>ลูกค้า</th><th>เส้นทาง</th><th>ประเภทรถ</th><th>พขร.</th><th>ทะเบียน</th>
                   <th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">สำรองน้ำมัน</th>
                   <th class="is-right">ส่วนต่าง</th><th class="is-right">กำไร %</th><th>สาเหตุที่พบ</th>
                 </tr>
@@ -1426,14 +1465,16 @@ window.openLossDrillModal = async function (kind, row, opts = {}) {
         const idx = MONTHS.indexOf(row.monthKey);
         if (idx >= 0) return String(idx + 1);
       }
-      const inYearRow = payload.rows.find(r => String(r.date || '').startsWith(`${LOSS_FILTER_YEAR}-`));
+      const filterYear = filterMeta.filterYear || getPrimaryYearFromRows(payload.rows);
+      const inYearRow = payload.rows.find(r => String(r.date || '').startsWith(`${filterYear}-`));
       const monthFromRow = getMonthNumberFromIsoDate(inYearRow?.date);
       return monthFromRow ? String(monthFromRow) : '';
     })();
     const createDefaultFilters = () => normalizeLossDrillFilterDates({
       month: defaultMonth,
       customer: '',
-      route: ''
+      route: '',
+      filterYear: filterMeta.filterYear
     });
     const state = {
       filters: createDefaultFilters(),
@@ -1487,7 +1528,7 @@ window.openLossDrillModal = async function (kind, row, opts = {}) {
               <table class="audit-table loss-drill-table">
                 <thead>
                   <tr>
-                    <th>#</th><th>วันที่</th><th>ลูกค้า</th><th>เส้นทาง</th><th>ประเภทรถ</th><th>พขร.</th><th>ทะเบียน</th>
+                    <th>ลำดับ</th><th>วันที่</th><th>ลูกค้า</th><th>เส้นทาง</th><th>ประเภทรถ</th><th>พขร.</th><th>ทะเบียน</th>
                     <th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">สำรองน้ำมัน</th>
                     <th class="is-right">ส่วนต่าง</th><th class="is-right">กำไร %</th><th>สาเหตุที่พบ</th>
                   </tr>
@@ -1545,6 +1586,8 @@ function barChart(items, getLabel, getW, getVal, getColor, getSub, hideW, whiteV
 // Page builders
 function buildTrend(d) {
   const s = d.summary;
+  const activeMonths = getActiveMonths(d, 'routeTrend');
+  const months = activeMonths.length > 0 ? activeMonths : MONTHS;
   // Mini KPIs inside section
   let h = `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;">
     <div class="master-mini-kpi"><div class="master-mini-kpi-label">จำนวนเที่ยวทั้งหมด</div><div class="master-mini-kpi-value" style="color:#3b82f6">${fmt(s.totalTrips)}</div><div class="master-mini-kpi-sub">เที่ยว</div></div>
@@ -1553,12 +1596,12 @@ function buildTrend(d) {
     <div class="master-mini-kpi"><div class="master-mini-kpi-label">กำไร % เฉลี่ย</div><div class="master-mini-kpi-value" style="color:#8b5cf6">${fmtP(s.avgMarginPct)}</div><div class="master-mini-kpi-sub">เฉลี่ยทุกเที่ยว</div></div>
   </div>`;
   const rows = d.routeTrend.map(r => {
-    const tot = MONTHS.reduce((a, m) => a + (r.months[m]?.trips || 0), 0);
+    const tot = months.reduce((a, m) => a + (r.months[m]?.trips || 0), 0);
     return [r.customer, r.vtype || '-', r.route, tot,
-    ...MONTHS.flatMap(m => [r.months[m]?.trips || 0, r.months[m]?.margin || 0])
+    ...months.flatMap(m => [r.months[m]?.trips || 0, r.months[m]?.margin || 0])
     ];
   });
-  const cols = ['ลูกค้า', 'ประเภทรถ', 'เส้นทาง (Route)', 'จำนวนเที่ยวรวม', ...MONTHS.flatMap(m => [MTH[m] + ' (เที่ยว)', MTH[m] + ' (ส่วนต่าง)'])];
+  const cols = ['ลูกค้า', 'ประเภทรถ', 'เส้นทาง (Route)', 'จำนวนเที่ยวรวม', ...months.flatMap(m => [MTH[m] + ' (เที่ยว)', MTH[m] + ' (ส่วนต่าง)'])];
   h += `<div class="table-card" style="margin-bottom:0"><div class="table-card-header"><h3>สรุปผลการดำเนินงานรายเส้นทางและแนวโน้มส่วนต่างกำไรประจำเดือน</h3></div><div class="table-wrap" id="t_trend"></div></div>`;
   setTimeout(() => mkTable('t_trend', cols, rows, { defaultSort: 3, defaultAsc: false }), 0);
   return h;
@@ -1606,8 +1649,12 @@ function buildCustomer(d) {
     </div>
   </div>`;
 
-  const rows = cp.map(c => [c.name, c.trips, c.recv, c.margin, c.pct, c.loss, c.oil, ...MONTHS.flatMap(m => [c.months[m]?.trips || 0, c.months[m]?.margin || 0])]);
-  const cols = ['ลูกค้า', 'จำนวนเที่ยว', 'ราคารับ', 'ส่วนต่าง', 'กำไร %', 'เที่ยวขาดทุน', 'จ่ายสำรองน้ำมัน', ...MONTHS.flatMap(m => [MTH[m] + ' (เที่ยว)', MTH[m] + ' (ส่วนต่าง)'])];
+  const months = (function () {
+    const a = MONTHS.filter(m => cp.some(c => c.months && c.months[m] && ((c.months[m].trips || 0) > 0 || (c.months[m].margin || 0) !== 0)));
+    return a.length > 0 ? a : MONTHS;
+  })();
+  const rows = cp.map(c => [c.name, c.trips, c.recv, c.margin, c.pct, c.loss, c.oil, ...months.flatMap(m => [c.months[m]?.trips || 0, c.months[m]?.margin || 0])]);
+  const cols = ['ลูกค้า', 'จำนวนเที่ยว', 'ราคารับ', 'ส่วนต่าง', 'กำไร %', 'เที่ยวขาดทุน', 'จ่ายสำรองน้ำมัน', ...months.flatMap(m => [MTH[m] + ' (เที่ยว)', MTH[m] + ' (ส่วนต่าง)'])];
   h += `<div class="table-card" style="margin-bottom:0"><div class="table-card-header"><h3>ภาพรวมผลประกอบการและเสถียรภาพรายได้จำแนกตามรายลูกค้า</h3></div><div id="t_cust"></div></div>`;
   setTimeout(() => mkTable('t_cust', cols, rows, { defaultSort: 3, defaultAsc: false }), 0);
   return h;
@@ -1782,26 +1829,31 @@ function buildVehicle(d) {
 /* ─── Full Modal Detail Builders — Professional Dashboard View ─── */
 
 function sparkline(values, labels, color, height = 100) {
+  if (!values || values.length === 0) return '';
   const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
-  const range = max - min || 1;
+  const dataMin = Math.min(...values);
+  // ALWAYS use 0 as the baseline if all values are non-negative,
+  // preventing misleading truncated bar charts.
+  const min = dataMin >= 0 ? 0 : dataMin;
+  const range = Math.max(max - min, 1);
   const avg = values.reduce((a, b) => a + b, 0) / values.length;
-  const avgH = ((avg - min) / range * height);
+  // avgH for the average line — clamped to container
+  const avgH = Math.min(height - 12, Math.max(4, ((avg - min) / range * (height - 16))));
 
   const bars = values.map((v, i) => {
-    const h = Math.max(4, ((v - min) / range * height));
+    // Bar height relative to container, leaving 8px padding top+bottom
+    const barH = Math.max(6, ((v - min) / range * (height - 16)));
     const intensity = (v - min) / range;
-    const opacity = 0.35 + (intensity * 0.65);
+    const opacity = 0.45 + (intensity * 0.55);
     const isHigh = v >= avg;
-    return `<div class="sparkline-bar" 
-      style="height:${h}px;
-             background:linear-gradient(180deg, ${color}${Math.round(opacity * 255).toString(16).padStart(2, '0')}, ${color}99);
-             opacity:${0.7 + intensity * 0.3};
-             --glow-color:${color}40;
-             animation-delay:${i * 80}ms;
-             border-radius:6px 6px 0 0;"
-      onmouseover="this.style.background='linear-gradient(180deg, ${color}, ${color}bb)';this.style.opacity='1'"
-      onmouseout="this.style.background='linear-gradient(180deg, ${color}${Math.round(opacity * 255).toString(16).padStart(2, '0')}, ${color}99)';this.style.opacity='${0.7 + intensity * 0.3}'">
+    const opacityHex = Math.round(opacity * 255).toString(16).padStart(2, '0');
+    return `<div class="sparkline-bar"
+      style="height:${barH}px;
+             background:linear-gradient(180deg, ${color}${opacityHex}, ${color}88);
+             opacity:${0.75 + intensity * 0.25};
+             animation-delay:${i * 80}ms;"
+      onmouseover="this.style.background='linear-gradient(180deg,${color},${color}cc)';this.style.opacity='1'"
+      onmouseout="this.style.background='linear-gradient(180deg,${color}${opacityHex},${color}88)';this.style.opacity='${(0.75 + intensity * 0.25).toFixed(2)}'">
       <div class="sparkline-tooltip">
         <div style="font-weight:700;color:${color};margin-bottom:2px">${esc(labels[i])}</div>
         <div style="font-size:13px;color:var(--text)">${fmt(v)} ${isHigh ? '▲' : '▼'} <span style="color:var(--muted);font-size:10px">เฉลี่ย ${fmt(Math.round(avg))}</span></div>
@@ -1811,7 +1863,7 @@ function sparkline(values, labels, color, height = 100) {
 
   return `<div class="sparkline-container" style="height:${height}px">
     ${bars}
-    <div style="position:absolute;bottom:${8 + avgH}px;left:8px;right:8px;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent);pointer-events:none;z-index:1"></div>
+    <div style="position:absolute;bottom:${8 + avgH}px;left:8px;right:8px;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.14),transparent);pointer-events:none;z-index:1"></div>
   </div>`;
 }
 
@@ -1842,8 +1894,11 @@ function buildFullTrend(d) {
   const s = d.summary;
   // Determine which months actually have data
   const activeMonths = getActiveMonths(d, 'routeTrend');
-  const monthCount = activeMonths.length || MONTHS.filter(m => d.routeTrend.some(r => r.months && r.months[m])).length || MONTHS.length;
-  const monthsToShow = activeMonths.length > 0 ? activeMonths : MONTHS.slice(0, monthCount);
+  if (activeMonths.length === 0) {
+    return `<div class="mvw-panel"><div class="mvw-panel-body" style="text-align:center;color:rgba(148,163,184,0.85);padding:40px;font-size:13px;">ยังไม่มีข้อมูลรายเดือนสำหรับการแสดงผล</div></div>`;
+  }
+  const monthCount = activeMonths.length;
+  const monthsToShow = activeMonths;
 
   // Monthly aggregates from routeTrend (only for active months)
   const monthTrips = monthsToShow.map(m => d.routeTrend.reduce((a, r) => a + (r.months[m]?.trips || 0), 0));
@@ -1865,51 +1920,265 @@ function buildFullTrend(d) {
   const monthPct = monthRevenue.map((recv, i) => recv > 0 ? (monthMargins[i] / recv) * 100 : null);
   const avgPctDelta = monthPct.length > 1 ? calcMoMDeltaPct(monthPct[monthPct.length - 1], monthPct[monthPct.length - 2], true) : null;
 
+  // Build delta HTML helpers
+  const deltaHtml = (delta, direction) => {
+    if (!Number.isFinite(Number(delta)) || Math.abs(Number(delta)) < 0.05) return '';
+    const cls = (Number(delta) >= 0) === (direction === 'up') ? 'up' : 'down';
+    const arrow = Number(delta) >= 0 ? '▲' : '▼';
+    return `<span class="mvw-kpi-delta ${cls}">${arrow} ${Math.abs(Number(delta)).toFixed(1)}%</span>`;
+  };
+
   const top10 = d.routeTrend.slice().sort((a, b) => {
     const ta = monthsToShow.reduce((s, m) => s + (a.months[m]?.trips || 0), 0);
     const tb = monthsToShow.reduce((s, m) => s + (b.months[m]?.trips || 0), 0);
     return tb - ta;
   }).slice(0, 10);
 
+  // Best/Worst month
+  const tripsMaxIdx = monthTrips.length ? monthTrips.indexOf(Math.max(...monthTrips)) : -1;
+  const tripsMinIdx = monthTrips.length ? monthTrips.indexOf(Math.min(...monthTrips)) : -1;
+  const marginMaxIdx = monthMargins.length ? monthMargins.indexOf(Math.max(...monthMargins)) : -1;
+  const marginMinIdx = monthMargins.length ? monthMargins.indexOf(Math.min(...monthMargins)) : -1;
+  const avgTripsPerMonth = monthCount > 0 ? Math.round(s.totalTrips / monthCount) : 0;
+  const avgRevenuePerMonth = monthCount > 0 ? Math.round(s.totalRevenue / monthCount) : 0;
+  const avgMarginPerMonth = monthCount > 0 ? Math.round(s.totalMargin / monthCount) : 0;
+  const avgPerTrip = s.totalTrips > 0 ? Math.round(s.totalRevenue / s.totalTrips) : 0;
+
+  const totalTripsTop = top10.reduce((a, r) => a + monthsToShow.reduce((sum, m) => sum + (r.months[m]?.trips || 0), 0), 0);
+  const totalTripsAll = s.totalTrips || 1;
+  const top10Share = (totalTripsTop / totalTripsAll * 100);
+
+  const marginColor = s.totalMargin >= 0 ? '#22c55e' : '#ef4444';
+  const pctColor = s.avgMarginPct >= 0 ? '#8b5cf6' : '#ef4444';
+  const monthRange = monthRangeLabel(monthsToShow, d);
+
   return `
-    <!-- KPI Banner -->
-    <div class="modal-full-grid">
-      ${modalKPICard('จำนวนเที่ยวทั้งหมด', fmt(s.totalTrips) + ' เที่ยว', monthRangeLabel(monthsToShow), '#3b82f6', tripsDelta)}
-      ${modalKPICard('ราคารับรวม', fmt(s.totalRevenue) + ' THB', monthCountLabel(monthCount), '#22c55e', revenueDelta)}
-      ${modalKPICard('ส่วนต่างรวม', fmt(s.totalMargin) + ' THB', s.totalMargin >= 0 ? 'ทำกำไร' : 'ขาดทุน', s.totalMargin >= 0 ? '#22c55e' : '#ef4444', marginDelta)}
-      ${modalKPICard('กำไร % เฉลี่ย', fmtP(s.avgMarginPct), 'เฉลี่ยทุกเที่ยว', '#8b5cf6', avgPctDelta)}
+    <!-- Hero -->
+    <div class="mvw-hero" style="--mvw-color:#3b82f6;--mvw-rgb:59,130,246;">
+      <div>
+        <div class="mvw-hero-kicker">Section 01 · Performance Overview</div>
+        <div class="mvw-hero-title">สรุปภาพรวมและดัชนีชี้วัดผลประกอบการหลัก</div>
+        <div class="mvw-hero-desc">รายงานสรุปผลประกอบการรายเดือน วิเคราะห์แนวโน้มเที่ยววิ่ง รายได้ ส่วนต่างกำไร และอัตรากำไร พร้อมระบุเดือนที่ทำผลงานสูงสุดและต่ำสุดเพื่อการตัดสินใจเชิงกลยุทธ์</div>
+      </div>
+      <div class="mvw-hero-meta">
+        <span class="mvw-hero-meta-label">ช่วงข้อมูล</span>
+        <span class="mvw-hero-meta-value" style="font-size:16px;">${monthRange}</span>
+      </div>
     </div>
 
-    <!-- Charts -->
-    <div class="modal-full-grid modal-full-grid-2">
-      <div class="modal-chart-area" style="background:linear-gradient(180deg, rgba(59,130,246,0.03), rgba(59,130,246,0.01));border-color:rgba(59,130,246,0.15);">
-        <div class="modal-chart-title" style="color:#3b82f6">แนวโน้มจำนวนเที่ยวรายเดือน</div>
-        ${sparkline(monthTrips, monthLabels, '#3b82f6', 100)}
-        <div style="display:flex;justify-content:space-between;margin-top:8px;padding:0 4px;">
-          ${monthLabels.map((l, i) => `<div style="text-align:center;flex:1">
-            <div style="font-size:11px;font-weight:700;color:var(--text)">${l}</div>
-            <div style="font-size:13px;font-weight:800;color:#3b82f6;margin-top:2px">${fmt(monthTrips[i])}</div>
-            ${i > 0 ? renderMoMDelta(monthTrips[i], monthTrips[i - 1], true, false) : '<div style="font-size:9px;color:var(--muted);margin-top:1px">—</div>'}
-          </div>`).join('')}
-        </div>
-        <div style="text-align:right;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.05);display:flex;align-items:baseline;justify-content:flex-end;gap:6px">
-          <span style="font-size:13px;color:var(--muted);font-weight:600">รวม</span>
-          <span style="font-size:14px;font-weight:800;color:#3b82f6">${fmt(monthTrips.reduce((a, b) => a + b, 0))} เที่ยว</span>
+    <!-- KPI Row -->
+    <div class="mvw-kpi-row">
+      <div class="mvw-kpi" style="--mvw-kpi-color:#3b82f6;">
+        <span class="mvw-kpi-label">จำนวนเที่ยวทั้งหมด</span>
+        <span class="mvw-kpi-value">${fmtB(s.totalTrips)}${deltaHtml(tripsDelta, 'up')}</span>
+        <span class="mvw-kpi-sub">เที่ยว · เฉลี่ย ${fmtB(avgTripsPerMonth)}/เดือน</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:#22c55e;">
+        <span class="mvw-kpi-label">ราคารับรวม</span>
+        <span class="mvw-kpi-value">${fmt(s.totalRevenue)}${deltaHtml(revenueDelta, 'up')}</span>
+        <span class="mvw-kpi-sub">THB · เฉลี่ย ${fmt(avgRevenuePerMonth)}/เดือน</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:${marginColor};">
+        <span class="mvw-kpi-label">ส่วนต่างรวม</span>
+        <span class="mvw-kpi-value">${fmt(s.totalMargin)}${deltaHtml(marginDelta, 'up')}</span>
+        <span class="mvw-kpi-sub">THB · ${s.totalMargin >= 0 ? 'ทำกำไร' : 'ขาดทุน'} ${fmt(avgMarginPerMonth)}/เดือน</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:${pctColor};">
+        <span class="mvw-kpi-label">กำไร % เฉลี่ย</span>
+        <span class="mvw-kpi-value">${fmtP(s.avgMarginPct)}${deltaHtml(avgPctDelta, 'up')}</span>
+        <span class="mvw-kpi-sub">เฉลี่ยทุกเที่ยว · รายได้/เที่ยว ${fmt(avgPerTrip)}</span>
+      </div>
+    </div>
+
+    <!-- Insight strip -->
+    <div class="mvw-insight-strip">
+      <div class="mvw-insight" style="--mvw-ins-color:#3b82f6;">
+        <span class="mvw-insight-dot"></span>
+        <div class="mvw-insight-body">
+          <span class="mvw-insight-label">เดือนเที่ยวสูงสุด</span>
+          <span class="mvw-insight-value">${tripsMaxIdx >= 0 ? `${monthLabels[tripsMaxIdx]} <b>${fmtB(monthTrips[tripsMaxIdx])} เที่ยว</b>` : '-'}</span>
         </div>
       </div>
-      <div class="modal-chart-area" style="background:linear-gradient(180deg, ${s.totalMargin >= 0 ? 'rgba(34,197,94,0.03), rgba(34,197,94,0.01)' : 'rgba(239,68,68,0.03), rgba(239,68,68,0.01)'});border-color:${s.totalMargin >= 0 ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)'};">
-        <div class="modal-chart-title" style="color:${s.totalMargin >= 0 ? '#22c55e' : '#ef4444'}">แนวโน้มส่วนต่างกำไรรายเดือน</div>
-        ${sparkline(monthMargins, monthLabels, s.totalMargin >= 0 ? '#22c55e' : '#ef4444', 100)}
-        <div style="display:flex;justify-content:space-between;margin-top:8px;padding:0 4px;">
-          ${monthLabels.map((l, i) => `<div style="text-align:center;flex:1">
-            <div style="font-size:11px;font-weight:700;color:var(--text)">${l}</div>
-            <div style="font-size:13px;font-weight:800;color:${s.totalMargin >= 0 ? '#22c55e' : '#ef4444'};margin-top:2px">${fmt(monthMargins[i])}</div>
-            ${i > 0 ? renderMoMDelta(monthMargins[i], monthMargins[i - 1], true, true) : '<div style="font-size:9px;color:var(--muted);margin-top:1px">—</div>'}
-          </div>`).join('')}
+      <div class="mvw-insight" style="--mvw-ins-color:#94a3b8;">
+        <span class="mvw-insight-dot"></span>
+        <div class="mvw-insight-body">
+          <span class="mvw-insight-label">เดือนเที่ยวต่ำสุด</span>
+          <span class="mvw-insight-value">${tripsMinIdx >= 0 ? `${monthLabels[tripsMinIdx]} <b>${fmtB(monthTrips[tripsMinIdx])} เที่ยว</b>` : '-'}</span>
         </div>
-        <div style="text-align:right;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.05);display:flex;align-items:baseline;justify-content:flex-end;gap:6px">
-          <span style="font-size:13px;color:var(--muted);font-weight:600">รวม</span>
-          <span style="font-size:14px;font-weight:800;color:${s.totalMargin >= 0 ? '#22c55e' : '#ef4444'}">${fmt(monthMargins.reduce((a, b) => a + b, 0))} THB</span>
+      </div>
+      <div class="mvw-insight" style="--mvw-ins-color:#22c55e;">
+        <span class="mvw-insight-dot"></span>
+        <div class="mvw-insight-body">
+          <span class="mvw-insight-label">เดือนกำไรสูงสุด</span>
+          <span class="mvw-insight-value">${marginMaxIdx >= 0 ? `${monthLabels[marginMaxIdx]} <b>${fmt(monthMargins[marginMaxIdx])} THB</b>` : '-'}</span>
+        </div>
+      </div>
+      <div class="mvw-insight" style="--mvw-ins-color:#ef4444;">
+        <span class="mvw-insight-dot"></span>
+        <div class="mvw-insight-body">
+          <span class="mvw-insight-label">เดือนกำไรต่ำสุด</span>
+          <span class="mvw-insight-value">${marginMinIdx >= 0 ? `${monthLabels[marginMinIdx]} <b>${fmt(monthMargins[marginMinIdx])} THB</b>` : '-'}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Trend charts -->
+    <div class="mvw-two-col">
+      <div class="mvw-panel" style="--mvw-panel-color:#3b82f6;">
+        <div class="mvw-panel-head">
+          <div class="mvw-panel-title-wrap">
+            <span class="mvw-panel-bar"></span>
+            <span class="mvw-panel-title">แนวโน้มจำนวนเที่ยวรายเดือน</span>
+          </div>
+          <span class="mvw-panel-meta">เฉลี่ย ${fmtB(avgTripsPerMonth)} เที่ยว/เดือน</span>
+        </div>
+        <div class="mvw-panel-body">
+          <div class="mvw-spark-wrap">${sparkline(monthTrips, monthLabels, '#3b82f6', 110)}</div>
+          <div class="mvw-spark-foot">
+            ${monthLabels.map((l, i) => `<div class="mvw-spark-month">
+              <div class="mvw-spark-month-label">${l}</div>
+              <div class="mvw-spark-month-value" style="color:#3b82f6;">${fmtB(monthTrips[i])}</div>
+              ${i > 0 ? renderMoMDelta(monthTrips[i], monthTrips[i - 1], true, false) : '<div style="font-size:9px;color:var(--muted);margin-top:2px">—</div>'}
+            </div>`).join('')}
+          </div>
+          <div class="mvw-spark-total">
+            <span>รวม</span>
+            <b style="color:#3b82f6;">${fmtB(monthTrips.reduce((a, b) => a + b, 0))} เที่ยว</b>
+          </div>
+        </div>
+      </div>
+
+      <div class="mvw-panel" style="--mvw-panel-color:${marginColor};">
+        <div class="mvw-panel-head">
+          <div class="mvw-panel-title-wrap">
+            <span class="mvw-panel-bar"></span>
+            <span class="mvw-panel-title">แนวโน้มส่วนต่างกำไรรายเดือน</span>
+          </div>
+          <span class="mvw-panel-meta">เฉลี่ย ${fmt(avgMarginPerMonth)} THB/เดือน</span>
+        </div>
+        <div class="mvw-panel-body">
+          <div class="mvw-spark-wrap">${sparkline(monthMargins, monthLabels, marginColor, 110)}</div>
+          <div class="mvw-spark-foot">
+            ${monthLabels.map((l, i) => `<div class="mvw-spark-month">
+              <div class="mvw-spark-month-label">${l}</div>
+              <div class="mvw-spark-month-value" style="color:${marginColor};">${fmt(monthMargins[i])}</div>
+              ${i > 0 ? renderMoMDelta(monthMargins[i], monthMargins[i - 1], true, true) : '<div style="font-size:9px;color:var(--muted);margin-top:2px">—</div>'}
+            </div>`).join('')}
+          </div>
+          <div class="mvw-spark-total">
+            <span>รวม</span>
+            <b style="color:${marginColor};">${fmt(monthMargins.reduce((a, b) => a + b, 0))} THB</b>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Monthly summary table -->
+    <div class="mvw-panel" style="--mvw-panel-color:#8b5cf6;">
+      <div class="mvw-panel-head">
+        <div class="mvw-panel-title-wrap">
+          <span class="mvw-panel-bar"></span>
+          <span class="mvw-panel-title">สรุปผลประกอบการรายเดือน</span>
+        </div>
+        <span class="mvw-panel-meta">${monthCount} เดือน</span>
+      </div>
+      <div class="mvw-panel-body" style="padding:0;overflow-x:auto;">
+        <table class="mvw-month-table">
+          <thead>
+            <tr>
+              <th>เดือน</th>
+              <th>จำนวนเที่ยว</th>
+              <th>ราคารับ (THB)</th>
+              <th>ส่วนต่าง (THB)</th>
+              <th>กำไร %</th>
+              <th>รายได้/เที่ยว</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${monthsToShow.map((m, i) => {
+    const trips = monthTrips[i] || 0;
+    const recv = monthRevenue[i] || 0;
+    const mg = monthMargins[i] || 0;
+    const pct = recv > 0 ? (mg / recv * 100) : 0;
+    const perTrip = trips > 0 ? recv / trips : 0;
+    const mgCls = mg >= 0 ? 'pos' : 'neg';
+    return `<tr>
+                <td>${MTH[m] || m}</td>
+                <td>${fmtB(trips)}</td>
+                <td>${fmt(recv)}</td>
+                <td class="${mgCls}">${fmt(mg)}</td>
+                <td class="${mgCls}">${fmtP(pct)}</td>
+                <td>${fmt(perTrip)}</td>
+              </tr>`;
+  }).join('')}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>รวม / เฉลี่ย</td>
+              <td>${fmtB(s.totalTrips)}</td>
+              <td>${fmt(s.totalRevenue)}</td>
+              <td class="${s.totalMargin >= 0 ? 'pos' : 'neg'}">${fmt(s.totalMargin)}</td>
+              <td class="${s.avgMarginPct >= 0 ? 'pos' : 'neg'}">${fmtP(s.avgMarginPct)}</td>
+              <td>${fmt(avgPerTrip)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Top 10 routes -->
+    <div class="mvw-panel" style="--mvw-panel-color:#3b82f6;">
+      <div class="mvw-panel-head">
+        <div class="mvw-panel-title-wrap">
+          <span class="mvw-panel-bar"></span>
+          <span class="mvw-panel-title">Top 10 เส้นทางที่มีเที่ยววิ่งมากที่สุด</span>
+        </div>
+        <span class="mvw-panel-meta">รวม ${fmtP(top10Share)} ของเที่ยวทั้งหมด</span>
+      </div>
+      <div class="mvw-panel-body" style="padding:0;">
+        <div class="mvw-rt cols-trips">
+          <div class="mvw-rt-head">
+            <span class="num">ลำดับ</span>
+            <span>เส้นทาง</span>
+            <span>ลูกค้า</span>
+            <span class="right">สัดส่วนเที่ยว</span>
+            <span class="right">ส่วนต่างรวม</span>
+          </div>
+          ${(() => {
+      // Compute max trips among top10 for proportional bar scaling
+      const top10Trips = top10.map(r => monthsToShow.reduce((sum, m) => sum + (r.months[m]?.trips || 0), 0));
+      const maxTop10 = Math.max(...top10Trips, 1);
+      return top10.map((r, i) => {
+        const tot = top10Trips[i];
+        const mg = monthsToShow.reduce((sum, m) => sum + (r.months[m]?.margin || 0), 0);
+        const sharePct = totalTripsAll > 0 ? (tot / totalTripsAll * 100) : 0;
+        // Bar width proportional to leader (rank 1 = 100%, others scaled)
+        const barW = Math.max(2, (tot / maxTop10 * 100));
+        const tier = i < 3 ? `tier-${i + 1}` : '';
+        const col = getCustomerColor(r.customer);
+        const mgCls = mg >= 0 ? 'pos' : 'neg';
+        return `<div class="mvw-rt-row ${tier}" style="--mvw-rt-color:${col};">
+                <div class="mvw-rt-medal">${String(i + 1).padStart(2, '0')}</div>
+                <div class="mvw-rt-info">
+                  <span class="mvw-rt-name" title="${esc(r.route)}">${esc(r.route)}</span>
+                  <div class="mvw-rt-meta">
+                    <span>${esc(r.vtype || '-')}</span>
+                    <span class="mvw-rt-meta-sep"></span>
+                    <span>${fmtP(sharePct)} ของเที่ยวทั้งหมด</span>
+                  </div>
+                </div>
+                <div class="mvw-rt-customer" title="${esc(r.customer)}">
+                  <span class="mvw-rt-customer-dot"></span>
+                  <span class="mvw-rt-customer-text">${esc(r.customer)}</span>
+                </div>
+                <div class="mvw-rt-mini">
+                  <div class="mvw-rt-mini-track"><div class="mvw-rt-mini-fill" style="width:${barW.toFixed(1)}%;"></div></div>
+                  <span class="mvw-rt-mini-pct">${fmtB(tot)}<small>เที่ยว</small></span>
+                </div>
+                <div class="mvw-rt-num ${mgCls}">${fmt(mg)}<small>THB</small></div>
+              </div>`;
+      }).join('');
+    })()}
         </div>
       </div>
     </div>
@@ -1941,79 +2210,153 @@ function buildFullRanking(d) {
   const avgM = allMargins.length > 0 ? allMargins.reduce((a, b) => a + b, 0) / allMargins.length : 0;
   const totalProfitMargin = [...rk.top, ...rk.bottom].filter(r => (r.margin || 0) > 0).reduce((a, r) => a + r.margin, 0);
   const totalLossMargin = [...rk.top, ...rk.bottom].filter(r => (r.margin || 0) < 0).reduce((a, r) => a + r.margin, 0);
+  const netMargin = totalProfitMargin + totalLossMargin;
+  const netCls = netMargin >= 0 ? 'pos' : 'neg';
+  const netColor = netMargin >= 0 ? '#22c55e' : '#ef4444';
+
+  const top5Detail = rk.top.slice(0, 5);
+  const bot5Detail = rk.bottom.slice(0, 5);
+  const maxTopAbs = Math.max(...top5Detail.map(r => Math.abs(r.margin || 0)), 1);
+  const maxBotAbs = Math.max(...bot5Detail.map(r => Math.abs(r.margin || 0)), 1);
 
   return `
-    <!-- KPIs -->
-    <div class="modal-full-grid modal-full-grid-3">
-      ${modalKPICard('เส้นทางทั้งหมด', fmt(uniqueRouteCount), 'เส้นทางที่มีข้อมูล', '#3b82f6')}
-      ${modalKPICard('กำไรสูงสุด', fmt(rk.top[0]?.margin) + ' THB', rk.top[0]?.route || '-', '#22c55e')}
-      ${modalKPICard('ขาดทุนสูงสุด', fmt(rk.bottom[0]?.margin) + ' THB', rk.bottom[0]?.route || '-', '#ef4444')}
+    <!-- Hero -->
+    <div class="mvw-hero" style="--mvw-color:#8b5cf6;--mvw-rgb:139,92,246;">
+      <div>
+        <div class="mvw-hero-kicker">Section 02 · Route Ranking</div>
+        <div class="mvw-hero-title">การจัดลำดับเส้นทางตามผลตอบแทนสุทธิ</div>
+        <div class="mvw-hero-desc">แสดงเส้นทางที่ทำกำไรและขาดทุนสูงสุด พร้อมวิเคราะห์การกระจายตัวของผลตอบแทนทั่วทั้งเครือข่าย เพื่อระบุจุดแข็งและความเสี่ยงทางธุรกิจ</div>
+      </div>
+      <div class="mvw-hero-meta">
+        <span class="mvw-hero-meta-label">เส้นทางทั้งหมด</span>
+        <span class="mvw-hero-meta-value">${fmtB(uniqueRouteCount)}</span>
+      </div>
     </div>
 
-    <!-- Profitability Overview -->
-    <div class="modal-chart-area" style="background:linear-gradient(180deg, rgba(139,92,246,0.03), rgba(139,92,246,0.01));border-color:rgba(139,92,246,0.15);">
-      <div class="modal-chart-title" style="color:#8b5cf6">ภาพรวมการกระจายตัวผลตอบแทน</div>
+    <!-- KPI Row -->
+    <div class="mvw-kpi-row">
+      <div class="mvw-kpi" style="--mvw-kpi-color:#3b82f6;">
+        <span class="mvw-kpi-label">เส้นทางทั้งหมด</span>
+        <span class="mvw-kpi-value">${fmtB(uniqueRouteCount)}</span>
+        <span class="mvw-kpi-sub">เส้นทางที่มีข้อมูล</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:#22c55e;">
+        <span class="mvw-kpi-label">กำไรสูงสุด</span>
+        <span class="mvw-kpi-value">${fmt(rk.top[0]?.margin || 0)}</span>
+        <span class="mvw-kpi-sub" title="${esc(rk.top[0]?.route || '-')}">THB · ${esc(rk.top[0]?.route || '-')}</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:#ef4444;">
+        <span class="mvw-kpi-label">ขาดทุนสูงสุด</span>
+        <span class="mvw-kpi-value">${fmt(rk.bottom[0]?.margin || 0)}</span>
+        <span class="mvw-kpi-sub" title="${esc(rk.bottom[0]?.route || '-')}">THB · ${esc(rk.bottom[0]?.route || '-')}</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:${netColor};">
+        <span class="mvw-kpi-label">ส่วนต่างสุทธิ</span>
+        <span class="mvw-kpi-value">${fmt(netMargin)}</span>
+        <span class="mvw-kpi-sub">THB · จากทุกเส้นทาง</span>
+      </div>
+    </div>
 
-      <!-- Main Stacked Bar -->
-      <div style="margin:16px 0;">
-        <div style="display:flex;height:36px;border-radius:10px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.25);">
-          ${profitCount > 0 ? `<div style="flex:${profitCount};background:linear-gradient(180deg, #22c55edd, #22c55e);display:flex;align-items:center;justify-content:center;min-width:60px;transition:flex 0.8s ease;">
-            <span style="font-size:12px;font-weight:800;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.3)">${profitPct}% กำไร</span>
-          </div>` : ''}
-          ${zeroCount > 0 ? `<div style="flex:${zeroCount};background:linear-gradient(180deg, #f59e0bdd, #f59e0b);display:flex;align-items:center;justify-content:center;min-width:40px;transition:flex 0.8s ease;">
-            <span style="font-size:12px;font-weight:800;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.3)">${zeroPct}% เท่าทุน</span>
-          </div>` : ''}
-          ${lossCount > 0 ? `<div style="flex:${lossCount};background:linear-gradient(180deg, #ef4444dd, #ef4444);display:flex;align-items:center;justify-content:center;min-width:60px;transition:flex 0.8s ease;">
-            <span style="font-size:12px;font-weight:800;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.3)">${lossPct}% ขาดทุน</span>
-          </div>` : ''}
+    <!-- Distribution Panel -->
+    <div class="mvw-panel" style="--mvw-panel-color:#8b5cf6;">
+      <div class="mvw-panel-head">
+        <div class="mvw-panel-title-wrap">
+          <span class="mvw-panel-bar"></span>
+          <span class="mvw-panel-title">ภาพรวมการกระจายตัวผลตอบแทน</span>
+        </div>
+        <span class="mvw-panel-meta">${fmtB(totalRoutes)} เส้นทางจัดประเภท</span>
+      </div>
+      <div class="mvw-panel-body">
+        <div class="mvw-dist">
+          ${profitCount > 0 ? `<div class="mvw-dist-seg pos" style="flex:${profitCount};">${profitPct}% กำไร</div>` : ''}
+          ${zeroCount > 0 ? `<div class="mvw-dist-seg zero" style="flex:${zeroCount};">${zeroPct}% เท่าทุน</div>` : ''}
+          ${lossCount > 0 ? `<div class="mvw-dist-seg neg" style="flex:${lossCount};">${lossPct}% ขาดทุน</div>` : ''}
+        </div>
+        <div class="mvw-stat-grid">
+          <div class="mvw-stat" style="--mvw-stat-color:#22c55e;">
+            <span class="mvw-stat-label">เส้นทางกำไร</span>
+            <span class="mvw-stat-value">${fmtB(profitCount)}</span>
+            <span class="mvw-stat-sub">${profitPct}% · รวม ${fmt(totalProfitMargin)} THB</span>
+          </div>
+          <div class="mvw-stat" style="--mvw-stat-color:#ef4444;">
+            <span class="mvw-stat-label">เส้นทางขาดทุน</span>
+            <span class="mvw-stat-value">${fmtB(lossCount)}</span>
+            <span class="mvw-stat-sub">${lossPct}% · รวม ${fmt(totalLossMargin)} THB</span>
+          </div>
+          <div class="mvw-stat" style="--mvw-stat-color:#8b5cf6;">
+            <span class="mvw-stat-label">ส่วนต่างเฉลี่ย</span>
+            <span class="mvw-stat-value">${fmt(Math.round(avgM))}</span>
+            <span class="mvw-stat-sub">THB · ต่อเส้นทาง</span>
+          </div>
         </div>
       </div>
+    </div>
 
-      <!-- Summary Cards -->
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
-        <div style="background:linear-gradient(180deg, rgba(34,197,94,0.06), rgba(34,197,94,0.02));border:1px solid rgba(34,197,94,0.2);border-radius:12px;padding:16px;text-align:center;">
-          <div style="font-size:11px;color:#22c55e;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">เส้นทางกำไร</div>
-          <div style="font-size:24px;font-weight:800;color:#22c55e;margin-bottom:2px;">${fmt(profitCount)}</div>
-          <div style="font-size:12px;color:var(--muted);">${profitPct}% ของทั้งหมด</div>
-          <div style="font-size:13px;color:var(--text);font-weight:700;margin-top:6px;">${fmt(totalProfitMargin)} THB</div>
+    <!-- Top/Bottom side-by-side -->
+    <div class="mvw-two-col">
+      <div class="mvw-panel" style="--mvw-panel-color:#22c55e;">
+        <div class="mvw-panel-head">
+          <div class="mvw-panel-title-wrap">
+            <span class="mvw-panel-bar"></span>
+            <span class="mvw-panel-title">Top 5 เส้นทางทำกำไรสูงสุด</span>
+          </div>
+          <span class="mvw-panel-meta">เรียงตามส่วนต่าง</span>
         </div>
-        <div style="background:linear-gradient(180deg, rgba(239,68,68,0.06), rgba(239,68,68,0.02));border:1px solid rgba(239,68,68,0.2);border-radius:12px;padding:16px;text-align:center;">
-          <div style="font-size:11px;color:#ef4444;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">เส้นทางขาดทุน</div>
-          <div style="font-size:24px;font-weight:800;color:#ef4444;margin-bottom:2px;">${fmt(lossCount)}</div>
-          <div style="font-size:12px;color:var(--muted);">${lossPct}% ของทั้งหมด</div>
-          <div style="font-size:13px;color:var(--text);font-weight:700;margin-top:6px;">${fmt(totalLossMargin)} THB</div>
-        </div>
-        <div style="background:linear-gradient(180deg, rgba(139,92,246,0.06), rgba(139,92,246,0.02));border:1px solid rgba(139,92,246,0.2);border-radius:12px;padding:16px;text-align:center;">
-          <div style="font-size:11px;color:#8b5cf6;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">ส่วนต่างเฉลี่ย</div>
-          <div style="font-size:24px;font-weight:800;color:#8b5cf6;margin-bottom:2px;">${fmt(Math.round(avgM))}</div>
-          <div style="font-size:12px;color:var(--muted);">THB / เส้นทาง</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:6px;">สูงสุด ${fmt(maxM)}</div>
+        <div class="mvw-panel-body" style="padding:0;">
+          <div class="mvw-rt cols-rank">
+            <div class="mvw-rt-head">
+              <span class="num">ลำดับ</span>
+              <span>เส้นทาง · ลูกค้า</span>
+              <span class="right">ส่วนต่าง / เที่ยว</span>
+            </div>
+            ${top5Detail.map((r, i) => {
+    const tier = i < 3 ? `tier-${i + 1}` : '';
+    return `<div class="mvw-rt-row ${tier}" style="--mvw-rt-color:#22c55e;">
+                <div class="mvw-rt-medal">${String(i + 1).padStart(2, '0')}</div>
+                <div class="mvw-rt-info">
+                  <span class="mvw-rt-name" title="${esc(r.route || '-')}">${esc(r.route || '-')}</span>
+                  <div class="mvw-rt-meta">
+                    <span>${esc(r.customer || '-')}</span>
+                    <span class="mvw-rt-meta-sep"></span>
+                    <span>${fmtP(r.pct || 0)}</span>
+                  </div>
+                </div>
+                <div class="mvw-rt-num pos">${fmt(r.margin)}<small>${fmtB(r.trips || 0)} เที่ยว</small></div>
+              </div>`;
+  }).join('')}
+          </div>
         </div>
       </div>
-
-      <!-- Margin Range Table -->
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.05);">
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
-          <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(255,255,255,0.02);border-radius:10px;border:1px solid var(--border);">
-            <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#22c55e22,#22c55e11);display:flex;align-items:center;justify-content:center;font-size:16px;color:#22c55e;border:1px solid #22c55e30;font-weight:800;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#75FB4C"><path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/></svg></div>
-            <div>
-              <div style="font-size:11px;color:var(--muted);font-weight:600;">กำไรสูงสุด</div>
-              <div style="font-size:16px;font-weight:800;color:#22c55e;">${fmt(maxM)} THB</div>
-            </div>
+      <div class="mvw-panel" style="--mvw-panel-color:#ef4444;">
+        <div class="mvw-panel-head">
+          <div class="mvw-panel-title-wrap">
+            <span class="mvw-panel-bar"></span>
+            <span class="mvw-panel-title">Top 5 เส้นทางขาดทุนสูงสุด</span>
           </div>
-          <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(255,255,255,0.02);border-radius:10px;border:1px solid var(--border);">
-            <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#ef444422,#ef444411);display:flex;align-items:center;justify-content:center;font-size:16px;color:#ef4444;border:1px solid #ef444430;font-weight:800;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#EA3323" style="display:block"><path d="M200-440v-80h560v80H200Z"/></svg></div>
-            <div>
-              <div style="font-size:11px;color:var(--muted);font-weight:600;">ขาดทุนสูงสุด</div>
-              <div style="font-size:16px;font-weight:800;color:#ef4444;">${fmt(minM)} THB</div>
+          <span class="mvw-panel-meta">เรียงตามส่วนต่าง</span>
+        </div>
+        <div class="mvw-panel-body" style="padding:0;">
+          <div class="mvw-rt cols-rank">
+            <div class="mvw-rt-head">
+              <span class="num">ลำดับ</span>
+              <span>เส้นทาง · ลูกค้า</span>
+              <span class="right">ส่วนต่าง / เที่ยว</span>
             </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(255,255,255,0.02);border-radius:10px;border:1px solid var(--border);">
-            <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#8b5cf622,#8b5cf611);display:flex;align-items:center;justify-content:center;font-size:16px;color:#8b5cf6;border:1px solid #8b5cf630;font-weight:800;"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#75FB4C"><path d="M441-120v-86q-53-12-91.5-46T293-348l74-30q15 48 44.5 73t77.5 25q41 0 69.5-18.5T587-356q0-35-22-55.5T463-458q-86-27-118-64.5T313-614q0-65 42-101t86-41v-84h80v84q50 8 82.5 36.5T651-650l-74 32q-12-32-34-48t-60-16q-44 0-67 19.5T393-614q0 33 30 52t104 40q69 20 104.5 63.5T667-358q0 71-42 108t-104 46v84h-80Z"/></svg></div>
-            <div>
-              <div style="font-size:11px;color:var(--muted);font-weight:600;">ส่วนต่างรวมทุกเส้นทาง</div>
-              <div style="font-size:16px;font-weight:800;color:${totalProfitMargin + totalLossMargin >= 0 ? '#22c55e' : '#ef4444'};">${fmt(totalProfitMargin + totalLossMargin)} THB</div>
-            </div>
+            ${bot5Detail.map((r, i) => {
+    const tier = i < 3 ? `tier-${i + 1}` : '';
+    return `<div class="mvw-rt-row ${tier}" style="--mvw-rt-color:#ef4444;">
+                <div class="mvw-rt-medal">${String(i + 1).padStart(2, '0')}</div>
+                <div class="mvw-rt-info">
+                  <span class="mvw-rt-name" title="${esc(r.route || '-')}">${esc(r.route || '-')}</span>
+                  <div class="mvw-rt-meta">
+                    <span>${esc(r.customer || '-')}</span>
+                    <span class="mvw-rt-meta-sep"></span>
+                    <span>${fmtP(r.pct || 0)}</span>
+                  </div>
+                </div>
+                <div class="mvw-rt-num neg">${fmt(r.margin)}<small>${fmtB(r.trips || 0)} เที่ยว</small></div>
+              </div>`;
+  }).join('')}
           </div>
         </div>
       </div>
@@ -2029,26 +2372,122 @@ function buildFullCustomer(d) {
   const top10 = cp.slice(0, 10);
   const maxR = Math.max(1, ...cp.map(c => Number(c.recv) || 0));
   const maxM = Math.max(1, ...cp.filter(c => (Number(c.margin) || 0) > 0).map(c => Number(c.margin) || 0));
+  const totalRecv = cp.reduce((a, c) => a + (c.recv || 0), 0);
+  const totalMargin = cp.reduce((a, c) => a + (c.margin || 0), 0);
+  const totalTrips = cp.reduce((a, c) => a + (c.trips || 0), 0);
+  const avgPct = totalRecv > 0 ? (totalMargin / totalRecv * 100) : 0;
+  const profitCusts = cp.filter(c => (c.margin || 0) > 0).length;
+  const lossCusts = cp.filter(c => (c.margin || 0) < 0).length;
+  const totalMarginCls = totalMargin >= 0 ? 'pos' : 'neg';
+  const totalMarginColor = totalMargin >= 0 ? '#22c55e' : '#ef4444';
 
   return `
-    <!-- KPIs -->
-    <div class="modal-full-grid">
-      ${modalKPICard('ลูกค้าทั้งหมด', fmt(cp.length), 'ราย', '#3b82f6')}
-      ${modalKPICard('รายรับรวม', fmt(cp.reduce((a, c) => a + c.recv, 0)) + ' THB', 'จากทุกลูกค้า', '#22c55e')}
-      ${modalKPICard('ส่วนต่างรวม', fmt(cp.reduce((a, c) => a + c.margin, 0)) + ' THB', 'กำไรสุทธิ', '#8b5cf6')}
-      ${modalKPICard('ลูกค้ากำไรสูงสุด', cp[0]?.name || '-', fmt(cp[0]?.margin) + ' THB', '#f59e0b')}
+    <!-- Hero -->
+    <div class="mvw-hero" style="--mvw-color:#22c55e;--mvw-rgb:34,197,94;">
+      <div>
+        <div class="mvw-hero-kicker">Section 03 · Customer Profitability</div>
+        <div class="mvw-hero-title">อัตราผลตอบแทนและส่วนต่างกำไรรายลูกค้า</div>
+        <div class="mvw-hero-desc">ภาพรวมรายได้ ส่วนต่างกำไร และสัดส่วนของลูกค้าแต่ละราย ใช้สำหรับวิเคราะห์ portfolio ลูกค้า ระบุลูกค้าหลักและลูกค้าเสี่ยง</div>
+      </div>
+      <div class="mvw-hero-meta">
+        <span class="mvw-hero-meta-label">ลูกค้าทั้งหมด</span>
+        <span class="mvw-hero-meta-value">${fmtB(cp.length)}</span>
+      </div>
     </div>
 
-    <!-- Revenue Bar Chart -->
-    <div class="modal-chart-area">
-      <div class="modal-chart-title" style="color:#ffffff">รวมราคารับแยกตามลูกค้า </div>
-      ${barChart(top10, c => c.name, c => (Number(c.recv) || 0) / maxR * 100, c => fmt(c.recv) + ' THB', (c, i) => COLORS[i % 10], c => fmt(c.trips) + ' เที่ยว', true, true)}
+    <!-- KPI Row -->
+    <div class="mvw-kpi-row">
+      <div class="mvw-kpi" style="--mvw-kpi-color:#3b82f6;">
+        <span class="mvw-kpi-label">ลูกค้าทั้งหมด</span>
+        <span class="mvw-kpi-value">${fmtB(cp.length)}</span>
+        <span class="mvw-kpi-sub">ราย · ${fmtB(totalTrips)} เที่ยว</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:#22c55e;">
+        <span class="mvw-kpi-label">รายรับรวม</span>
+        <span class="mvw-kpi-value">${fmt(totalRecv)}</span>
+        <span class="mvw-kpi-sub">THB · จากทุกลูกค้า</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:${totalMarginColor};">
+        <span class="mvw-kpi-label">ส่วนต่างรวม</span>
+        <span class="mvw-kpi-value">${fmt(totalMargin)}</span>
+        <span class="mvw-kpi-sub">THB · กำไรสุทธิ ${fmtP(avgPct)}</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:#f59e0b;">
+        <span class="mvw-kpi-label">ลูกค้ากำไรสูงสุด</span>
+        <span class="mvw-kpi-value" style="font-size:clamp(14px,1.3vw,17px);" title="${esc(cp[0]?.name || '-')}">${esc(cp[0]?.name || '-')}</span>
+        <span class="mvw-kpi-sub">ส่วนต่าง ${fmt(cp[0]?.margin || 0)} THB</span>
+      </div>
     </div>
 
-    <!-- Margin Bar Chart -->
-    <div class="modal-chart-area">
-      <div class="modal-chart-title" style="color:#ffffff">รวมส่วนต่างกำไรแยกตามลูกค้า </div>
-      ${barChart(top10, c => c.name, c => Math.abs(Number(c.margin) || 0) / maxM * 100, c => fmt(c.margin) + ' THB', (c, i) => (c.margin || 0) >= 0 ? COLORS[i % 10] : '#ef4444', c => fmtP(c.pct), true, true)}
+    <!-- Distribution -->
+    <div class="mvw-panel" style="--mvw-panel-color:#22c55e;">
+      <div class="mvw-panel-head">
+        <div class="mvw-panel-title-wrap">
+          <span class="mvw-panel-bar"></span>
+          <span class="mvw-panel-title">การกระจายตัวของลูกค้าตามผลตอบแทน</span>
+        </div>
+        <span class="mvw-panel-meta">${fmtB(cp.length)} ลูกค้า</span>
+      </div>
+      <div class="mvw-panel-body">
+        <div class="mvw-stat-grid">
+          <div class="mvw-stat" style="--mvw-stat-color:#22c55e;">
+            <span class="mvw-stat-label">ลูกค้าที่ทำกำไร</span>
+            <span class="mvw-stat-value">${fmtB(profitCusts)}</span>
+            <span class="mvw-stat-sub">${cp.length > 0 ? (profitCusts / cp.length * 100).toFixed(1) : '0'}% ของทั้งหมด</span>
+          </div>
+          <div class="mvw-stat" style="--mvw-stat-color:#ef4444;">
+            <span class="mvw-stat-label">ลูกค้าที่ขาดทุน</span>
+            <span class="mvw-stat-value">${fmtB(lossCusts)}</span>
+            <span class="mvw-stat-sub">${cp.length > 0 ? (lossCusts / cp.length * 100).toFixed(1) : '0'}% ของทั้งหมด</span>
+          </div>
+          <div class="mvw-stat" style="--mvw-stat-color:#8b5cf6;">
+            <span class="mvw-stat-label">รายรับเฉลี่ย/ลูกค้า</span>
+            <span class="mvw-stat-value">${fmt(cp.length > 0 ? Math.round(totalRecv / cp.length) : 0)}</span>
+            <span class="mvw-stat-sub">THB · ค่ากลาง</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top 10 Customer Detail -->
+    <div class="mvw-panel" style="--mvw-panel-color:#22c55e;">
+      <div class="mvw-panel-head">
+        <div class="mvw-panel-title-wrap">
+          <span class="mvw-panel-bar"></span>
+          <span class="mvw-panel-title">Top 10 ลูกค้า · รายได้และส่วนต่างกำไร</span>
+        </div>
+        <span class="mvw-panel-meta">เรียงตามรายได้</span>
+      </div>
+      <div class="mvw-panel-body" style="padding:0;">
+        <div class="mvw-rt cols-customer">
+          <div class="mvw-rt-head">
+            <span class="num">ลำดับ</span>
+            <span>ลูกค้า</span>
+            <span class="right">รายได้</span>
+            <span class="right">ส่วนต่าง</span>
+            <span class="right">กำไร %</span>
+          </div>
+          ${top10.map((c, i) => {
+    const tier = i < 3 ? `tier-${i + 1}` : '';
+    const col = getCustomerColor(c.name);
+    const mgPos = (c.margin || 0) >= 0;
+    const mgCls = mgPos ? 'pos' : 'neg';
+    return `<div class="mvw-rt-row ${tier}" style="--mvw-rt-color:${col};">
+              <div class="mvw-rt-medal">${String(i + 1).padStart(2, '0')}</div>
+              <div class="mvw-rt-info">
+                <span class="mvw-rt-name" title="${esc(c.name)}">${esc(c.name)}</span>
+                <div class="mvw-rt-meta">
+                  <span>${fmtB(c.trips || 0)} เที่ยว</span>
+                  ${maxR > 0 ? `<span class="mvw-rt-meta-sep"></span><span>${fmtP((c.recv || 0) / maxR * 100)} ของลูกค้าสูงสุด</span>` : ''}
+                </div>
+              </div>
+              <div class="mvw-rt-num accent">${fmt(c.recv || 0)}</div>
+              <div class="mvw-rt-num ${mgCls}">${fmt(c.margin || 0)}</div>
+              <span class="mvw-rt-pill ${mgCls}">${fmtP(c.pct || 0)}</span>
+            </div>`;
+  }).join('')}
+        </div>
+      </div>
     </div>
 
     ${buildAuditTableSection('audit-customer-profit', 'รายละเอียดผลประกอบการรายลูกค้าทั้งหมด', '&#8857;', '#22c55e', 'กรองลูกค้าและสถานะผลตอบแทน พร้อม export เพื่อตรวจสอบต่อได้')}
@@ -2059,39 +2498,143 @@ function buildFullOwnOut(d) {
   const { company: co, outsource: ou, companyTripPct, outsourceTripPct } = getSafeOwnOut(d);
   const coP = companyTripPct.toFixed(1);
   const ouP = outsourceTripPct.toFixed(1);
+  const totalTrips = (Number(co.trips) || 0) + (Number(ou.trips) || 0);
+  const totalRecv = (Number(co.recv) || 0) + (Number(ou.recv) || 0);
+  const totalMargin = (Number(co.margin) || 0) + (Number(ou.margin) || 0);
+  const coMargin = Number(co.margin) || 0;
+  const ouMargin = Number(ou.margin) || 0;
+  const coRecv = Number(co.recv) || 0;
+  const ouRecv = Number(ou.recv) || 0;
+  const coRecvPct = totalRecv > 0 ? (coRecv / totalRecv * 100) : 0;
+  const ouRecvPct = totalRecv > 0 ? (ouRecv / totalRecv * 100) : 0;
+  const coMarginPct = Math.abs(totalMargin) > 0 ? (coMargin / totalMargin * 100) : 0;
+  const ouMarginPct = Math.abs(totalMargin) > 0 ? (ouMargin / totalMargin * 100) : 0;
+  const coAvg = co.trips > 0 ? coRecv / co.trips : 0;
+  const ouAvg = ou.trips > 0 ? ouRecv / ou.trips : 0;
+  const coRateCls = coMargin >= 0 ? 'pos' : 'neg';
+  const ouRateCls = ouMargin >= 0 ? 'pos' : 'neg';
+  // Determine winners for compare table
+  const winnerTrips = co.trips > ou.trips ? 'co' : 'ou';
+  const winnerRecv = coRecv > ouRecv ? 'co' : 'ou';
+  const winnerMargin = coMargin > ouMargin ? 'co' : 'ou';
+  const winnerPct = (Number(co.pct) || 0) > (Number(ou.pct) || 0) ? 'co' : 'ou';
+  const winnerAvg = coAvg > ouAvg ? 'co' : 'ou';
 
   return `
-    <!-- KPIs + Progress Rings -->
-    <div class="modal-full-grid modal-full-grid-2" style="align-items:center;">
-      <div style="display:flex;align-items:center;gap:20px;background:linear-gradient(135deg, rgba(59,130,246,0.04), transparent);border:1px solid var(--border);border-radius:14px;padding:24px;">
-        <div style="flex-shrink:0;">${progressRing(parseFloat(coP), '#3b82f6', 100, 8)}</div>
-        <div style="flex:1;">
-          <div style="font-size:14px;font-weight:700;color:#3b82f6;margin-bottom:4px;">รถบริษัท</div>
-          <div style="font-size:28px;font-weight:800;color:var(--text);line-height:1.2;">${fmt(co.trips)} <span style="font-size:14px;color:var(--muted);">เที่ยว</span></div>
-          <div style="font-size:12px;color:var(--muted);margin-top:6px;">รายได้ ${fmt(co.recv)} THB · ส่วนต่าง <span style="color:${co.margin >= 0 ? '#22c55e' : '#ef4444'};font-weight:700;">${fmt(co.margin)}</span></div>
-        </div>
+    <!-- Hero -->
+    <div class="mvw-hero" style="--mvw-color:#f59e0b;--mvw-rgb:245,158,11;">
+      <div>
+        <div class="mvw-hero-kicker">Section 04 · Fleet Composition</div>
+        <div class="mvw-hero-title">สัดส่วนการใช้รถบริษัทและรถรับจ้างภายนอก</div>
+        <div class="mvw-hero-desc">เปรียบเทียบประสิทธิภาพและสัดส่วนระหว่างรถบริษัทและรถจ้างภายนอก เพื่อวิเคราะห์โครงสร้างต้นทุนและความคุ้มค่าในการบริหารกองรถ</div>
       </div>
-      <div style="display:flex;align-items:center;gap:20px;background:linear-gradient(135deg, rgba(99,102,241,0.04), transparent);border:1px solid var(--border);border-radius:14px;padding:24px;">
-        <div style="flex-shrink:0;">${progressRing(parseFloat(ouP), '#6366f1', 100, 8)}</div>
-        <div style="flex:1;">
-          <div style="font-size:14px;font-weight:700;color:#6366f1;margin-bottom:4px;">รถจ้างภายนอก</div>
-          <div style="font-size:28px;font-weight:800;color:var(--text);line-height:1.2;">${fmt(ou.trips)} <span style="font-size:14px;color:var(--muted);">เที่ยว</span></div>
-          <div style="font-size:12px;color:var(--muted);margin-top:6px;">รายได้ ${fmt(ou.recv)} THB · ส่วนต่าง <span style="color:${ou.margin >= 0 ? '#22c55e' : '#ef4444'};font-weight:700;">${fmt(ou.margin)}</span></div>
+      <div class="mvw-hero-meta">
+        <span class="mvw-hero-meta-label">เที่ยวรวมทั้งหมด</span>
+        <span class="mvw-hero-meta-value">${fmtB(totalTrips)}</span>
+      </div>
+    </div>
+
+    <!-- Distribution -->
+    <div class="mvw-panel" style="--mvw-panel-color:#f59e0b;">
+      <div class="mvw-panel-head">
+        <div class="mvw-panel-title-wrap">
+          <span class="mvw-panel-bar"></span>
+          <span class="mvw-panel-title">สัดส่วนการใช้รถ (จำนวนเที่ยว)</span>
+        </div>
+        <span class="mvw-panel-meta">รวม ${fmtB(totalTrips)} เที่ยว</span>
+      </div>
+      <div class="mvw-panel-body">
+        <div class="mvw-dist">
+          ${parseFloat(coP) > 0 ? `<div class="mvw-dist-seg" style="background:linear-gradient(180deg,#3b82f6d8,#1d4ed8);flex:${coP};">${coP}% รถบริษัท</div>` : ''}
+          ${parseFloat(ouP) > 0 ? `<div class="mvw-dist-seg" style="background:linear-gradient(180deg,#f59e0bd8,#d97706);flex:${ouP};">${ouP}% รถจ้างภายนอก</div>` : ''}
         </div>
       </div>
     </div>
 
-    <!-- Comparison Table -->
-    <div class="modal-chart-area">
-      <div class="modal-chart-title" style="color:#f59e0b">เปรียบเทียบตัวชี้วัดหลัก</div>
-      <div class="modal-table-wrap" style="border:none;margin-top:12px;">
-        <table>
-          <thead><tr><th>ตัวชี้วัด</th><th style="text-align:right;color:#3b82f6">รถบริษัท</th><th style="text-align:right;color:#6366f1">รถจ้างภายนอก</th></tr></thead>
+    <!-- Hero Cards (Company vs Outsource) -->
+    <div class="mvw-fleet-hero">
+      <div class="mvw-fleet-hero-card" style="--mvw-fleet:#3b82f6;--mvw-fleet-rgb:59,130,246;">
+        <div class="mvw-fleet-hero-ring">${progressRing(parseFloat(coP), '#3b82f6', 92, 8)}</div>
+        <div class="mvw-fleet-hero-info">
+          <div class="mvw-fleet-hero-label">รถบริษัท</div>
+          <div class="mvw-fleet-hero-value">${fmtB(co.trips)}<small>เที่ยว</small></div>
+          <div class="mvw-fleet-hero-stats">
+            <span>รายได้ <b>${fmt(coRecv)}</b></span>
+            <span>ส่วนต่าง <b class="${coRateCls}">${fmt(coMargin)}</b></span>
+            <span>กำไร <b class="${coRateCls}">${fmtP(co.pct || 0)}</b></span>
+          </div>
+        </div>
+      </div>
+      <div class="mvw-fleet-hero-card" style="--mvw-fleet:#f59e0b;--mvw-fleet-rgb:245,158,11;">
+        <div class="mvw-fleet-hero-ring">${progressRing(parseFloat(ouP), '#f59e0b', 92, 8)}</div>
+        <div class="mvw-fleet-hero-info">
+          <div class="mvw-fleet-hero-label">รถจ้างภายนอก</div>
+          <div class="mvw-fleet-hero-value">${fmtB(ou.trips)}<small>เที่ยว</small></div>
+          <div class="mvw-fleet-hero-stats">
+            <span>รายได้ <b>${fmt(ouRecv)}</b></span>
+            <span>ส่วนต่าง <b class="${ouRateCls}">${fmt(ouMargin)}</b></span>
+            <span>กำไร <b class="${ouRateCls}">${fmtP(ou.pct || 0)}</b></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compare Table -->
+    <div class="mvw-panel" style="--mvw-panel-color:#f59e0b;">
+      <div class="mvw-panel-head">
+        <div class="mvw-panel-title-wrap">
+          <span class="mvw-panel-bar"></span>
+          <span class="mvw-panel-title">เปรียบเทียบตัวชี้วัดหลัก</span>
+        </div>
+        <span class="mvw-panel-meta">★ = สูงกว่า</span>
+      </div>
+      <div class="mvw-panel-body" style="padding:0;">
+        <table class="mvw-cmp-table">
+          <thead>
+            <tr>
+              <th>ตัวชี้วัด</th>
+              <th class="col-co">รถบริษัท</th>
+              <th class="col-ou">รถจ้างภายนอก</th>
+              <th>รวม</th>
+            </tr>
+          </thead>
           <tbody>
-            <tr><td style="font-weight:600">จำนวนเที่ยว</td><td style="text-align:right;font-weight:700">${fmt(co.trips)}</td><td style="text-align:right;font-weight:700">${fmt(ou.trips)}</td></tr>
-            <tr><td style="font-weight:600">ราคารับรวม</td><td style="text-align:right;font-weight:700">${fmt(co.recv)}</td><td style="text-align:right;font-weight:700">${fmt(ou.recv)}</td></tr>
-            <tr><td style="font-weight:600">ส่วนต่างรวม</td><td style="text-align:right;color:${co.margin >= 0 ? '#22c55e' : '#ef4444'};font-weight:700">${fmt(co.margin)}</td><td style="text-align:right;color:${ou.margin >= 0 ? '#22c55e' : '#ef4444'};font-weight:700">${fmt(ou.margin)}</td></tr>
-            <tr><td style="font-weight:600">กำไร %</td><td style="text-align:right;font-weight:700">${fmtP(co.pct)}</td><td style="text-align:right;font-weight:700">${fmtP(ou.pct)}</td></tr>
+            <tr>
+              <td>จำนวนเที่ยว</td>
+              <td class="${winnerTrips === 'co' ? 'winner' : ''}">${fmtB(co.trips)}</td>
+              <td class="${winnerTrips === 'ou' ? 'winner' : ''}">${fmtB(ou.trips)}</td>
+              <td>${fmtB(totalTrips)}</td>
+            </tr>
+            <tr>
+              <td>ราคารับรวม (THB)</td>
+              <td class="${winnerRecv === 'co' ? 'winner' : ''}">${fmt(coRecv)}</td>
+              <td class="${winnerRecv === 'ou' ? 'winner' : ''}">${fmt(ouRecv)}</td>
+              <td>${fmt(totalRecv)}</td>
+            </tr>
+            <tr>
+              <td>สัดส่วนรายได้</td>
+              <td>${fmtP(coRecvPct)}</td>
+              <td>${fmtP(ouRecvPct)}</td>
+              <td>100.00%</td>
+            </tr>
+            <tr>
+              <td>ส่วนต่างรวม (THB)</td>
+              <td class="${coRateCls} ${winnerMargin === 'co' ? 'winner' : ''}">${fmt(coMargin)}</td>
+              <td class="${ouRateCls} ${winnerMargin === 'ou' ? 'winner' : ''}">${fmt(ouMargin)}</td>
+              <td class="${totalMargin >= 0 ? 'pos' : 'neg'}">${fmt(totalMargin)}</td>
+            </tr>
+            <tr>
+              <td>กำไร %</td>
+              <td class="${winnerPct === 'co' ? 'winner' : ''}">${fmtP(co.pct || 0)}</td>
+              <td class="${winnerPct === 'ou' ? 'winner' : ''}">${fmtP(ou.pct || 0)}</td>
+              <td>${fmtP(totalRecv > 0 ? totalMargin / totalRecv * 100 : 0)}</td>
+            </tr>
+            <tr>
+              <td>รายได้เฉลี่ย/เที่ยว</td>
+              <td class="${winnerAvg === 'co' ? 'winner' : ''}">${fmt(coAvg)}</td>
+              <td class="${winnerAvg === 'ou' ? 'winner' : ''}">${fmt(ouAvg)}</td>
+              <td>${fmt(totalTrips > 0 ? totalRecv / totalTrips : 0)}</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -2099,7 +2642,7 @@ function buildFullOwnOut(d) {
 
     <div class="modal-full-grid modal-full-grid-2">
       ${buildAuditTableSection('audit-ownout-company', 'รถบริษัท', '&#9635;', '#3b82f6', 'ตรวจสอบเส้นทางหลักของรถบริษัทตามจำนวนเที่ยวและส่วนต่าง')}
-      ${buildAuditTableSection('audit-ownout-outsource', 'รถจ้างภายนอก', '&#9733;', '#6366f1', 'ตรวจสอบเส้นทางหลักของรถจ้างภายนอกในรูปแบบเดียวกัน')}
+      ${buildAuditTableSection('audit-ownout-outsource', 'รถจ้างภายนอก', '&#9733;', '#f59e0b', 'ตรวจสอบเส้นทางหลักของรถจ้างภายนอกในรูปแบบเดียวกัน')}
     </div>
   `;
 }
@@ -2109,56 +2652,129 @@ function buildFullLoss(d) {
   if (!lt) return `<div style="text-align:center;padding:40px;color:var(--muted);"><div style="font-size:48px;margin-bottom:12px;">✅</div><div style="font-size:18px;font-weight:700;">ไม่มีข้อมูลการขาดทุน</div><div style="font-size:13px;margin-top:8px;">ทุกเส้นทางทำกำไรในช่วงเวลานี้</div></div>`;
 
   const validMonths = MONTHS.filter(m => lt.byMonth && lt.byMonth[m]);
+  if (validMonths.length === 0) {
+    return `<div class="mvw-panel"><div class="mvw-panel-body" style="text-align:center;color:rgba(148,163,184,0.85);padding:40px;font-size:13px;">ยังไม่มีข้อมูลขาดทุนรายเดือนสำหรับการแสดงผล</div></div>`;
+  }
   const monthLoss = validMonths.map(m => Math.abs(lt.byMonth[m].loss || 0));
   const monthCounts = validMonths.map(m => lt.byMonth[m].count || 0);
   const monthLabels = validMonths.map(m => MTH[m] || m);
   const activeLossMonths = getActiveMonthsFromLoss(lt);
-  const lossMonthCount = activeLossMonths.length || validMonths.length || MONTHS.length;
+  const lossMonthCount = activeLossMonths.length || validMonths.length;
+  const avgLossPerTrip = lt.total > 0 ? Math.round((lt.totalLoss || 0) / lt.total) : 0;
+  const avgPerMonth = lossMonthCount > 0 ? Math.round((lt.totalLoss || 0) / lossMonthCount) : 0;
+  const avgCountPerMonth = lossMonthCount > 0 ? Math.round((lt.total || 0) / lossMonthCount) : 0;
 
-  const custArr = Array.isArray(lt.byCustomer) ? lt.byCustomer :
-    lt.byCustomer ? Object.entries(lt.byCustomer).map(([k, v]) => ({ name: k, count: v.count || 0, loss: v.loss || 0 })) : [];
-  const routeArr = Array.isArray(lt.byRoute) ? lt.byRoute :
-    lt.byRoute ? Object.entries(lt.byRoute).map(([k, v]) => ({ name: k, count: v.count || 0, loss: v.loss || 0 })) : [];
+  const totalCountAll = monthCounts.reduce((a, b) => a + b, 0);
+  const totalLossAll = monthLoss.reduce((a, b) => a + b, 0);
 
   return `
-    <!-- KPIs -->
-    <div class="modal-full-grid">
-      ${modalKPICard('จำนวนเที่ยวขาดทุน', fmt(lt.total), 'จาก ' + fmt(lt.totalTrips) + ' เที่ยว', '#ef4444')}
-      ${modalKPICard('อัตราขาดทุน', fmtP(lt.lossPct), 'ของทั้งหมด', '#f59e0b')}
-      ${modalKPICard('มูลค่าขาดทุนรวม', fmt(lt.totalLoss) + ' THB', 'สะสม ' + lossMonthCount + ' เดือน', '#ef4444')}
-      ${modalKPICard('ขาดทุนเฉลี่ย/เที่ยว', lt.total > 0 ? fmt(Math.round((lt.totalLoss || 0) / lt.total)) + ' THB' : '-', 'เฉลี่ย', '#ef4444')}
+    <!-- Hero -->
+    <div class="mvw-hero" style="--mvw-color:#ef4444;--mvw-rgb:239,68,68;">
+      <div>
+        <div class="mvw-hero-kicker">Section 05 · Loss Trip Analysis</div>
+        <div class="mvw-hero-title">ประสิทธิภาพของกลุ่มเที่ยววิ่งที่มีส่วนต่างขาดทุน</div>
+        <div class="mvw-hero-desc">วิเคราะห์เที่ยววิ่งที่ขาดทุนตามมิติเวลา ลูกค้า และเส้นทาง เพื่อระบุจุดที่ต้องเร่งแก้ไข ลดความเสี่ยงทางการเงิน และวางแผนปรับปรุงเชิงรุก</div>
+      </div>
+      <div class="mvw-hero-meta">
+        <span class="mvw-hero-meta-label">มูลค่าขาดทุนรวม</span>
+        <span class="mvw-hero-meta-value">${fmt(lt.totalLoss || 0)}</span>
+      </div>
     </div>
 
-    <!-- Monthly Trend -->
-    <div class="modal-full-grid modal-full-grid-2">
-      <div class="modal-chart-area" style="background:linear-gradient(180deg, rgba(245,158,11,0.03), rgba(245,158,11,0.01));border-color:rgba(245,158,11,0.15);">
-        <div class="modal-chart-title" style="color:#f59e0b">จำนวนเที่ยวขาดทุนรายเดือน</div>
-        ${sparkline(monthCounts, monthLabels, '#f59e0b', 100)}
-        <div style="display:flex;justify-content:space-between;margin-top:8px;padding:0 4px;">
-          ${monthLabels.map((l, i) => `<div style="text-align:center;flex:1">
-            <div style="font-size:11px;font-weight:700;color:var(--text)">${l}</div>
-            <div style="font-size:13px;font-weight:800;color:#f59e0b;margin-top:2px">${fmt(monthCounts[i])}</div>
-            ${i > 0 ? renderMoMDelta(monthCounts[i], monthCounts[i - 1], false, false) : '<div style="font-size:9px;color:var(--muted);margin-top:1px">—</div>'}
-          </div>`).join('')}
+    <!-- KPI Row -->
+    <div class="mvw-kpi-row">
+      <div class="mvw-kpi" style="--mvw-kpi-color:#ef4444;">
+        <span class="mvw-kpi-label">เที่ยวขาดทุน</span>
+        <span class="mvw-kpi-value">${fmtB(lt.total || 0)}</span>
+        <span class="mvw-kpi-sub">จาก ${fmtB(lt.totalTrips || 0)} เที่ยว</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:#f59e0b;">
+        <span class="mvw-kpi-label">อัตราขาดทุน</span>
+        <span class="mvw-kpi-value">${fmtP(lt.lossPct || 0)}</span>
+        <span class="mvw-kpi-sub">ของเที่ยวทั้งหมด</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:#ef4444;">
+        <span class="mvw-kpi-label">มูลค่าขาดทุนรวม</span>
+        <span class="mvw-kpi-value">${fmt(lt.totalLoss || 0)}</span>
+        <span class="mvw-kpi-sub">THB · สะสม ${lossMonthCount} เดือน</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:#ef4444;">
+        <span class="mvw-kpi-label">ขาดทุนเฉลี่ย/เที่ยว</span>
+        <span class="mvw-kpi-value">${fmt(avgLossPerTrip)}</span>
+        <span class="mvw-kpi-sub">THB · ค่าเฉลี่ย</span>
+      </div>
+    </div>
+
+    <!-- Monthly Distribution Stats -->
+    <div class="mvw-panel" style="--mvw-panel-color:#ef4444;">
+      <div class="mvw-panel-head">
+        <div class="mvw-panel-title-wrap">
+          <span class="mvw-panel-bar"></span>
+          <span class="mvw-panel-title">การกระจายตัวของเที่ยวขาดทุนรายเดือน</span>
         </div>
-        <div style="text-align:right;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.05);display:flex;align-items:baseline;justify-content:flex-end;gap:6px">
-          <span style="font-size:13px;color:var(--muted);font-weight:600">รวม</span>
-          <span style="font-size:14px;font-weight:800;color:#f59e0b">${fmt(monthCounts.reduce((a, b) => a + b, 0))} เที่ยว</span>
+        <span class="mvw-panel-meta">${lossMonthCount} เดือน</span>
+      </div>
+      <div class="mvw-panel-body">
+        <div class="mvw-loss-month-grid">
+          ${validMonths.map((m, i) => {
+    const bm = lt.byMonth[m];
+    return `<div class="mvw-loss-month-tile">
+              <div class="mvw-loss-month-name">${MTH[m] || m}</div>
+              <div class="mvw-loss-month-count">${fmtB(bm.count || 0)}</div>
+              <div class="mvw-loss-month-count-label">เที่ยวขาดทุน</div>
+              <div class="mvw-loss-month-amount">${fmt(bm.loss || 0)} THB</div>
+            </div>`;
+  }).join('')}
         </div>
       </div>
-      <div class="modal-chart-area" style="background:linear-gradient(180deg, rgba(239,68,68,0.03), rgba(239,68,68,0.01));border-color:rgba(239,68,68,0.15);">
-        <div class="modal-chart-title" style="color:#ef4444">มูลค่าขาดทุนรายเดือน (THB)</div>
-        ${sparkline(monthLoss, monthLabels, '#ef4444', 100)}
-        <div style="display:flex;justify-content:space-between;margin-top:8px;padding:0 4px;">
-          ${monthLabels.map((l, i) => `<div style="text-align:center;flex:1">
-            <div style="font-size:11px;font-weight:700;color:var(--text)">${l}</div>
-            <div style="font-size:13px;font-weight:800;color:#ef4444;margin-top:2px">${fmt(monthLoss[i])}</div>
-            ${i > 0 ? renderMoMDelta(monthLoss[i], monthLoss[i - 1], false, false) : '<div style="font-size:9px;color:var(--muted);margin-top:1px">—</div>'}
-          </div>`).join('')}
+    </div>
+
+    <!-- Charts side by side -->
+    <div class="mvw-two-col">
+      <div class="mvw-panel" style="--mvw-panel-color:#f59e0b;">
+        <div class="mvw-panel-head">
+          <div class="mvw-panel-title-wrap">
+            <span class="mvw-panel-bar"></span>
+            <span class="mvw-panel-title">จำนวนเที่ยวขาดทุนรายเดือน</span>
+          </div>
+          <span class="mvw-panel-meta">เฉลี่ย ${fmtB(avgCountPerMonth)} เที่ยว/เดือน</span>
         </div>
-        <div style="text-align:right;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.05);display:flex;align-items:baseline;justify-content:flex-end;gap:6px">
-          <span style="font-size:13px;color:var(--muted);font-weight:600">รวม</span>
-          <span style="font-size:14px;font-weight:800;color:#ef4444">${fmt(monthLoss.reduce((a, b) => a + b, 0))} THB</span>
+        <div class="mvw-panel-body">
+          <div class="mvw-spark-wrap">${sparkline(monthCounts, monthLabels, '#f59e0b', 100)}</div>
+          <div class="mvw-spark-foot">
+            ${monthLabels.map((l, i) => `<div class="mvw-spark-month">
+              <div class="mvw-spark-month-label">${l}</div>
+              <div class="mvw-spark-month-value" style="color:#f59e0b;">${fmtB(monthCounts[i])}</div>
+              ${i > 0 ? renderMoMDelta(monthCounts[i], monthCounts[i - 1], false, false) : '<div style="font-size:9px;color:var(--muted);margin-top:2px">—</div>'}
+            </div>`).join('')}
+          </div>
+          <div class="mvw-spark-total">
+            <span>รวม</span>
+            <b style="color:#f59e0b;">${fmtB(totalCountAll)} เที่ยว</b>
+          </div>
+        </div>
+      </div>
+      <div class="mvw-panel" style="--mvw-panel-color:#ef4444;">
+        <div class="mvw-panel-head">
+          <div class="mvw-panel-title-wrap">
+            <span class="mvw-panel-bar"></span>
+            <span class="mvw-panel-title">มูลค่าขาดทุนรายเดือน</span>
+          </div>
+          <span class="mvw-panel-meta">เฉลี่ย ${fmt(avgPerMonth)} THB/เดือน</span>
+        </div>
+        <div class="mvw-panel-body">
+          <div class="mvw-spark-wrap">${sparkline(monthLoss, monthLabels, '#ef4444', 100)}</div>
+          <div class="mvw-spark-foot">
+            ${monthLabels.map((l, i) => `<div class="mvw-spark-month">
+              <div class="mvw-spark-month-label">${l}</div>
+              <div class="mvw-spark-month-value" style="color:#ef4444;">${fmt(monthLoss[i])}</div>
+              ${i > 0 ? renderMoMDelta(monthLoss[i], monthLoss[i - 1], false, false) : '<div style="font-size:9px;color:var(--muted);margin-top:2px">—</div>'}
+            </div>`).join('')}
+          </div>
+          <div class="mvw-spark-total">
+            <span>รวม</span>
+            <b style="color:#ef4444;">${fmt(totalLossAll)} THB</b>
+          </div>
         </div>
       </div>
     </div>
@@ -2179,7 +2795,7 @@ function buildFullVehicle(d) {
     .slice()
     .sort((a, b) => (Number(b.trips) || 0) - (Number(a.trips) || 0));
   if (!vt.length) {
-    return '<div class="modal-section-card"><div class="modal-section-body" style="text-align:center;color:var(--muted);">ไม่มีข้อมูลประเภทรถ</div></div>';
+    return '<div class="mvw-panel"><div class="mvw-panel-body" style="text-align:center;color:rgba(148,163,184,0.85);padding:32px;">ไม่มีข้อมูลประเภทรถ</div></div>';
   }
 
   const maxT = Math.max(1, ...vt.map(v => Number(v.trips) || 0));
@@ -2190,73 +2806,119 @@ function buildFullVehicle(d) {
   const bestPct = vt.reduce((b, v) => (Number(v.pct) > Number(b?.pct || -Infinity) ? v : b), vt[0]);
   const dominant = vt[0];
   const overallPct = totalRecv > 0 ? (totalMargin / totalRecv) * 100 : 0;
+  const profitTypes = vt.filter(v => (v.margin || 0) > 0).length;
+  const lossTypes = vt.filter(v => (v.margin || 0) < 0).length;
+  const totalMarginColor = totalMargin >= 0 ? '#22c55e' : '#ef4444';
 
   return `
-    <div class="modal-full-grid">
-      ${modalKPICard('ประเภทรถ', fmt(vt.length), 'ประเภท', '#3b82f6')}
-      ${modalKPICard('จำนวนเที่ยวรวม', fmt(totalTrips), 'เที่ยว', '#22c55e')}
-      ${modalKPICard('ส่วนต่างรวม', fmt(totalMargin) + ' THB', totalMargin >= 0 ? 'กำไร' : 'ขาดทุน', totalMargin >= 0 ? '#22c55e' : '#ef4444')}
-      ${modalKPICard('ทำกำไรสูงสุด', esc(bestMargin?.type || '-'), fmt(bestMargin?.margin || 0) + ' THB', '#8b5cf6')}
+    <!-- Hero -->
+    <div class="mvw-hero" style="--mvw-color:#06b6d4;--mvw-rgb:6,182,212;">
+      <div>
+        <div class="mvw-hero-kicker">Section 06 · Vehicle Performance</div>
+        <div class="mvw-hero-title">ประสิทธิภาพประเภทรถ</div>
+        <div class="mvw-hero-desc">วิเคราะห์ประสิทธิภาพแยกตามประเภทรถ ครอบคลุมจำนวนเที่ยว รายได้ ส่วนต่างกำไร และกำไรเปอร์เซ็นต์ เพื่อวางแผนการลงทุนกองรถและเลือกประเภทรถให้เหมาะสมกับเส้นทาง</div>
+      </div>
+      <div class="mvw-hero-meta">
+        <span class="mvw-hero-meta-label">ประเภทรถทั้งหมด</span>
+        <span class="mvw-hero-meta-value">${fmtB(vt.length)}</span>
+      </div>
     </div>
 
-    <div class="vehperf-modal-layout">
-      <section class="vehperf-brief">
-        <div class="vehperf-brief-head">
-          <div class="vehperf-brief-title">โครงสร้างประสิทธิภาพรถตามสัดส่วนเที่ยวและผลตอบแทน</div>
-        </div>
-        <div class="vehperf-brief-grid">
-          <div class="vehperf-brief-card">
-            <span class="vehperf-brief-label">รถที่มีสัดส่วนสูงสุด</span>
-            <strong class="vehperf-brief-value">${esc(dominant?.type || '-')}</strong>
-            <span class="vehperf-brief-sub">${(Number(dominant?.share) || 0).toFixed(2)}% ของเที่ยวทั้งหมด</span>
-          </div>
-          <div class="vehperf-brief-card">
-            <span class="vehperf-brief-label">กำไรต่อรายได้รวม</span>
-            <strong class="vehperf-brief-value">${fmtP(overallPct)}</strong>
-            <span class="vehperf-brief-sub">คิดจากส่วนต่างรวมเทียบรายได้รวม</span>
-          </div>
-          <div class="vehperf-brief-card">
-            <span class="vehperf-brief-label">กำไร % สูงสุด</span>
-            <strong class="vehperf-brief-value">${esc(bestPct?.type || '-')}</strong>
-            <span class="vehperf-brief-sub">${fmtP(bestPct?.pct || 0)} ต่อประเภทรถ</span>
-          </div>
-        </div>
-      </section>
+    <!-- KPI Row -->
+    <div class="mvw-kpi-row">
+      <div class="mvw-kpi" style="--mvw-kpi-color:#06b6d4;">
+        <span class="mvw-kpi-label">ประเภทรถ</span>
+        <span class="mvw-kpi-value">${fmtB(vt.length)}</span>
+        <span class="mvw-kpi-sub">ประเภท · ${fmtB(totalTrips)} เที่ยวรวม</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:#22c55e;">
+        <span class="mvw-kpi-label">รายได้รวม</span>
+        <span class="mvw-kpi-value">${fmt(totalRecv)}</span>
+        <span class="mvw-kpi-sub">THB · จากทุกประเภท</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:${totalMarginColor};">
+        <span class="mvw-kpi-label">ส่วนต่างรวม</span>
+        <span class="mvw-kpi-value">${fmt(totalMargin)}</span>
+        <span class="mvw-kpi-sub">THB · กำไรสุทธิ ${fmtP(overallPct)}</span>
+      </div>
+      <div class="mvw-kpi" style="--mvw-kpi-color:#8b5cf6;">
+        <span class="mvw-kpi-label">ทำกำไรสูงสุด</span>
+        <span class="mvw-kpi-value" style="font-size:clamp(14px,1.3vw,17px);" title="${esc(bestMargin?.type || '-')}">${esc(bestMargin?.type || '-')}</span>
+        <span class="mvw-kpi-sub">${fmt(bestMargin?.margin || 0)} THB</span>
+      </div>
+    </div>
 
-      <section class="vehperf-board">
-        <div class="vehperf-board-head">
-          <div>
-            <div class="vehperf-board-title">จัดเรียงตามจำนวนเที่ยวรวม</div>
+    <!-- Insights / Distribution Stats -->
+    <div class="mvw-panel" style="--mvw-panel-color:#06b6d4;">
+      <div class="mvw-panel-head">
+        <div class="mvw-panel-title-wrap">
+          <span class="mvw-panel-bar"></span>
+          <span class="mvw-panel-title">ภาพรวมโครงสร้างประสิทธิภาพประเภทรถ</span>
+        </div>
+        <span class="mvw-panel-meta">${fmtB(vt.length)} ประเภท</span>
+      </div>
+      <div class="mvw-panel-body">
+        <div class="mvw-stat-grid">
+          <div class="mvw-stat" style="--mvw-stat-color:#06b6d4;">
+            <span class="mvw-stat-label">ประเภทรถสัดส่วนสูงสุด</span>
+            <span class="mvw-stat-value" title="${esc(dominant?.type || '-')}">${esc(dominant?.type || '-')}</span>
+            <span class="mvw-stat-sub">${(Number(dominant?.share) || 0).toFixed(2)}% · ${fmtB(dominant?.trips || 0)} เที่ยว</span>
+          </div>
+          <div class="mvw-stat" style="--mvw-stat-color:#22c55e;">
+            <span class="mvw-stat-label">กำไร % สูงสุด</span>
+            <span class="mvw-stat-value" title="${esc(bestPct?.type || '-')}">${esc(bestPct?.type || '-')}</span>
+            <span class="mvw-stat-sub">${fmtP(bestPct?.pct || 0)} ต่อรายได้</span>
+          </div>
+          <div class="mvw-stat" style="--mvw-stat-color:#8b5cf6;">
+            <span class="mvw-stat-label">ประเภทกำไร / ขาดทุน</span>
+            <span class="mvw-stat-value">${fmtB(profitTypes)} / ${fmtB(lossTypes)}</span>
+            <span class="mvw-stat-sub">${vt.length} ประเภททั้งหมด</span>
           </div>
         </div>
-        <div class="vehperf-board-grid">
+      </div>
+    </div>
+
+    <!-- Vehicle list -->
+    <div class="mvw-panel" style="--mvw-panel-color:#06b6d4;">
+      <div class="mvw-panel-head">
+        <div class="mvw-panel-title-wrap">
+          <span class="mvw-panel-bar"></span>
+          <span class="mvw-panel-title">รายละเอียดประสิทธิภาพแต่ละประเภทรถ</span>
+        </div>
+        <span class="mvw-panel-meta">เรียงตามจำนวนเที่ยว</span>
+      </div>
+      <div class="mvw-panel-body" style="padding:0;">
+        <div class="mvw-rt cols-vehicle">
+          <div class="mvw-rt-head">
+            <span class="num">ลำดับ</span>
+            <span>ประเภทรถ</span>
+            <span class="right">เที่ยว · สัดส่วน</span>
+            <span class="right">รายได้</span>
+            <span class="right">ส่วนต่าง</span>
+            <span class="right">กำไร %</span>
+          </div>
           ${vt.map((v, i) => {
     const col = COLORS[i % 10];
-    const marginColor = (v.margin || 0) >= 0 ? '#22c55e' : '#ef4444';
-    const pctColor = (v.pct || 0) >= 0 ? '#22c55e' : '#ef4444';
-    const barW = Math.max(4, (Number(v.trips) || 0) / maxT * 100).toFixed(1);
-    return `
-              <article class="vehperf-board-card" style="--veh-color:${col};">
-                <div class="vehperf-board-rank">${String(i + 1).padStart(2, '0')}</div>
-                <div class="vehperf-board-row">
-                  <div>
-                    <div class="vehperf-board-type">${esc(v.type)}</div>
-                    <div class="vehperf-board-share">${(Number(v.share) || 0).toFixed(2)}% ของเที่ยวทั้งหมด</div>
-                  </div>
-                  <div class="vehperf-board-pill">${fmt(v.trips)} เที่ยว</div>
+    const tier = i < 3 ? `tier-${i + 1}` : '';
+    const sharePct = Number(v.share) || 0;
+    const marginCls = (v.margin || 0) >= 0 ? 'pos' : 'neg';
+    const pctCls = (v.pct || 0) >= 0 ? 'pos' : 'neg';
+    return `<div class="mvw-rt-row ${tier}" style="--mvw-rt-color:${col};">
+              <div class="mvw-rt-medal">${String(i + 1).padStart(2, '0')}</div>
+              <div class="mvw-rt-info">
+                <span class="mvw-rt-name" title="${esc(v.type)}">${esc(v.type)}</span>
+                <div class="mvw-rt-meta">
+                  <span>เฉลี่ย/เที่ยว ${fmt(v.avgMargin || 0)} THB</span>
                 </div>
-                <div class="vehperf-board-track"><div class="vehperf-board-fill" style="width:${barW}%;"></div></div>
-                <div class="vehperf-board-metrics">
-                  <div class="vehperf-board-metric"><span>รายได้</span><strong>${fmt(v.recv)}</strong></div>
-                  <div class="vehperf-board-metric"><span>ส่วนต่าง</span><strong style="color:${marginColor};">${fmt(v.margin)}</strong></div>
-                  <div class="vehperf-board-metric"><span>เฉลี่ย/เที่ยว</span><strong style="color:${marginColor};">${fmt(v.avgMargin)}</strong></div>
-                  <div class="vehperf-board-metric"><span>กำไร %</span><strong style="color:${pctColor};">${fmtP(v.pct)}</strong></div>
-                </div>
-              </article>
-            `;
+              </div>
+              <div class="mvw-rt-num accent">${fmtB(v.trips || 0)}<small>${sharePct.toFixed(2)}%</small></div>
+              <div class="mvw-rt-num">${fmt(v.recv || 0)}</div>
+              <div class="mvw-rt-num ${marginCls}">${fmt(v.margin || 0)}</div>
+              <span class="mvw-rt-pill ${pctCls}">${fmtP(v.pct || 0)}</span>
+            </div>`;
   }).join('')}
         </div>
-      </section>
+      </div>
     </div>
 
     ${buildAuditTableSection('audit-vehicle-performance', 'รายละเอียดประสิทธิภาพแยกตามประเภทรถ', '&#9881;', '#06b6d4', 'กรองประเภทรถตามสถานะผลตอบแทนและตรวจสอบโครงสร้างรายได้ต่อเที่ยว')}
@@ -2265,27 +2927,60 @@ function buildFullVehicle(d) {
 /* โ”€โ”€โ”€ Compact Card Builders for Master Dashboard Grid โ”€โ”€โ”€ */
 function buildTrendCard(d) {
   const s = d.summary;
+  const monthsToShow = getActiveMonths(d, 'routeTrend');
+  const months = monthsToShow.length > 0 ? monthsToShow : MONTHS;
   const topRoutes = d.routeTrend.slice().sort((a, b) => {
-    const ta = MONTHS.reduce((sum, m) => sum + (a.months[m]?.trips || 0), 0);
-    const tb = MONTHS.reduce((sum, m) => sum + (b.months[m]?.trips || 0), 0);
+    const ta = months.reduce((sum, m) => sum + (a.months[m]?.trips || 0), 0);
+    const tb = months.reduce((sum, m) => sum + (b.months[m]?.trips || 0), 0);
     return tb - ta;
   }).slice(0, 5);
+  const maxTrips = Math.max(...topRoutes.map(r => months.reduce((a, m) => a + (r.months[m]?.trips || 0), 0)), 1);
+  const marginColor = s.totalMargin >= 0 ? '#22c55e' : '#ef4444';
+  const pctColor = s.avgMarginPct >= 0 ? '#8b5cf6' : '#ef4444';
   return `
-    <div class="master-grid-2" style="margin-bottom:6px;">
-      <div class="master-mini-kpi" style="border-left:2px solid #3b82f6;"><div class="master-mini-kpi-label">เที่ยว</div><div class="master-mini-kpi-value" style="color:#3b82f6">${fmt(s.totalTrips)}</div></div>
-      <div class="master-mini-kpi" style="border-left:2px solid #22c55e;"><div class="master-mini-kpi-label">รายได้</div><div class="master-mini-kpi-value" style="color:#22c55e">${fmt(s.totalRevenue)}</div></div>
-      <div class="master-mini-kpi" style="border-left:2px solid ${s.totalMargin >= 0 ? '#22c55e' : '#ef4444'};"><div class="master-mini-kpi-label">ส่วนต่าง</div><div class="master-mini-kpi-value" style="color:${s.totalMargin >= 0 ? '#22c55e' : '#ef4444'}">${fmt(s.totalMargin)}</div></div>
-      <div class="master-mini-kpi" style="border-left:2px solid #8b5cf6;"><div class="master-mini-kpi-label">กำไร %</div><div class="master-mini-kpi-value" style="color:#8b5cf6">${fmtP(s.avgMarginPct)}</div></div>
+    <div class="mcr-kpi-row cols-2">
+      <div class="mcr-kpi" style="--mcr-accent:#3b82f6;">
+        <span class="mcr-kpi-label">จำนวนเที่ยวทั้งหมด</span>
+        <span class="mcr-kpi-value">${fmtB(s.totalTrips)}</span>
+        <span class="mcr-kpi-sub">เที่ยว</span>
+      </div>
+      <div class="mcr-kpi" style="--mcr-accent:#22c55e;">
+        <span class="mcr-kpi-label">ราคารับรวม</span>
+        <span class="mcr-kpi-value">${fmt(s.totalRevenue)}</span>
+        <span class="mcr-kpi-sub">THB</span>
+      </div>
+      <div class="mcr-kpi" style="--mcr-accent:${marginColor};">
+        <span class="mcr-kpi-label">ส่วนต่างรวม</span>
+        <span class="mcr-kpi-value">${fmt(s.totalMargin)}</span>
+        <span class="mcr-kpi-sub">THB</span>
+      </div>
+      <div class="mcr-kpi" style="--mcr-accent:${pctColor};">
+        <span class="mcr-kpi-label">กำไร % เฉลี่ย</span>
+        <span class="mcr-kpi-value">${fmtP(s.avgMarginPct)}</span>
+        <span class="mcr-kpi-sub">เฉลี่ยทุกเที่ยว</span>
+      </div>
     </div>
-    <div style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">Top 5 เส้นทาง (เที่ยว)</div>
-    <table class="master-compact-table">
-      <thead><tr><th>ลูกค้า</th><th>เส้นทาง</th><th style="text-align:right">เที่ยว</th><th style="text-align:right">ส่วนต่าง</th></tr></thead>
-      <tbody>${topRoutes.map(r => {
-    const tot = MONTHS.reduce((a, m) => a + (r.months[m]?.trips || 0), 0);
-    const mg = MONTHS.reduce((a, m) => a + (r.months[m]?.margin || 0), 0);
-    return `<tr><td>${esc(r.customer)}</td><td title="${esc(r.route)}">${esc(r.route.length > 20 ? r.route.slice(0, 20) + '...' : r.route)}</td><td style="text-align:right">${fmt(tot)}</td><td style="text-align:right;color:${mg >= 0 ? '#22c55e' : '#ef4444'}">${fmt(mg)}</td></tr>`;
-  }).join('')}</tbody>
-    </table>
+    <div class="mcr-subhead" style="--mcr-accent:#3b82f6;">
+      <span class="mcr-subhead-bar"></span>
+      <span class="mcr-subhead-text">Top 5 เส้นทาง</span>
+      <span class="mcr-subhead-meta">เรียงตามจำนวนเที่ยว</span>
+    </div>
+    ${topRoutes.map((r, i) => {
+    const tot = months.reduce((a, m) => a + (r.months[m]?.trips || 0), 0);
+    const w = (tot / maxTrips * 100).toFixed(1);
+    const col = COLORS[i % 10];
+    const routeShort = r.route.length > 22 ? r.route.slice(0, 22) + '…' : r.route;
+    return `<div class="mcr-rank-row" style="--mcr-rank-color:${col};">
+        <div class="mcr-rank-num">${String(i + 1).padStart(2, '0')}</div>
+        <div class="mcr-rank-body">
+          <div class="mcr-rank-top">
+            <span class="mcr-rank-name" title="${esc(r.customer)} — ${esc(r.route)}">${esc(r.customer)} · ${esc(routeShort)}</span>
+            <span class="mcr-rank-value">${fmtB(tot)} <span class="mcr-rank-meta">เที่ยว</span></span>
+          </div>
+          <div class="mcr-rank-bar"><div class="mcr-rank-fill" style="width:${w}%;"></div></div>
+        </div>
+      </div>`;
+  }).join('')}
   `;
 }
 
@@ -2293,20 +2988,65 @@ function buildRankingCard(d) {
   const rk = d.routeRanking;
   const top3 = rk.top.slice(0, 3);
   const bot3 = rk.bottom.slice(0, 3);
-  const mkRows = arr => arr.map(r => `<tr><td title="${esc(r.route)}">${esc(r.route.length > 22 ? r.route.slice(0, 22) + '...' : r.route)}</td><td style="text-align:right;color:${r.margin >= 0 ? '#22c55e' : '#ef4444'}">${fmt(r.margin)}</td><td style="text-align:right">${fmt(r.trips)}</td></tr>`).join('');
+  const maxTop = Math.max(...top3.map(r => Math.abs(r.margin)), 1);
+  const maxBot = Math.max(...bot3.map(r => Math.abs(r.margin)), 1);
+  const topRoute = rk.top[0]?.route || '-';
+  const botRoute = rk.bottom[0]?.route || '-';
+  const topRouteShort = topRoute.length > 26 ? topRoute.slice(0, 26) + '…' : topRoute;
+  const botRouteShort = botRoute.length > 26 ? botRoute.slice(0, 26) + '…' : botRoute;
   return `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:4px;">
-      <div class="master-mini-kpi" style="border-left:2px solid #22c55e;"><div class="master-mini-kpi-label">ดีสุด</div><div class="master-mini-kpi-value" style="color:#22c55e;font-size:13px">${fmt(rk.top[0]?.margin)}</div><div class="master-mini-kpi-sub" title="${esc(rk.top[0]?.route || '-')}">${esc((rk.top[0]?.route || '-').length > 18 ? (rk.top[0]?.route || '-').slice(0, 18) + '...' : rk.top[0]?.route || '-')}</div></div>
-      <div class="master-mini-kpi" style="border-left:2px solid #ef4444;"><div class="master-mini-kpi-label">ขาดทุนสูงสุด</div><div class="master-mini-kpi-value" style="color:#ef4444;font-size:13px">${fmt(rk.bottom[0]?.margin)}</div><div class="master-mini-kpi-sub" title="${esc(rk.bottom[0]?.route || '-')}">${esc((rk.bottom[0]?.route || '-').length > 18 ? (rk.bottom[0]?.route || '-').slice(0, 18) + '...' : rk.bottom[0]?.route || '-')}</div></div>
+    <div class="mcr-kpi-row cols-2">
+      <div class="mcr-kpi" style="--mcr-accent:#22c55e;">
+        <span class="mcr-kpi-label">เส้นทางทำกำไรสูงสุด</span>
+        <span class="mcr-kpi-value">${fmt(rk.top[0]?.margin || 0)}</span>
+        <span class="mcr-kpi-sub" title="${esc(topRoute)}">THB · ${esc(topRouteShort)}</span>
+      </div>
+      <div class="mcr-kpi" style="--mcr-accent:#ef4444;">
+        <span class="mcr-kpi-label">เส้นทางขาดทุนสูงสุด</span>
+        <span class="mcr-kpi-value">${fmt(rk.bottom[0]?.margin || 0)}</span>
+        <span class="mcr-kpi-sub" title="${esc(botRoute)}">THB · ${esc(botRouteShort)}</span>
+      </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+    <div class="mcr-rank-cols">
       <div>
-        <div style="font-size:8px;font-weight:700;color:#22c55e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">TOP 3 กำไร</div>
-        <table class="master-compact-table"><tbody>${mkRows(top3)}</tbody></table>
+        <div class="mcr-rank-col-head">
+          <span class="dot pos"></span>
+          <span class="text pos">Top 3 กำไร</span>
+        </div>
+        ${top3.map((r, i) => {
+    const w = (Math.abs(r.margin) / maxTop * 100).toFixed(1);
+    const routeShort = r.route.length > 18 ? r.route.slice(0, 18) + '…' : r.route;
+    return `<div class="mcr-rank-row" style="--mcr-rank-color:#22c55e;">
+            <div class="mcr-rank-num">${String(i + 1).padStart(2, '0')}</div>
+            <div class="mcr-rank-body">
+              <div class="mcr-rank-top">
+                <span class="mcr-rank-name" title="${esc(r.route)}">${esc(routeShort)}</span>
+                <span class="mcr-rank-value" style="color:#4ade80;">${fmt(r.margin)}</span>
+              </div>
+              <div class="mcr-rank-bar"><div class="mcr-rank-fill" style="width:${w}%;background:linear-gradient(90deg,rgba(34,197,94,.5),#22c55e);"></div></div>
+            </div>
+          </div>`;
+  }).join('')}
       </div>
       <div>
-        <div style="font-size:8px;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">TOP 3 ขาดทุน</div>
-        <table class="master-compact-table"><tbody>${mkRows(bot3)}</tbody></table>
+        <div class="mcr-rank-col-head">
+          <span class="dot neg"></span>
+          <span class="text neg">Top 3 ขาดทุน</span>
+        </div>
+        ${bot3.map((r, i) => {
+    const w = (Math.abs(r.margin) / maxBot * 100).toFixed(1);
+    const routeShort = r.route.length > 18 ? r.route.slice(0, 18) + '…' : r.route;
+    return `<div class="mcr-rank-row" style="--mcr-rank-color:#ef4444;">
+            <div class="mcr-rank-num">${String(i + 1).padStart(2, '0')}</div>
+            <div class="mcr-rank-body">
+              <div class="mcr-rank-top">
+                <span class="mcr-rank-name" title="${esc(r.route)}">${esc(routeShort)}</span>
+                <span class="mcr-rank-value" style="color:#f87171;">${fmt(r.margin)}</span>
+              </div>
+              <div class="mcr-rank-bar"><div class="mcr-rank-fill" style="width:${w}%;background:linear-gradient(90deg,rgba(239,68,68,.5),#ef4444);"></div></div>
+            </div>
+          </div>`;
+  }).join('')}
       </div>
     </div>
   `;
@@ -2316,21 +3056,53 @@ function buildCustomerCard(d) {
   const cp = d.customerProfit;
   const top5 = cp.slice(0, 5);
   const maxR = Math.max(...cp.map(c => c.recv), 1);
+  const maxM = Math.max(...cp.filter(c => c.margin > 0).map(c => c.margin), 1);
+  const totalRecv = top5.reduce((a, c) => a + c.recv, 0);
+  const totalMargin = top5.reduce((a, c) => a + c.margin, 0);
+  const marginColor = totalMargin >= 0 ? '#22c55e' : '#ef4444';
   return `
-    <div style="font-size:8px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">รายได้ Top 5 ลูกค้า</div>
+    <div class="mcr-kpi-row cols-2">
+      <div class="mcr-kpi" style="--mcr-accent:#3b82f6;">
+        <span class="mcr-kpi-label">รายได้รวม Top 5</span>
+        <span class="mcr-kpi-value">${fmt(totalRecv)}</span>
+        <span class="mcr-kpi-sub">THB</span>
+      </div>
+      <div class="mcr-kpi" style="--mcr-accent:${marginColor};">
+        <span class="mcr-kpi-label">ส่วนต่างรวม Top 5</span>
+        <span class="mcr-kpi-value">${fmt(totalMargin)}</span>
+        <span class="mcr-kpi-sub">THB</span>
+      </div>
+    </div>
+    <div class="mcr-subhead" style="--mcr-accent:#22c55e;">
+      <span class="mcr-subhead-bar"></span>
+      <span class="mcr-subhead-text">รายได้และส่วนต่างกำไร Top 5 ลูกค้า</span>
+    </div>
     ${top5.map((c, i) => {
     const w = (c.recv / maxR * 100).toFixed(1);
+    const wm = c.margin > 0 ? (c.margin / maxM * 100).toFixed(1) : 1;
     const col = COLORS[i % 10];
-    return `<div class="master-compact-bar">
-        <div class="master-compact-bar-label">${esc(c.name)}</div>
-        <div class="master-compact-bar-track"><div class="master-compact-bar-fill" style="width:${w}%;background:${col}">${fmt(c.recv)}</div></div>
+    const mgColor = c.margin >= 0 ? '#4ade80' : '#f87171';
+    const mgFill = c.margin >= 0 ? 'linear-gradient(90deg,rgba(34,197,94,.5),#22c55e)' : 'linear-gradient(90deg,rgba(239,68,68,.5),#ef4444)';
+    return `<div class="mcr-cust" style="--mcr-cust-color:${col};">
+        <div class="mcr-cust-head">
+          <span class="mcr-cust-name">
+            <span class="mcr-cust-dot"></span>
+            <span class="mcr-cust-label-name" title="${esc(c.name)}">${esc(c.name)}</span>
+          </span>
+          <span class="mcr-cust-trips">${fmtB(c.trips)} เที่ยว</span>
+        </div>
+        <div class="mcr-cust-bar">
+          <span class="mcr-cust-tag">รายได้</span>
+          <div class="mcr-cust-track"><div class="mcr-cust-fill" style="width:${w}%;background:linear-gradient(90deg,${col}80,${col});"></div></div>
+          <span class="mcr-cust-amount">${fmt(c.recv)}</span>
+        </div>
+        <div class="mcr-cust-bar">
+          <span class="mcr-cust-tag">ส่วนต่าง</span>
+          <div class="mcr-cust-track"><div class="mcr-cust-fill" style="width:${wm}%;background:${mgFill};"></div></div>
+          <span class="mcr-cust-amount" style="color:${mgColor};">${fmt(c.margin)}</span>
+        </div>
       </div>`;
   }).join('')}
-    <div style="font-size:8px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin:6px 0 2px;">สรุปลูกค้า</div>
-    <table class="master-compact-table">
-      <thead><tr><th>ลูกค้า</th><th style="text-align:right">เที่ยว</th><th style="text-align:right">รายได้</th><th style="text-align:right">ส่วนต่าง</th></tr></thead>
-      <tbody>${top5.map(c => `<tr><td>${esc(c.name)}</td><td style="text-align:right">${fmt(c.trips)}</td><td style="text-align:right">${fmt(c.recv)}</td><td style="text-align:right;color:${c.margin >= 0 ? '#22c55e' : '#ef4444'}">${fmt(c.margin)}</td></tr>`).join('')}</tbody>
-    </table>
   `;
 }
 
@@ -2341,55 +3113,56 @@ function buildOwnOutCard(d) {
   const totalTrips = (Number(co.trips) || 0) + (Number(ou.trips) || 0);
   const totalRecv = (Number(co.recv) || 0) + (Number(ou.recv) || 0);
   const totalMargin = (Number(co.margin) || 0) + (Number(ou.margin) || 0);
-  const coMarginCls = co.margin >= 0 ? 'fleet-pos' : 'fleet-neg';
-  const ouMarginCls = ou.margin >= 0 ? 'fleet-pos' : 'fleet-neg';
+  const coMarginCls = co.margin >= 0 ? 'pos' : 'neg';
+  const ouMarginCls = ou.margin >= 0 ? 'pos' : 'neg';
+  const totalMarginCls = totalMargin >= 0 ? 'pos' : 'neg';
 
   return `
-    <section class="master-fleet">
-      <div class="master-fleet-overview">
-        <div class="fleet-overview-head">
-          <span class="fleet-overview-title">\u0e2a\u0e31\u0e14\u0e2a\u0e48\u0e27\u0e19\u0e01\u0e32\u0e23\u0e43\u0e0a\u0e49\u0e23\u0e16</span>
-          <span class="fleet-overview-total">\u0e23\u0e27\u0e21 ${fmt(totalTrips)} \u0e40\u0e17\u0e35\u0e48\u0e22\u0e27</span>
+    <section class="mcr-fleet">
+      <div class="mcr-fleet-overview">
+        <div class="mcr-fleet-head">
+          <span class="mcr-fleet-title">สัดส่วนการใช้รถ</span>
+          <span class="mcr-fleet-total">รวม ${fmtB(totalTrips)} เที่ยว</span>
         </div>
-        <div class="fleet-overview-bar">
-          <div class="fleet-overview-seg fleet-company" style="width:${coP}%"></div>
-          <div class="fleet-overview-seg fleet-outsource" style="width:${ouP}%"></div>
+        <div class="mcr-fleet-bar">
+          <div class="mcr-fleet-seg co" style="width:${coP}%"></div>
+          <div class="mcr-fleet-seg ou" style="width:${ouP}%"></div>
         </div>
-        <div class="fleet-overview-legend">
-          <span><i class="fleet-dot fleet-company"></i>\u0e23\u0e16\u0e1a\u0e23\u0e34\u0e29\u0e31\u0e17 ${coP}%</span>
-          <span><i class="fleet-dot fleet-outsource"></i>\u0e23\u0e16\u0e08\u0e49\u0e32\u0e07\u0e20\u0e32\u0e22\u0e19\u0e2d\u0e01 ${ouP}%</span>
-        </div>
-      </div>
-
-      <div class="master-fleet-grid">
-        <div class="master-fleet-card fleet-company">
-          <div class="fleet-card-head">
-            <h4>\u0e23\u0e16\u0e1a\u0e23\u0e34\u0e29\u0e31\u0e17</h4>
-            <span class="fleet-share">${coP}%</span>
-          </div>
-          <div class="fleet-main">${fmt(co.trips)} <small>\u0e40\u0e17\u0e35\u0e48\u0e22\u0e27</small></div>
-          <div class="fleet-metrics">
-            <div><span>\u0e23\u0e32\u0e22\u0e44\u0e14\u0e49</span><b>${fmt(co.recv)} THB</b></div>
-            <div><span>\u0e2a\u0e48\u0e27\u0e19\u0e15\u0e48\u0e32\u0e07</span><b class="${coMarginCls}">${fmt(co.margin)} THB</b></div>
-          </div>
-        </div>
-
-        <div class="master-fleet-card fleet-outsource">
-          <div class="fleet-card-head">
-            <h4>\u0e23\u0e16\u0e08\u0e49\u0e32\u0e07\u0e20\u0e32\u0e22\u0e19\u0e2d\u0e01</h4>
-            <span class="fleet-share">${ouP}%</span>
-          </div>
-          <div class="fleet-main">${fmt(ou.trips)} <small>\u0e40\u0e17\u0e35\u0e48\u0e22\u0e27</small></div>
-          <div class="fleet-metrics">
-            <div><span>\u0e23\u0e32\u0e22\u0e44\u0e14\u0e49</span><b>${fmt(ou.recv)} THB</b></div>
-            <div><span>\u0e2a\u0e48\u0e27\u0e19\u0e15\u0e48\u0e32\u0e07</span><b class="${ouMarginCls}">${fmt(ou.margin)} THB</b></div>
-          </div>
+        <div class="mcr-fleet-legend">
+          <span><i class="co"></i>รถบริษัท <b>${coP}%</b></span>
+          <span><i class="ou"></i>รถจ้างภายนอก <b>${ouP}%</b></span>
         </div>
       </div>
 
-      <div class="master-fleet-foot">
-        <div class="fleet-foot-kpi"><span>\u0e23\u0e32\u0e22\u0e44\u0e14\u0e49\u0e23\u0e27\u0e21</span><b>${fmt(totalRecv)} THB</b></div>
-        <div class="fleet-foot-kpi"><span>\u0e2a\u0e48\u0e27\u0e19\u0e15\u0e48\u0e32\u0e07\u0e23\u0e27\u0e21</span><b class="${totalMargin >= 0 ? 'fleet-pos' : 'fleet-neg'}">${fmt(totalMargin)} THB</b></div>
+      <div class="mcr-fleet-grid">
+        <div class="mcr-fleet-card co">
+          <div class="mcr-fleet-card-head">
+            <span class="mcr-fleet-card-name">รถบริษัท</span>
+            <span class="mcr-fleet-card-share">${coP}%</span>
+          </div>
+          <div class="mcr-fleet-card-main">${fmtB(co.trips)}<small>เที่ยว</small></div>
+          <div class="mcr-fleet-card-stats">
+            <div class="mcr-fleet-stat"><span>รายได้</span><b>${fmt(co.recv)} THB</b></div>
+            <div class="mcr-fleet-stat"><span>ส่วนต่าง</span><b class="${coMarginCls}">${fmt(co.margin)} THB</b></div>
+          </div>
+        </div>
+
+        <div class="mcr-fleet-card ou">
+          <div class="mcr-fleet-card-head">
+            <span class="mcr-fleet-card-name">รถจ้างภายนอก</span>
+            <span class="mcr-fleet-card-share">${ouP}%</span>
+          </div>
+          <div class="mcr-fleet-card-main">${fmtB(ou.trips)}<small>เที่ยว</small></div>
+          <div class="mcr-fleet-card-stats">
+            <div class="mcr-fleet-stat"><span>รายได้</span><b>${fmt(ou.recv)} THB</b></div>
+            <div class="mcr-fleet-stat"><span>ส่วนต่าง</span><b class="${ouMarginCls}">${fmt(ou.margin)} THB</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mcr-fleet-foot">
+        <div class="mcr-fleet-foot-kpi"><span>รายได้รวม</span><b>${fmt(totalRecv)} THB</b></div>
+        <div class="mcr-fleet-foot-kpi"><span>ส่วนต่างรวม</span><b class="${totalMarginCls}">${fmt(totalMargin)} THB</b></div>
       </div>
     </section>
   `;
@@ -2398,23 +3171,36 @@ function buildOwnOutCard(d) {
 function buildLossCard(d) {
   const lt = d.lossTrip;
   if (!lt) return '<div style="text-align:center;color:var(--muted);font-size:11px;padding:20px;">ไม่มีข้อมูลขาดทุน</div>';
-  const validMonths = MONTHS.filter(m => lt.byMonth && lt.byMonth[m]);
-  const maxL = Math.max(...validMonths.map(m => Math.abs(lt.byMonth[m].loss || 0)), 1);
+  const allValidMonths = MONTHS.filter(m => lt.byMonth && lt.byMonth[m]);
+  // Cap compact card preview to last 6 months — full set is in modal "View All"
+  const validMonths = allValidMonths.slice(-6);
+  const moreCount = allValidMonths.length - validMonths.length;
+  const maxL = validMonths.length > 0 ? Math.max(...validMonths.map(m => Math.abs(lt.byMonth[m].loss || 0)), 1) : 1;
   return `
-    <div class="master-grid-2" style="margin-bottom:6px;">
-      <div class="master-mini-kpi" style="border-left:2px solid #ef4444;"><div class="master-mini-kpi-label">เที่ยวขาดทุน</div><div class="master-mini-kpi-value" style="color:#ef4444">${fmt(lt.total)}</div></div>
-      <div class="master-mini-kpi" style="border-left:2px solid #ef4444;"><div class="master-mini-kpi-label">มูลค่าขาดทุน</div><div class="master-mini-kpi-value" style="color:#ef4444">${fmt(lt.totalLoss)}</div></div>
+    <div class="mcr-kpi-row cols-2">
+      <div class="mcr-kpi" style="--mcr-accent:#ef4444;">
+        <span class="mcr-kpi-label">เที่ยวขาดทุน</span>
+        <span class="mcr-kpi-value">${fmtB(lt.total)}</span>
+        <span class="mcr-kpi-sub">เที่ยว</span>
+      </div>
+      <div class="mcr-kpi" style="--mcr-accent:#ef4444;">
+        <span class="mcr-kpi-label">มูลค่าขาดทุนรวม</span>
+        <span class="mcr-kpi-value">${fmt(lt.totalLoss)}</span>
+        <span class="mcr-kpi-sub">THB</span>
+      </div>
     </div>
-    <div style="font-size:8px;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">ขาดทุนรายเดือน</div>
+    <div class="mcr-subhead" style="--mcr-accent:#ef4444;">
+      <span class="mcr-subhead-bar"></span>
+      <span class="mcr-subhead-text">ขาดทุนรายเดือน</span>
+      ${moreCount > 0 ? `<span class="mcr-subhead-meta">${validMonths.length} เดือนล่าสุด · ดูทั้งหมดที่ View All</span>` : ''}
+    </div>
     ${validMonths.map(m => {
     const bm = lt.byMonth[m];
-    const w = Math.max(5, (Math.abs(bm.loss || 0) / maxL * 100)).toFixed(1);
-    return `<div style="margin-bottom:3px;">
-        <div style="display:flex;justify-content:space-between;font-size:9px;margin-bottom:1px;">
-          <span style="color:var(--text);font-weight:600;">${MTH[m] || m}</span>
-          <span style="color:#ef4444;font-weight:700;">${fmt(bm.loss)} THB · ${bm.count} เที่ยว</span>
-        </div>
-        <div class="master-loss-bar-track-compact"><div class="master-loss-bar-fill-compact" style="width:${w}%;background:linear-gradient(90deg,#ef444477,#ef4444);">${bm.count} เที่ยว</div></div>
+    const w = Math.max(4, (Math.abs(bm.loss || 0) / maxL * 100)).toFixed(1);
+    return `<div class="mcr-loss-month">
+        <span class="mcr-loss-month-label">${MTH[m] || m}</span>
+        <div class="mcr-loss-month-track"><div class="mcr-loss-month-fill" style="width:${w}%;"></div></div>
+        <div class="mcr-loss-month-stat">${fmt(bm.loss)} THB<small>${fmtB(bm.count)} เที่ยว</small></div>
       </div>`;
   }).join('')}
   `;
@@ -2432,49 +3218,44 @@ function buildVehicleCard(d) {
   const bestMargin = vt.reduce((b, v) => (Number(v.margin) > Number(b?.margin || -Infinity) ? v : b), vt[0]);
 
   return `
-    <section class="vehperf-card-shell">
-      <div class="vehperf-card-summary">
-        <div class="vehperf-card-summary-box">
-          <span class="vehperf-card-summary-label">ประเภทรถนำสัดส่วน</span>
-          <strong class="vehperf-card-summary-value">${esc(lead?.type || '-')}</strong>
-          <span class="vehperf-card-summary-sub">${(Number(lead?.share) || 0).toFixed(2)}% ของเที่ยวทั้งหมด</span>
-        </div>
-        <div class="vehperf-card-summary-box">
-          <span class="vehperf-card-summary-label">ทำกำไรสูงสุด</span>
-          <strong class="vehperf-card-summary-value">${esc(bestMargin?.type || '-')}</strong>
-          <span class="vehperf-card-summary-sub">${fmt(bestMargin?.margin || 0)} THB</span>
-        </div>
+    <div class="mcr-veh-summary">
+      <div class="mcr-veh-summary-box" style="--mcr-veh:#06b6d4;">
+        <span class="mcr-veh-summary-label">ประเภทรถนำสัดส่วน</span>
+        <span class="mcr-veh-summary-value" title="${esc(lead?.type || '-')}">${esc(lead?.type || '-')}</span>
+        <span class="mcr-veh-summary-sub">${(Number(lead?.share) || 0).toFixed(2)}% ของเที่ยวทั้งหมด</span>
       </div>
+      <div class="mcr-veh-summary-box" style="--mcr-veh:#22c55e;">
+        <span class="mcr-veh-summary-label">ทำกำไรสูงสุด</span>
+        <span class="mcr-veh-summary-value" title="${esc(bestMargin?.type || '-')}">${esc(bestMargin?.type || '-')}</span>
+        <span class="mcr-veh-summary-sub">${fmt(bestMargin?.margin || 0)} THB</span>
+      </div>
+    </div>
 
-      <div class="vehperf-card-list">
-        ${vt.map((v, i) => {
+    <div class="mcr-veh-list">
+      ${vt.map((v, i) => {
     const col = COLORS[i % 10];
     const barW = Math.max(4, (Number(v.trips) || 0) / maxT * 100).toFixed(1);
-    const marginColor = (v.margin || 0) >= 0 ? '#22c55e' : '#ef4444';
-    const pctColor = (v.pct || 0) >= 0 ? '#22c55e' : '#ef4444';
+    const marginCls = (v.margin || 0) >= 0 ? 'pos' : 'neg';
+    const pctCls = (v.pct || 0) >= 0 ? 'pos' : 'neg';
     return `
-            <article class="vehperf-card-row" style="--veh-color:${col};">
-              <div class="vehperf-card-rank">${String(i + 1).padStart(2, '0')}</div>
-              <div class="vehperf-card-main">
-                <div class="vehperf-card-top">
-                  <div>
-                    <div class="vehperf-card-type" title="${esc(v.type)}">${esc(v.type)}</div>
-                    <div class="vehperf-card-meta">${fmt(v.trips)} เที่ยว</div>
-                  </div>
-                  <div class="vehperf-card-share">${(Number(v.share) || 0).toFixed(2)}%</div>
-                </div>
-                <div class="vehperf-card-track"><div class="vehperf-card-fill" style="width:${barW}%;"></div></div>
-                <div class="vehperf-card-stats">
-                  <span><b>ส่วนต่าง</b> <strong style="color:${marginColor};">${fmt(v.margin)}</strong></span>
-                  <span><b>/เที่ยว</b> ${fmt(v.avgMargin)}</span>
-                  <span><b>กำไร %</b> <strong style="color:${pctColor};">${fmtP(v.pct)}</strong></span>
-                </div>
+          <article class="mcr-veh-row" style="--mcr-veh:${col};">
+            <div class="mcr-veh-rank">${String(i + 1).padStart(2, '0')}</div>
+            <div class="mcr-veh-main">
+              <div class="mcr-veh-top">
+                <span class="mcr-veh-type" title="${esc(v.type)}">${esc(v.type)}</span>
+                <span class="mcr-veh-share">${(Number(v.share) || 0).toFixed(2)}%</span>
               </div>
-            </article>
-          `;
+              <div class="mcr-veh-track"><div class="mcr-veh-fill" style="width:${barW}%;"></div></div>
+              <div class="mcr-veh-stats">
+                <span class="mcr-veh-stat"><span>เที่ยว</span><b>${fmtB(v.trips)}</b></span>
+                <span class="mcr-veh-stat"><span>ส่วนต่าง</span><b class="${marginCls}">${fmt(v.margin)}</b></span>
+                <span class="mcr-veh-stat"><span>กำไร %</span><b class="${pctCls}">${fmtP(v.pct)}</b></span>
+              </div>
+            </div>
+          </article>
+        `;
   }).join('')}
-      </div>
-    </section>`;
+    </div>`;
 }
 function getMasterModalTableConfigs(key, d, opts = {}) {
   if (!d) return [];
@@ -2773,18 +3554,18 @@ function openMasterModal(key, title, color) {
   if (!modal) {
     modal = document.createElement('div');
     modal.id = 'masterModal';
-    modal.style.cssText = 'position:fixed;inset:0;z-index:999;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:999;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);';
     modal.onclick = function (e) { if (e.target === modal) modal.style.display = 'none'; };
     document.body.appendChild(modal);
   }
   modal.innerHTML = `
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;width:95%;max-width:1400px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,0.5);animation:modalIn 0.3s ease;">
-      <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0;">
-        <div style="width:32px;height:32px;border-radius:8px;background:${color}15;border:1px solid ${color}30;display:flex;align-items:center;justify-content:center;color:${color};font-size:14px;font-weight:800;">${String.fromCharCode(0x25CF)}</div>
-        <div style="flex:1;font-size:15px;font-weight:700;color:var(--text);">${esc(title)}</div>
-        <button onclick="document.getElementById('masterModal').style.display='none'" style="background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--muted);width:32px;height:32px;cursor:pointer;font-size:16px;line-height:1;transition:all .2s;" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">&times;</button>
+    <div style="background:#1e2235;border:1px solid rgba(58,63,85,0.9);border-radius:14px;width:95%;max-width:1400px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 32px 96px rgba(0,0,0,0.7),0 0 0 1px rgba(255,255,255,0.04);animation:modalIn 0.3s ease;">
+      <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid rgba(58,63,85,0.8);flex-shrink:0;background:linear-gradient(180deg,rgba(44,49,69,0.6),transparent);">
+        <div style="width:32px;height:32px;border-radius:8px;background:${color}20;border:1px solid ${color}40;display:flex;align-items:center;justify-content:center;color:${color};font-size:14px;font-weight:800;">${String.fromCharCode(0x25CF)}</div>
+        <div style="flex:1;font-size:15px;font-weight:700;color:#e8edf5;">${esc(title)}</div>
+        <button onclick="document.getElementById('masterModal').style.display='none'" style="background:rgba(255,255,255,0.04);border:1px solid rgba(58,63,85,0.8);border-radius:8px;color:var(--muted);width:32px;height:32px;cursor:pointer;font-size:16px;line-height:1;transition:all .2s;" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)';this.style.background='rgba(239,68,68,0.08)'" onmouseout="this.style.borderColor='rgba(58,63,85,0.8)';this.style.color='var(--muted)';this.style.background='rgba(255,255,255,0.04)'">&times;</button>
       </div>
-      <div style="flex:1;overflow:auto;padding:20px;">${contentHtml}</div>
+      <div style="flex:1;overflow:auto;padding:20px;background:rgba(15,17,23,0.35);">${contentHtml}</div>
     </div>
   `;
   modal.style.display = 'flex';
@@ -2801,11 +3582,9 @@ function buildMasterDashboard(d) {
     { id: 'vehicle', title: 'ประสิทธิภาพประเภทรถ', color: '#06b6d4', builder: buildVehicleCard, fullBuilder: buildFullVehicle },
   ];
 
-  // Pre-generate full modal content
   window._masterModalData = {};
   window._masterModalBuilders = {};
   sections.forEach(sec => {
-    window._masterModalData[sec.id] = sec.fullBuilder(d);
     window._masterModalBuilders[sec.id] = sec.fullBuilder;
   });
 
@@ -3070,7 +3849,7 @@ function buildDailyCompare(data) {
             <table style="width:100%;border-collapse:collapse;font-size:12px">
               <thead style="background:var(--surface);position:sticky;top:0;z-index:2">
                 <tr style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.5px">
-                  <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)">#</th>
+                  <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)">ลำดับ</th>
                   <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)">วันที่</th>
                   <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)">พขร.</th>
                   <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)">ประเภทรถ</th>
@@ -3184,13 +3963,13 @@ function buildDailyCompare(data) {
     }
     .dc-action-btn {
       width: auto;
-      height: 32px;
+      height: 36px;
       box-sizing: border-box;
-      padding: 5px 12px;
+      padding: 6px 16px;
       border: none;
       border-radius: 6px;
       color: #e8eef8;
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
       font-family: inherit;
       letter-spacing: .2px;
@@ -3362,7 +4141,7 @@ function buildDailyCompare(data) {
       <div style="border-top:1px solid rgba(255,255,255,.05);padding:8px 20px;display:grid;grid-template-columns:1fr 2fr 1fr auto;gap:12px;align-items:end">
 
         <div style="position:relative;z-index:50">
-          <div style="font-size:10.2px;font-weight:450;color:#94a3b8;margin-bottom:5px;letter-spacing:0.3px">ลูกค้า</div>
+          <div style="font-size:11.5px;font-weight:600;color:#e2e8f0;margin-bottom:6px;letter-spacing:0.5px">ลูกค้า</div>
           <div id="ms_btn_cust" class="dc-ms-btn" onclick="dcToggleMs('cust',event)">
             <span id="ms_lbl_cust" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">ทั้งหมด</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -3371,7 +4150,7 @@ function buildDailyCompare(data) {
         </div>
 
         <div style="position:relative;z-index:50">
-          <div style="font-size:10.2px;font-weight:450;color:#94a3b8;margin-bottom:5px;letter-spacing:0.3px">เส้นทาง</div>
+          <div style="font-size:11.5px;font-weight:600;color:#e2e8f0;margin-bottom:6px;letter-spacing:0.5px">เส้นทาง</div>
           <div id="ms_btn_route" class="dc-ms-btn" onclick="dcToggleMs('route',event)">
             <span id="ms_lbl_route" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">ทั้งหมด</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -3380,7 +4159,7 @@ function buildDailyCompare(data) {
         </div>
 
         <div style="position:relative;z-index:50">
-          <div style="font-size:10.2px;font-weight:450;color:#94a3b8;margin-bottom:5px;letter-spacing:0.3px">ประเภทรถ</div>
+          <div style="font-size:11.5px;font-weight:600;color:#e2e8f0;margin-bottom:6px;letter-spacing:0.5px">ประเภทรถ</div>
           <div id="ms_btn_vtype" class="dc-ms-btn" onclick="dcToggleMs('vtype',event)">
             <span id="ms_lbl_vtype" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">ทั้งหมด</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -3389,13 +4168,13 @@ function buildDailyCompare(data) {
         </div>
 
         <div style="display:flex;align-items:center;gap:8px;padding-bottom:1px">
-          <div style="display:flex;background:rgba(0,0,0,.2);border-radius:6px;padding:2px;border:1px solid rgba(255,255,255,.05);height:32px;box-sizing:border-box;align-items:center">
+          <div style="display:flex;background:rgba(0,0,0,.2);border-radius:6px;padding:2px;border:1px solid rgba(255,255,255,.05);height:36px;box-sizing:border-box;align-items:center">
             <button id="dc_mode_single" onclick="dcSetMode('single')"
-              style="padding:0 12px;background:transparent;color:var(--muted);border:1px solid transparent;border-radius:4px;font-weight:700;font-size:11px;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s;height:100%;display:flex;align-items:center">
+              style="padding:0 16px;background:transparent;color:var(--muted);border:1px solid transparent;border-radius:4px;font-weight:700;font-size:12px;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s;height:100%;display:flex;align-items:center">
               มุมมองปกติ
             </button>
             <button id="dc_mode_compare" onclick="dcSetMode('compare')"
-              style="padding:0 12px;background:linear-gradient(135deg,#1e3a8a,#1e2554);color:#dbeafe;border:1px solid rgba(59,130,246,.2);border-radius:4px;font-weight:700;font-size:11px;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s;box-shadow:0 2px 8px rgba(0,0,0,.4);height:100%;display:flex;align-items:center">
+              style="padding:0 16px;background:linear-gradient(135deg,#1e3a8a,#1e2554);color:#dbeafe;border:1px solid rgba(59,130,246,.2);border-radius:4px;font-weight:700;font-size:12px;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s;box-shadow:0 2px 8px rgba(0,0,0,.4);height:100%;display:flex;align-items:center">
               เปรียบเทียบ
             </button>
           </div>
@@ -3411,7 +4190,7 @@ function buildDailyCompare(data) {
             Export XLSX
           </button>
           <button onclick="dcClearFilters()"
-            style="padding:0 12px;background:transparent;border:1px solid rgba(255,255,255,.08);border-radius:6px;color:#475569;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s;height:32px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center"
+            style="padding:0 16px;background:transparent;border:1px solid rgba(255,255,255,.08);border-radius:6px;color:#475569;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all .2s;height:36px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center"
             onmouseover="this.style.borderColor='rgba(239,68,68,.5)';this.style.color='#ef4444';this.style.background='rgba(239,68,68,.05)'"
             onmouseout="this.style.borderColor='rgba(255,255,255,.08)';this.style.color='#475569';this.style.background='transparent'">
             ล้างตัวกรอง
@@ -3992,7 +4771,6 @@ function buildDailyCompare(data) {
             
             <div style="margin-left:auto">
               <div class="sf-bar">
-                <span class="sf-bar-label">กรองสถานะ</span>
                 ${filterAllHtml}
                 <div class="sf-sep"></div>
                 ${filterOpts}
@@ -4319,9 +5097,6 @@ function buildDailyCompare(data) {
 
       return `
         <div class="sf-bar" id="dc-status-panel-${modeKey}" data-option-keys="${optionKeys.join(',')}">
-          <div class="sf-bar-head">
-            <span class="sf-bar-label">กรองสถานะ:</span>
-          </div>
           <div class="sf-all-btn ${allChecked ? 'active' : ''}" onclick="window.sfCmpToggleAllClick(this, '${modeKey}')">
             <input type="checkbox" id="cmp-filter-all-${modeKey}" ${allChecked ? 'checked' : ''} style="display:none">
             ดูทั้งหมด
@@ -5232,7 +6007,7 @@ function buildDailyCompare(data) {
         right: { style: 'thin', color: { rgb: 'E5E7EB' } }
       };
       function hCell(v) {
-        return { v: v, s: { font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 }, fill: { fgColor: { rgb: '1F2937' }, patternType: 'solid' }, alignment: { horizontal: 'center', vertical: 'center' }, border: allBorders } };
+        return { v: v, s: { font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 }, fill: { fgColor: { rgb: '1F2937' }, patternType: 'solid' }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: allBorders } };
       }
       function cCell(v, opts) {
         opts = opts || {};
@@ -5242,6 +6017,7 @@ function buildDailyCompare(data) {
         const s = { font: { sz: 10 }, alignment: { vertical: 'center' }, border: allBorders };
         if (opts.numFmt) s.numFmt = opts.numFmt;
         if (opts.align) s.alignment.horizontal = opts.align;
+        if (opts.wrap) s.alignment.wrapText = true;
         if (opts.bold) s.font.bold = true;
         if (opts.sz) s.font.sz = opts.sz;
         if (opts.color) s.font.color = { rgb: opts.color };
@@ -5256,6 +6032,7 @@ function buildDailyCompare(data) {
         const s = { font: { sz: 10, color: { rgb: 'DC2626' } }, alignment: { vertical: 'center' }, border: allBorders };
         if (opts.numFmt) s.numFmt = opts.numFmt;
         if (opts.align) s.alignment.horizontal = opts.align;
+        if (opts.wrap) s.alignment.wrapText = true;
         if (opts.bold) s.font.bold = true;
         if (opts.sz) s.font.sz = opts.sz;
         if (opts.fill) s.fill = { fgColor: { rgb: opts.fill }, patternType: 'solid' };
@@ -5269,6 +6046,7 @@ function buildDailyCompare(data) {
         const s = { font: { sz: 10, color: { rgb: '16A34A' } }, alignment: { vertical: 'center' }, border: allBorders };
         if (opts.numFmt) s.numFmt = opts.numFmt;
         if (opts.align) s.alignment.horizontal = opts.align;
+        if (opts.wrap) s.alignment.wrapText = true;
         if (opts.bold) s.font.bold = true;
         if (opts.sz) s.font.sz = opts.sz;
         if (opts.fill) s.fill = { fgColor: { rgb: opts.fill }, patternType: 'solid' };
@@ -5282,6 +6060,7 @@ function buildDailyCompare(data) {
         const s = { font: { sz: 10, color: { rgb: 'EA580C' } }, alignment: { vertical: 'center' }, border: allBorders };
         if (opts.numFmt) s.numFmt = opts.numFmt;
         if (opts.align) s.alignment.horizontal = opts.align;
+        if (opts.wrap) s.alignment.wrapText = true;
         if (opts.bold) s.font.bold = true;
         if (opts.sz) s.font.sz = opts.sz;
         if (opts.fill) s.fill = { fgColor: { rgb: opts.fill }, patternType: 'solid' };
@@ -5295,6 +6074,7 @@ function buildDailyCompare(data) {
         const s = { font: { sz: 10, color: { rgb: '6B7280' } }, alignment: { vertical: 'center' }, border: allBorders };
         if (opts.numFmt) s.numFmt = opts.numFmt;
         if (opts.align) s.alignment.horizontal = opts.align;
+        if (opts.wrap) s.alignment.wrapText = true;
         if (opts.bold) s.font.bold = true;
         if (opts.sz) s.font.sz = opts.sz;
         if (opts.fill) s.fill = { fgColor: { rgb: opts.fill }, patternType: 'solid' };
@@ -5308,6 +6088,7 @@ function buildDailyCompare(data) {
         const s = { font: { sz: 10, color: { rgb: 'A855F7' } }, alignment: { vertical: 'center' }, border: allBorders };
         if (opts.numFmt) s.numFmt = opts.numFmt;
         if (opts.align) s.alignment.horizontal = opts.align;
+        if (opts.wrap) s.alignment.wrapText = true;
         if (opts.bold) s.font.bold = true;
         if (opts.sz) s.font.sz = opts.sz;
         if (opts.fill) s.fill = { fgColor: { rgb: opts.fill }, patternType: 'solid' };
@@ -5321,6 +6102,7 @@ function buildDailyCompare(data) {
         const s = { font: { sz: 10, color: { rgb: '3B82F6' } }, alignment: { vertical: 'center' }, border: allBorders };
         if (opts.numFmt) s.numFmt = opts.numFmt;
         if (opts.align) s.alignment.horizontal = opts.align;
+        if (opts.wrap) s.alignment.wrapText = true;
         if (opts.bold) s.font.bold = true;
         if (opts.sz) s.font.sz = opts.sz;
         if (opts.fill) s.fill = { fgColor: { rgb: opts.fill }, patternType: 'solid' };
@@ -5331,180 +6113,194 @@ function buildDailyCompare(data) {
       const periodALabel = _stA ? (_labelA || fmtRange(_stA.dateStart, _stA.dateEnd)) : (_labelA || '-');
       const periodBLabel = (_stB && !_isSingleMode) ? (_labelB || fmtRange(_stB.dateStart, _stB.dateEnd)) : '';
       const addPeriod = (title, periodLabel) => `${title} (${periodLabel || '-'})`;
-      const normDriver = d => String(d || '').trim().toLowerCase();
+      const qaStatusLabels = () => (typeof dcQaStatusLabels === 'function')
+        ? dcQaStatusLabels()
+        : { loss: 'ขาดทุน', oil50: 'สำรองน้ำมัน>50%', payHigh: 'ราคาจ่ายสูงผิดปกติ', oilHigh: 'สำรองน้ำมันสูงผิดปกติ', recvLow: 'ราคารับผิดปกติ', normal: 'ปกติ' };
+      const cleanStatuses = statuses => {
+        const values = [...new Set(statuses && statuses.length ? statuses : ['normal'])];
+        return values.some(s => s !== 'normal') ? values.filter(s => s !== 'normal') : values;
+      };
+      const statusText = statuses => {
+        const labels = qaStatusLabels();
+        return cleanStatuses(statuses).map(k => labels[k] || k).join(', ') || labels.normal || 'ปกติ';
+      };
+      function statusStyledCell(statuses, opts) {
+        const values = cleanStatuses(statuses);
+        const text = statusText(values);
+        if (values.includes('loss')) return rCell(text, opts);
+        if (values.includes('oil50') || values.includes('oilHigh')) return oCell(text, opts);
+        if (values.includes('payHigh')) return pCell(text, opts);
+        if (values.includes('recvLow')) return bCell(text, opts);
+        if (values.includes('normal')) return gCell(text, opts);
+        return mCell(text, opts);
+      }
+      function signedMoney(n) {
+        if (!hasNum(n)) return '-';
+        const value = Number(n);
+        return (value > 0 ? '+' : '') + fmtMoney(value);
+      }
+      function metricPairText(a, b) {
+        const canDiff = hasNum(a) && hasNum(b);
+        return 'A ' + (hasNum(a) ? fmtMoney(a) : '-') +
+          '\nB ' + (hasNum(b) ? fmtMoney(b) : '-') +
+          '\nΔ ' + (canDiff ? signedMoney(Number(a) - Number(b)) : '-');
+      }
+      function metricPairCell(a, b, opts) {
+        const canDiff = hasNum(a) && hasNum(b);
+        const diff = canDiff ? Number(a) - Number(b) : 0;
+        const base = { ...(opts || {}), align: 'right', wrap: true };
+        if (!canDiff || Math.abs(diff) < 0.0001) return mCell(metricPairText(a, b), base);
+        return diff < 0 ? rCell(metricPairText(a, b), base) : gCell(metricPairText(a, b), base);
+      }
+      function rowPeerRows(sourceRows, row) {
+        return (sourceRows || []).filter(r =>
+          r.customer === row.customer && r.route === row.route && r.vtype === row.vtype
+        );
+      }
 
-      function buildAnomalyExportCards(stA, stB) {
-        const rowsA = (stA && stA.rows) ? stA.rows : [];
-        const rowsB = (stB && stB.rows) ? stB.rows : [];
-        const groupA = {};
-        const groupB = {};
-        rowsA.forEach(r => {
-          const k = `${r.customer || ''}|${r.route || ''}|${r.vtype || ''}`;
-          if (!groupA[k]) groupA[k] = { key: k, customer: r.customer || '-', route: r.route || '-', vtype: r.vtype || '-', trips: [] };
-          groupA[k].trips.push(r);
-        });
-        rowsB.forEach(r => {
-          const k = `${r.customer || ''}|${r.route || ''}|${r.vtype || ''}`;
-          if (!groupB[k]) groupB[k] = { key: k, customer: r.customer || '-', route: r.route || '-', vtype: r.vtype || '-', trips: [] };
-          groupB[k].trips.push(r);
-        });
+      function buildNormalQaSheet(st, periodLabel) {
+        const wsData = [];
+        wsData.push([cCell('มุมมองปกติ', { bold: true, sz: 12, color: '111827' })]);
+        wsData.push([cCell(filterSummaryText(), { color: '6B7280', sz: 9 })]);
+        wsData.push([cCell('ช่วงข้อมูล: ' + (periodLabel || '-'), { color: '374151', sz: 9 })]);
+        wsData.push([]);
+        const headers = ['ลูกค้า', 'เส้นทาง', 'วันที่', 'พขร.', 'ประเภทรถ', 'ทะเบียน', 'ราคาน้ำมัน', 'สำรองน้ำมัน', 'ราคารับ', 'ราคาจ่าย', 'ส่วนต่าง', 'ความผิดปกติ'];
+        wsData.push(headers.map(t => hCell(t)));
+        let rowIdx = wsData.length;
 
-        const cards = [];
-        Object.keys(groupA).forEach(k => {
-          if (!groupB[k]) return;
-          const ga = groupA[k];
-          const gb = groupB[k];
-          const tripsB = gb.trips || [];
-          const validPayB = tripsB.filter(r => (r.pay || 0) > 0);
-          const validOilB = tripsB.filter(r => (r.oil || 0) > 0);
-          const avgPayB = validPayB.length > 0 ? validPayB.reduce((sum, r) => sum + (r.pay || 0), 0) / validPayB.length : 0;
-          const avgOilB = validOilB.length > 0 ? validOilB.reduce((sum, r) => sum + (r.oil || 0), 0) / validOilB.length : 0;
-
-          const usedB = new Set();
-          const rows = [];
-          ga.trips.forEach(ra => {
-            const idx = gb.trips.findIndex((rb, i) => !usedB.has(i) && normDriver(rb.driver) === normDriver(ra.driver));
-            if (idx < 0) return;
-            usedB.add(idx);
-            const rb = gb.trips[idx];
-            const reasons = [];
-            const statuses = new Set();
-            if ((ra.margin || 0) < 0) {
-              const lp = ra.recv > 0 ? Math.abs((ra.margin || 0) / ra.recv * 100) : 0;
-              reasons.push(`${ra.date || '-'} ขาดทุน ${lp.toFixed(0)}%`);
-              statuses.add('loss');
-            }
-            if ((rb.margin || 0) < 0) {
-              const lp = rb.recv > 0 ? Math.abs((rb.margin || 0) / rb.recv * 100) : 0;
-              reasons.push(`${rb.date || '-'} ขาดทุน ${lp.toFixed(0)}%`);
-              statuses.add('loss');
-            }
-            if ((ra.oil || 0) > (ra.pay || 0) * 0.5 && (ra.pay || 0) > 0) {
-              reasons.push(`${ra.date || '-'} สำรองน้ำมัน>50%`);
-              statuses.add('oil50');
-            }
-            if ((rb.oil || 0) > (rb.pay || 0) * 0.5 && (rb.pay || 0) > 0) {
-              reasons.push(`${rb.date || '-'} สำรองน้ำมัน>50%`);
-              statuses.add('oil50');
-            }
-
-            const baselinePay = (avgPayB > 0) ? avgPayB : (rb.pay || 0);
-            const baselineOil = (avgOilB > 0) ? avgOilB : (rb.oil || 0);
-
-            if (baselinePay > 0 && (ra.pay || 0) > baselinePay * 1.05) {
-              reasons.push(`${ra.date || '-'} ราคาจ่ายสูงผิดปกติ`);
-              statuses.add('payHigh');
-            }
-            if (baselineOil > 0 && (ra.oil || 0) > baselineOil * 1.05) {
-              reasons.push(`${ra.date || '-'} สำรองน้ำมันสูงผิดปกติ`);
-              statuses.add('oilHigh');
-            }
-            const oilPriceA = getOilPriceByDate(ra?.date);
-            const oilPriceB = getOilPriceByDate(rb?.date);
-            if (hasNum(oilPriceA) && hasNum(oilPriceB) && Math.abs((oilPriceA || 0) - (oilPriceB || 0)) < 0.0001 &&
-              hasNum(ra.recv) && hasNum(rb.recv) && Math.abs((ra.recv || 0) - (rb.recv || 0)) >= 0.0001) {
-              reasons.push(`${ra.date || '-'} ราคารับผิดปกติ`);
-              statuses.add('recvLow');
-            }
-            if (reasons.length === 0) {
-              reasons.push('ปกติ');
-              statuses.add('normal');
-            }
-            rows.push({ ra, rb, reasons, statuses: Array.from(statuses), isNormal: reasons.length === 1 && reasons[0] === 'ปกติ' });
-          });
-          if (!rows.length) return;
-          const anomalyRows = rows.filter(r => !r.isNormal);
-          if (!anomalyRows.length) return;
-          cards.push({ key: k, ga, rows: anomalyRows });
-        });
-
-        cards.sort((a, b) => {
-          const ca = String(a.ga.customer || '').trim().toUpperCase();
-          const cb = String(b.ga.customer || '').trim().toUpperCase();
+        const routeCases = (st?.routes || []).map(route => {
+          const trips = (st?.rows || []).filter(r => r.customer === route.customer && r.route === route.route && r.vtype === route.vtype)
+            .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+          const rows = trips.map(ra => ({ ra, statuses: dcQaTripStatuses(ra, trips) }))
+            .sort((a, b) => {
+              const rankA = dcQaStatusRank(a.statuses);
+              const rankB = dcQaStatusRank(b.statuses);
+              if (rankB !== rankA) return rankB - rankA;
+              return String(a.ra.date || '').localeCompare(String(b.ra.date || ''));
+            });
+          const anomCount = rows.filter(row => !row.statuses.includes('normal')).length;
+          const statusSet = new Set();
+          rows.forEach(row => row.statuses.forEach(s => statusSet.add(s)));
+          if (anomCount > 0) statusSet.delete('normal');
+          return {
+            route,
+            rows,
+            anomCount,
+            statuses: [...statusSet],
+            severity: rows.length ? Math.max(...rows.map(row => dcQaStatusRank(row.statuses))) : 0
+          };
+        }).sort((a, b) => {
+          const ca = String(a.route.customer || '').trim().toUpperCase();
+          const cb = String(b.route.customer || '').trim().toUpperCase();
           const pa = custOrder[ca] ?? 999;
           const pb = custOrder[cb] ?? 999;
           if (pa !== pb) return pa - pb;
-          return a.key.localeCompare(b.key);
+          if (b.severity !== a.severity) return b.severity - a.severity;
+          if (b.anomCount !== a.anomCount) return b.anomCount - a.anomCount;
+          return String(a.route.route || '').localeCompare(String(b.route.route || ''), 'th');
         });
-        return cards;
+
+        const grouped = {};
+        routeCases.forEach(item => {
+          const customer = item.route.customer || '-';
+          if (!grouped[customer]) grouped[customer] = [];
+          grouped[customer].push(item);
+        });
+
+        Object.entries(grouped).forEach(([customer, items]) => {
+          const routes = items.map(item => item.route || {});
+          const trips = routes.reduce((sum, r) => sum + (r.trips || 0), 0);
+          const recv = routes.reduce((sum, r) => sum + (r.recv || 0), 0);
+          const pay = routes.reduce((sum, r) => sum + (r.pay || 0), 0);
+          const oil = routes.reduce((sum, r) => sum + (r.oil || 0), 0);
+          const margin = routes.reduce((sum, r) => sum + (r.margin || 0), 0);
+          const anoms = items.reduce((sum, item) => sum + (item.anomCount || 0), 0);
+          const customerRow = [
+            cCell(customer, { bold: true, fill: 'DBEAFE' }),
+            cCell(routes.length + ' เส้นทาง · ' + trips + ' เที่ยว · ' + (anoms ? anoms + ' รายการผิดปกติ' : 'ปกติ'), { bold: true, fill: 'DBEAFE' }),
+            cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }),
+            cCell('', { fill: 'DBEAFE' }),
+            cCell(oil, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }),
+            cCell(recv, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }),
+            cCell(pay, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }),
+            margin < 0 ? rCell(margin, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }) : gCell(margin, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }),
+            anoms ? rCell(anoms + ' รายการผิดปกติ', { fill: 'DBEAFE', bold: true }) : gCell('ปกติ', { fill: 'DBEAFE', bold: true })
+          ];
+          wsData.push(customerRow);
+          rowIdx++;
+
+          items.forEach(item => {
+            const route = item.route || {};
+            const routeFill = item.anomCount > 0 ? 'FEF2F2' : 'ECFDF5';
+            const routeRow = [
+              cCell(route.customer || '-', { fill: routeFill, bold: true }),
+              cCell(route.route || '-', { fill: routeFill, bold: true }),
+              cCell('รวม ' + (item.rows || []).length + ' เที่ยว', { fill: routeFill }),
+              cCell('', { fill: routeFill }),
+              cCell(route.vtype || '-', { fill: routeFill, bold: true }),
+              cCell('', { fill: routeFill }),
+              cCell('', { fill: routeFill }),
+              cCell(route.oil || 0, { numFmt: nTHB, align: 'right', fill: routeFill }),
+              cCell(route.recv || 0, { numFmt: nTHB, align: 'right', fill: routeFill }),
+              cCell(route.pay || 0, { numFmt: nTHB, align: 'right', fill: routeFill }),
+              (route.margin || 0) < 0 ? rCell(route.margin || 0, { numFmt: nTHB, align: 'right', fill: routeFill }) : gCell(route.margin || 0, { numFmt: nTHB, align: 'right', fill: routeFill }),
+              statusStyledCell(item.statuses.length ? item.statuses : ['normal'], { fill: routeFill })
+            ];
+            wsData.push(routeRow);
+            rowIdx++;
+
+            (item.rows || []).forEach(entry => {
+              const r = entry.ra || {};
+              const margin = hasNum(r.margin) ? r.margin : ((r.recv || 0) - (r.pay || 0) - (r.oil || 0));
+              const oilPrice = getOilPriceByDate(r.date);
+              const zf = (rowIdx % 2 === 0) ? 'F9FAFB' : null;
+              wsData.push([
+                cCell(r.customer || '-', { fill: zf }),
+                cCell(r.route || '-', { fill: zf }),
+                cCell(r.date || '-', { fill: zf }),
+                cCell(r.driver || '-', { fill: zf }),
+                cCell(r.vtype || '-', { fill: zf }),
+                cCell(r.plate || '-', { fill: zf }),
+                hasNum(oilPrice) ? cCell(oilPrice, { numFmt: nTHB, align: 'right', fill: zf }) : cCell('-', { align: 'right', fill: zf }),
+                cCell(r.oil || 0, { numFmt: nTHB, align: 'right', fill: zf }),
+                cCell(r.recv || 0, { numFmt: nTHB, align: 'right', fill: zf }),
+                cCell(r.pay || 0, { numFmt: nTHB, align: 'right', fill: zf }),
+                margin < 0 ? rCell(margin, { numFmt: nTHB, align: 'right', fill: zf }) : gCell(margin, { numFmt: nTHB, align: 'right', fill: zf }),
+                statusStyledCell(entry.statuses || ['normal'], { fill: zf })
+              ]);
+              rowIdx++;
+            });
+          });
+        });
+
+        if (!routeCases.length) {
+          const noData = [mCell('ไม่พบข้อมูลตามเงื่อนไขที่เลือก', { align: 'center', bold: true })];
+          for (let i = 1; i < headers.length; i++) noData.push(cCell(''));
+          wsData.push(noData);
+        }
+
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        ws['!cols'] = [{ wch: 14 }, { wch: 34 }, { wch: 12 }, { wch: 18 }, { wch: 12 }, { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 34 }];
+        ws['!merges'] = [
+          { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
+          { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } },
+          { s: { r: 2, c: 0 }, e: { r: 2, c: headers.length - 1 } }
+        ];
+        ws['!autofilter'] = { ref: 'A5:' + XLSX.utils.encode_cell({ c: headers.length - 1, r: 4 }) };
+        ws['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
+        return ws;
+      }
+
+      function buildAnomalyExportCards(stA, stB) {
+        return (typeof dcQaBuildAnomalyCards === 'function' ? dcQaBuildAnomalyCards(stA, stB) : [])
+          .map(card => ({ ...card, rows: card.anomRows || [] }));
       }
 
       function buildUnmatchedExportCards(myRows, opRows) {
-        const myGroup = {};
-        const opGroup = {};
-        (myRows || []).forEach(r => {
-          const k = `${r.customer || ''}|${r.route || ''}|${r.vtype || ''}`;
-          if (!myGroup[k]) myGroup[k] = { key: k, customer: r.customer || '-', route: r.route || '-', vtype: r.vtype || '-', trips: [] };
-          myGroup[k].trips.push(r);
-        });
-        (opRows || []).forEach(r => {
-          const k = `${r.customer || ''}|${r.route || ''}|${r.vtype || ''}`;
-          if (!opGroup[k]) opGroup[k] = { key: k, customer: r.customer || '-', route: r.route || '-', vtype: r.vtype || '-', trips: [] };
-          opGroup[k].trips.push(r);
-        });
-
-        const cards = [];
-        Object.keys(myGroup).forEach(k => {
-          const ga = myGroup[k];
-          const gb = opGroup[k];
-          const opTrips = gb ? gb.trips : [];
-          const used = new Set();
-          const rows = [];
-          const unmatchedTrips = [];
-          ga.trips.forEach(ra => {
-            const idx = opTrips.findIndex((rb, i) => !used.has(i) && normDriver(rb.driver) === normDriver(ra.driver));
-            if (idx >= 0) {
-              used.add(idx);
-              return;
-            }
-            unmatchedTrips.push(ra);
-          });
-          // Calculate avgPay/avgOil from unmatched-only peer group (same period, same route)
-          const validPayPeers = unmatchedTrips.filter(r => (r.pay || 0) > 0);
-          const validOilPeers = unmatchedTrips.filter(r => (r.oil || 0) > 0);
-          const unmAvgPay = validPayPeers.length > 0 ? validPayPeers.reduce((s, r) => s + (r.pay || 0), 0) / validPayPeers.length : 0;
-          const unmAvgOil = validOilPeers.length > 0 ? validOilPeers.reduce((s, r) => s + (r.oil || 0), 0) / validOilPeers.length : 0;
-          unmatchedTrips.forEach(ra => {
-            const reasons = [];
-            const statuses = new Set();
-            if ((ra.margin || 0) < 0) {
-              const lp = ra.recv > 0 ? Math.abs((ra.margin || 0) / ra.recv * 100) : 0;
-              reasons.push(`ขาดทุน ${lp.toFixed(0)}%`);
-              statuses.add('loss');
-            }
-            if ((ra.oil || 0) > (ra.pay || 0) * 0.5 && (ra.pay || 0) > 0) {
-              reasons.push('สำรองน้ำมัน>50%');
-              statuses.add('oil50');
-            }
-            if (unmatchedTrips.length > 1) {
-              if (unmAvgPay > 0 && (ra.pay || 0) > unmAvgPay * 1.05) {
-                reasons.push('ราคาจ่ายสูงผิดปกติ');
-                statuses.add('payHigh');
-              }
-              if (unmAvgOil > 0 && (ra.oil || 0) > unmAvgOil * 1.10) {
-                reasons.push('สำรองน้ำมันสูงผิดปกติ');
-                statuses.add('oilHigh');
-              }
-            }
-            if (reasons.length === 0) {
-              reasons.push('ปกติ');
-              statuses.add('normal');
-            }
-            rows.push({ ra, reasons, statuses: Array.from(statuses), isNormal: reasons.length === 1 && reasons[0] === 'ปกติ' });
-          });
-          if (!rows.length) return;
-          cards.push({ key: k, ga, rows });
-        });
-
-        cards.sort((a, b) => {
-          const ca = String(a.ga.customer || '').trim().toUpperCase();
-          const cb = String(b.ga.customer || '').trim().toUpperCase();
-          const pa = custOrder[ca] ?? 999;
-          const pb = custOrder[cb] ?? 999;
-          if (pa !== pb) return pa - pb;
-          return a.key.localeCompare(b.key);
-        });
-        return cards;
+        const mySt = { rows: myRows || [] };
+        const opSt = { rows: opRows || [] };
+        return (typeof dcQaBuildUnmatchedCards === 'function' ? dcQaBuildUnmatchedCards(mySt, opSt, 'a') : [])
+          .map(card => ({ ...card, rows: card.unRows || [] }));
       }
 
       function buildUnmatchedSheet(cards, sheetTitle, myPeriodLabel, otherPeriodLabel) {
@@ -5515,7 +6311,7 @@ function buildDailyCompare(data) {
         wsData.push([]);
         const headers = [
           'ลูกค้า', 'เส้นทาง', 'ประเภทรถ', 'วันที่', 'พขร.', 'ทะเบียน',
-          'ราคาน้ำมัน', 'ราคารับ', 'ราคาจ่าย', 'สำรองน้ำมัน', 'ส่วนต่าง', 'กำไร %', 'สถานะ'
+          'ราคาน้ำมัน', 'สำรองน้ำมัน', 'ราคารับ', 'ราคาจ่าย', 'ส่วนต่าง', 'ความผิดปกติ'
         ];
         const headerRow = wsData.length;
         wsData.push(headers.map(t => hCell(t)));
@@ -5529,7 +6325,7 @@ function buildDailyCompare(data) {
             cCell('รวม ' + (card.rows || []).length + ' เที่ยว', { bold: true, fill: 'DBEAFE' }),
             cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }),
             cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }),
-            cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' })
+            cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' })
           ];
           wsData.push(top);
           rowIdx++;
@@ -5537,14 +6333,9 @@ function buildDailyCompare(data) {
           (card.rows || []).forEach(entry => {
             const r = entry.ra || {};
             const mar = (r.margin == null || isNaN(r.margin)) ? ((r.recv || 0) - (r.pay || 0) - (r.oil || 0)) : r.margin;
-            const pct = (r.recv || 0) > 0 ? mar / (r.recv || 0) : 0;
             const oilPrice = getOilPriceByDate(r.date);
-            const statusText = (entry.reasons || []).join(', ');
+            const statuses = entry.statuses || ['normal'];
             const zf = (rowIdx % 2 === 0) ? 'F9FAFB' : null;
-            let statusCell;
-            if (entry.isNormal) statusCell = mCell(statusText, { fill: zf });
-            else if (statusText.includes('สำรองน้ำมัน')) statusCell = oCell(statusText, { fill: zf });
-            else statusCell = rCell(statusText, { fill: zf });
             const row = [
               cCell(r.customer || '-', { fill: zf }),
               cCell(r.route || '-', { fill: zf }),
@@ -5553,12 +6344,11 @@ function buildDailyCompare(data) {
               cCell(r.driver || '-', { fill: zf }),
               cCell(r.plate || '-', { fill: zf }),
               hasNum(oilPrice) ? cCell(oilPrice, { numFmt: nTHB, align: 'right', fill: zf }) : cCell('-', { align: 'right', fill: zf }),
+              cCell(r.oil, { numFmt: nTHB, align: 'right', fill: zf }),
               cCell(r.recv, { numFmt: nTHB, align: 'right', fill: zf }),
               cCell(r.pay, { numFmt: nTHB, align: 'right', fill: zf }),
-              cCell(r.oil, { numFmt: nTHB, align: 'right', fill: zf }),
               mar < 0 ? rCell(mar, { numFmt: nTHB, align: 'right', fill: zf }) : gCell(mar, { numFmt: nTHB, align: 'right', fill: zf }),
-              cCell(pct, { numFmt: nPct, align: 'right', fill: zf }),
-              statusCell
+              statusStyledCell(statuses, { fill: zf })
             ];
             wsData.push(row);
             rowIdx++;
@@ -5567,21 +6357,21 @@ function buildDailyCompare(data) {
 
         if (cards.length === 0) {
           const noData = [mCell('ไม่พบข้อมูลตามเงื่อนไขที่เลือก', { align: 'center', bold: true })];
-          for (let i = 1; i < 13; i++) noData.push(cCell(''));
+          for (let i = 1; i < headers.length; i++) noData.push(cCell(''));
           wsData.push(noData);
         }
 
         const ws = XLSX.utils.aoa_to_sheet(wsData);
         ws['!cols'] = [
           { wch: 14 }, { wch: 34 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 13 },
-          { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 40 }
+          { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 40 }
         ];
         ws['!merges'] = [
-          { s: { r: 0, c: 0 }, e: { r: 0, c: 12 } },
-          { s: { r: 1, c: 0 }, e: { r: 1, c: 12 } },
-          { s: { r: 2, c: 0 }, e: { r: 2, c: 12 } }
+          { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
+          { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } },
+          { s: { r: 2, c: 0 }, e: { r: 2, c: headers.length - 1 } }
         ];
-        ws['!autofilter'] = { ref: 'A5:M5' };
+        ws['!autofilter'] = { ref: 'A5:' + XLSX.utils.encode_cell({ c: headers.length - 1, r: 4 }) };
         ws['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
         return ws;
       }
@@ -5632,260 +6422,7 @@ function buildDailyCompare(data) {
       ws1['!autofilter'] = { ref: 'A5:D5' };
       ws1['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
 
-      // Sheet 2: รายละเอียดเส้นทาง
-      const ws2Data = [];
-      let h2, colCnt2;
-      if (!_isSingleMode && _stB) {
-        h2 = [
-          'ลูกค้า', 'เส้นทาง', 'ประเภทรถ', 'เที่ยว',
-          addPeriod('ราคารับ', periodALabel), addPeriod('ราคาจ่าย', periodALabel), addPeriod('สำรองน้ำมัน', periodALabel), addPeriod('ส่วนต่าง', periodALabel), addPeriod('กำไร %', periodALabel),
-          addPeriod('ราคารับ', periodBLabel), addPeriod('ราคาจ่าย', periodBLabel), addPeriod('สำรองน้ำมัน', periodBLabel), addPeriod('ส่วนต่าง', periodBLabel), addPeriod('กำไร %', periodBLabel),
-          'Δ ส่วนต่าง', 'สถานะ'
-        ];
-        colCnt2 = 16;
-      } else {
-        h2 = ['ลูกค้า', 'เส้นทาง', 'ประเภทรถ', 'เที่ยว', 'ราคารับ', 'ราคาจ่าย', 'สำรองน้ำมัน', 'ส่วนต่าง', 'กำไร %', 'สถานะ'];
-        colCnt2 = 10;
-      }
-      ws2Data.push([cCell('รายละเอียดเส้นทาง', { bold: true, sz: 12, color: '111827' })]);
-      ws2Data.push([cCell(filterSummaryText(), { color: '6B7280', sz: 9 })]);
-      ws2Data.push([cCell(!_isSingleMode && _stB ? ('ช่วงแรก: ' + periodALabel + ' | ช่วงหลัง: ' + periodBLabel) : ('ช่วงข้อมูล: ' + periodALabel), { color: '374151', sz: 9 })]);
-      ws2Data.push([]);
-      const headerRow2 = ws2Data.length;
-      ws2Data.push(h2.map(t => hCell(t)));
-
-      let rowIdx2 = headerRow2 + 1;
-      if (!_isSingleMode && _stB) {
-        const bMap = {};
-        (_stB.routes || []).forEach(r => { bMap[r.customer + '|' + r.route + '|' + r.vtype] = r; });
-        const custGroups = {};
-        (_stA.routes || []).forEach(ra => { if (!custGroups[ra.customer]) custGroups[ra.customer] = []; custGroups[ra.customer].push(ra); });
-        Object.entries(custGroups).sort((a, b) => (custOrder[a[0]] ?? 999) - (custOrder[b[0]] ?? 999)).forEach(([cust, routes]) => {
-          const cTrips = routes.reduce((s, r) => s + (r.trips || 0), 0);
-          const cRecv = routes.reduce((s, r) => s + (r.recv || 0), 0);
-          const cPay = routes.reduce((s, r) => s + (r.pay || 0), 0);
-          const cOil = routes.reduce((s, r) => s + (r.oil || 0), 0);
-          const cMargin = routes.reduce((s, r) => s + (r.margin || 0), 0);
-          const cPct = cRecv > 0 ? (cMargin / cRecv) : 0;
-          ws2Data.push([
-            cCell(cust, { bold: true, fill: 'DBEAFE' }),
-            cCell('รวม ' + routes.length + ' เส้นทาง', { bold: true, fill: 'DBEAFE' }),
-            cCell('', { fill: 'DBEAFE' }),
-            cCell(cTrips, { numFmt: '#,##0', align: 'right', bold: true, fill: 'DBEAFE' }),
-            cCell(cRecv, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }),
-            cCell(cPay, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }),
-            cCell(cOil, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }),
-            cMargin < 0 ? rCell(cMargin, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }) : gCell(cMargin, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }),
-            cCell(cPct, { numFmt: nPct, align: 'right', bold: true, fill: 'DBEAFE' }),
-            cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' })
-          ]);
-          rowIdx2++;
-          routes.forEach(ra => {
-            const rb = bMap[ra.customer + '|' + ra.route + '|' + ra.vtype];
-            const dMar = rb ? (ra.margin - rb.margin) : ra.margin;
-            const status = dMar < 0 ? 'ขาดทุนเพิ่ม' : (dMar > 0 ? 'กำไรเพิ่ม' : (ra.margin < 0 ? 'ขาดทุน' : 'ปกติ'));
-            const zf = (rowIdx2 % 2 === 0) ? 'F9FAFB' : null;
-            const cells = [
-              cCell(ra.customer || '-', zf ? { fill: zf } : {}), cCell(ra.route, zf ? { fill: zf } : {}), cCell(ra.vtype, zf ? { fill: zf } : {}), cCell(ra.trips, { numFmt: '#,##0', align: 'right', fill: zf }),
-              cCell(ra.recv, { numFmt: nTHB, align: 'right', fill: zf }), cCell(ra.pay, { numFmt: nTHB, align: 'right', fill: zf }), cCell(ra.oil, { numFmt: nTHB, align: 'right', fill: zf }),
-              ra.margin < 0 ? rCell(ra.margin, { numFmt: nTHB, align: 'right', fill: zf }) : gCell(ra.margin, { numFmt: nTHB, align: 'right', fill: zf }),
-              cCell(ra.pct / 100, { numFmt: nPct, align: 'right', fill: zf })
-            ];
-            if (rb) {
-              cells.push(cCell(rb.recv, { numFmt: nTHB, align: 'right', fill: zf }), cCell(rb.pay, { numFmt: nTHB, align: 'right', fill: zf }), cCell(rb.oil, { numFmt: nTHB, align: 'right', fill: zf }));
-              cells.push(rb.margin < 0 ? rCell(rb.margin, { numFmt: nTHB, align: 'right', fill: zf }) : gCell(rb.margin, { numFmt: nTHB, align: 'right', fill: zf }));
-              cells.push(cCell(rb.pct / 100, { numFmt: nPct, align: 'right', fill: zf }));
-            } else {
-              cells.push(cCell('', { fill: zf }), cCell('', { fill: zf }), cCell('', { fill: zf }), cCell('', { fill: zf }), cCell('', { fill: zf }));
-            }
-            cells.push(dMar < 0 ? rCell(dMar, { numFmt: nTHB, align: 'right', fill: zf, bold: true }) : gCell(dMar, { numFmt: nTHB, align: 'right', fill: zf, bold: true }));
-            if (status.includes('ขาดทุน')) cells.push(rCell(status, { align: 'center', fill: zf }));
-            else if (status.includes('กำไร')) cells.push(gCell(status, { align: 'center', fill: zf }));
-            else cells.push(mCell(status, { align: 'center', fill: zf }));
-            ws2Data.push(cells);
-            rowIdx2++;
-          });
-        });
-        const onlyB = (_stB.routes || []).filter(rb => !(_stA.routes || []).some(ra => ra.customer === rb.customer && ra.route === rb.route && ra.vtype === rb.vtype));
-        if (onlyB.length > 0) {
-          ws2Data.push([cCell('เส้นทางเฉพาะช่วงหลัง: ' + periodBLabel, { bold: true, fill: '7C3AED', color: 'FFFFFF' }), cCell('', { fill: '7C3AED' }), cCell('', { fill: '7C3AED' }), cCell('', { fill: '7C3AED' }), cCell('', { fill: '7C3AED' }), cCell('', { fill: '7C3AED' }), cCell('', { fill: '7C3AED' }), cCell('', { fill: '7C3AED' }), cCell('', { fill: '7C3AED' }), cCell('', { fill: '7C3AED' }), cCell('', { fill: '7C3AED' }), cCell('', { fill: '7C3AED' }), cCell('', { fill: '7C3AED' }), cCell('', { fill: '7C3AED' }), cCell('', { fill: '7C3AED' }), cCell('', { fill: '7C3AED' })]);
-          rowIdx2++;
-          onlyB.forEach(rb => {
-            const zf = (rowIdx2 % 2 === 0) ? 'F9FAFB' : null;
-            const cells = [
-              cCell(rb.customer, { fill: zf }), cCell(rb.route, { fill: zf }), cCell(rb.vtype, { fill: zf }), cCell(rb.trips, { numFmt: '#,##0', align: 'right', fill: zf }),
-              cCell('', { fill: zf }), cCell('', { fill: zf }), cCell('', { fill: zf }), cCell('', { fill: zf }), cCell('', { fill: zf }),
-              cCell(rb.recv, { numFmt: nTHB, align: 'right', fill: zf }), cCell(rb.pay, { numFmt: nTHB, align: 'right', fill: zf }), cCell(rb.oil, { numFmt: nTHB, align: 'right', fill: zf }),
-              rb.margin < 0 ? rCell(rb.margin, { numFmt: nTHB, align: 'right', fill: zf }) : gCell(rb.margin, { numFmt: nTHB, align: 'right', fill: zf }),
-              cCell(rb.pct / 100, { numFmt: nPct, align: 'right', fill: zf }),
-              gCell(rb.margin, { numFmt: nTHB, align: 'right', fill: zf }),
-              cCell('เฉพาะช่วงหลัง', { align: 'center', fill: zf })
-            ];
-            ws2Data.push(cells);
-            rowIdx2++;
-          });
-        }
-      } else {
-        const _tripMap = {};
-        (_stA.rows || []).forEach(tr => {
-          const k = `${tr.customer || '-'}|${tr.route || '-'}|${tr.vtype || '-'}`;
-          if (!_tripMap[k]) _tripMap[k] = [];
-          _tripMap[k].push(tr);
-        });
-        const _anomCache = {};
-        const getAnomalies = (r) => {
-          const k = `${r.customer || '-'}|${r.route || '-'}|${r.vtype || '-'}`;
-          if (_anomCache[k]) return _anomCache[k];
-          const causes = [];
-          const mg = r.margin || 0;
-          if (mg < 0) { const lp = r.recv > 0 ? Math.abs(mg / r.recv * 100) : 0; causes.push({ text: `ขาดทุน ${lp.toFixed(0)}%`, color: 'red' }); }
-          if ((r.oil || 0) > (r.pay || 0) * 0.5 && (r.pay || 0) > 0) causes.push({ text: 'สำรองน้ำมัน>50%', color: 'orange' });
-          const rTrips = _tripMap[k] || [];
-          if (rTrips.length > 1) {
-            const aPay = rTrips.reduce((s, tr) => s + (tr.pay || 0), 0) / rTrips.length;
-            const aOil = rTrips.reduce((s, tr) => s + (tr.oil || 0), 0) / rTrips.length;
-            const aRecv = rTrips.reduce((s, tr) => s + (tr.recv || 0), 0) / rTrips.length;
-            let hPay = false, hOil = false, lRecv = false;
-            rTrips.forEach(tr => {
-              if (aPay > 0 && (tr.pay || 0) > aPay * 1.05) hPay = true;
-              if (aOil > 0 && (tr.oil || 0) > aOil * 1.10) hOil = true;
-              if (aRecv > 0 && (tr.recv || 0) < aRecv * 0.95) lRecv = true;
-            });
-            if (hPay) causes.push({ text: 'ราคาจ่ายแพงกว่าค่าเฉลี่ย', color: 'purple' });
-            if (hOil) causes.push({ text: 'สำรองน้ำมันแพงกว่าค่าเฉลี่ย', color: 'orange' });
-            if (lRecv) causes.push({ text: 'ราคารับต่ำกว่าค่าเฉลี่ย', color: 'blue' });
-          }
-          const priority = { red: 1, orange: 2, purple: 3, blue: 4 };
-          causes.sort((a, b) => priority[a.color] - priority[b.color]);
-          _anomCache[k] = causes;
-          return causes;
-        };
-        const custGroups = {};
-        (_stA.routes || []).forEach(r => { if (!custGroups[r.customer]) custGroups[r.customer] = []; custGroups[r.customer].push(r); });
-        Object.entries(custGroups).sort((a, b) => (custOrder[a[0]] ?? 999) - (custOrder[b[0]] ?? 999)).forEach(([cust, routes]) => {
-          const cTrips = routes.reduce((s, r) => s + (r.trips || 0), 0);
-          const cRecv = routes.reduce((s, r) => s + (r.recv || 0), 0);
-          const cPay = routes.reduce((s, r) => s + (r.pay || 0), 0);
-          const cOil = routes.reduce((s, r) => s + (r.oil || 0), 0);
-          const cMargin = routes.reduce((s, r) => s + (r.margin || 0), 0);
-          const cPct = cRecv > 0 ? (cMargin / cRecv) : 0;
-          const anomCount = routes.filter(r => getAnomalies(r).length > 0).length;
-          ws2Data.push([
-            cCell(cust, { bold: true, fill: 'DBEAFE' }),
-            cCell('รวม ' + routes.length + ' เส้นทาง' + (anomCount > 0 ? ' (' + anomCount + ' ผิดปกติ)' : ''), { bold: true, fill: 'DBEAFE' }),
-            cCell('', { fill: 'DBEAFE' }),
-            cCell(cTrips, { numFmt: '#,##0', align: 'right', bold: true, fill: 'DBEAFE' }),
-            cCell(cRecv, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }),
-            cCell(cPay, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }),
-            cCell(cOil, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }),
-            cMargin < 0 ? rCell(cMargin, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }) : gCell(cMargin, { numFmt: nTHB, align: 'right', bold: true, fill: 'DBEAFE' }),
-            cCell(cPct, { numFmt: nPct, align: 'right', bold: true, fill: 'DBEAFE' }),
-            cCell('', { fill: 'DBEAFE' })
-          ]);
-          rowIdx2++;
-          routes.forEach(r => {
-            const anoms = getAnomalies(r);
-            const statusTexts = anoms.map(c => c.text);
-            const status = statusTexts.length ? statusTexts.join(', ') : 'ปกติ';
-            const firstColor = anoms.length ? anoms[0].color : 'normal';
-            const zf = (rowIdx2 % 2 === 0) ? 'F9FAFB' : null;
-            const cells = [
-              cCell(r.customer, { fill: zf }), cCell(r.route, { fill: zf }), cCell(r.vtype, { fill: zf }), cCell(r.trips, { numFmt: '#,##0', align: 'right', fill: zf }),
-              cCell(r.recv, { numFmt: nTHB, align: 'right', fill: zf }), cCell(r.pay, { numFmt: nTHB, align: 'right', fill: zf }), cCell(r.oil, { numFmt: nTHB, align: 'right', fill: zf }),
-              r.margin < 0 ? rCell(r.margin, { numFmt: nTHB, align: 'right', fill: zf }) : gCell(r.margin, { numFmt: nTHB, align: 'right', fill: zf }),
-              cCell(r.pct / 100, { numFmt: nPct, align: 'right', fill: zf })
-            ];
-            if (firstColor === 'red') cells.push(rCell(status, { align: 'center', fill: zf }));
-            else if (firstColor === 'orange') cells.push(oCell(status, { align: 'center', fill: zf }));
-            else if (firstColor === 'purple') cells.push(pCell(status, { align: 'center', fill: zf }));
-            else if (firstColor === 'blue') cells.push(bCell(status, { align: 'center', fill: zf }));
-            else cells.push(mCell(status, { align: 'center', fill: zf }));
-            ws2Data.push(cells);
-            rowIdx2++;
-          });
-        });
-      }
-      if (ws2Data.length === headerRow2 + 1) {
-        const noDataRow2 = [mCell('ไม่พบข้อมูลตามเงื่อนไขที่เลือก', { align: 'center', bold: true })];
-        for (let i = 1; i < colCnt2; i++) noDataRow2.push(cCell(''));
-        ws2Data.push(noDataRow2);
-      }
-      const ws2 = XLSX.utils.aoa_to_sheet(ws2Data);
-      const w2cols = !_isSingleMode && _stB
-        ? [{ wch: 14 }, { wch: 30 }, { wch: 12 }, { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 14 }, { wch: 16 }]
-        : [{ wch: 14 }, { wch: 30 }, { wch: 12 }, { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 16 }];
-      ws2['!cols'] = w2cols;
-      ws2['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: colCnt2 - 1 } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: colCnt2 - 1 } },
-        { s: { r: 2, c: 0 }, e: { r: 2, c: colCnt2 - 1 } }
-      ];
-      ws2['!autofilter'] = { ref: 'A5:' + XLSX.utils.encode_cell({ c: colCnt2 - 1, r: 4 }) };
-      ws2['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
-
-      // Sheet 3: รายเที่ยว
-      const ws3Data = [];
-      const h3 = ['ช่วงเวลา', 'วันที่', 'ลูกค้า', 'เส้นทาง', 'ประเภทรถ', 'ราคารับ', 'ราคาจ่าย', 'สำรองน้ำมัน', 'ส่วนต่าง', 'กำไร %', 'หมายเหตุ'];
-      ws3Data.push([cCell('รายเที่ยว', { bold: true, sz: 12, color: '111827' })]);
-      ws3Data.push([cCell(filterSummaryText(), { color: '6B7280', sz: 9 })]);
-      ws3Data.push([cCell(!_isSingleMode && _stB ? ('ช่วงแรก: ' + periodALabel + ' | ช่วงหลัง: ' + periodBLabel) : ('ช่วงข้อมูล: ' + periodALabel), { color: '374151', sz: 9 })]);
-      ws3Data.push([]);
-      const headerRow3 = ws3Data.length;
-      ws3Data.push(h3.map(t => hCell(t)));
-
-      const allTrips = (_stA.rows || []).map(r => ({ ...r, _src: 'A' }));
-      if (!_isSingleMode && _stB && _stB.rows) {
-        _stB.rows.forEach(r => { allTrips.push({ ...r, _src: 'B' }); });
-      }
-      allTrips.sort((a, b) => {
-        const da = String(a.date || '');
-        const db = String(b.date || '');
-        if (da !== db) return da.localeCompare(db);
-        const ca = String(a.customer || '').trim().toUpperCase();
-        const cb = String(b.customer || '').trim().toUpperCase();
-        if ((custOrder[ca] ?? 999) !== (custOrder[cb] ?? 999)) return (custOrder[ca] ?? 999) - (custOrder[cb] ?? 999);
-        return String(a.route || '').localeCompare(String(b.route || ''));
-      });
-
-      let rowIdx3 = headerRow3 + 1;
-      allTrips.forEach(r => {
-        const mar = (r.recv || 0) - (r.pay || 0) - (r.oil || 0);
-        const pct = (r.recv || 0) ? (mar / r.recv * 100) : 0;
-        const reasons = [];
-        if (mar < 0) reasons.push('ขาดทุน');
-        if ((r.oil || 0) > (r.pay || 0) * 0.5 && (r.pay || 0) > 0) reasons.push('สำรองน้ำมัน>50%');
-        const periodLabel = (r._src === 'B') ? periodBLabel : periodALabel;
-        const note = reasons.length ? reasons.join(', ') : 'ปกติ';
-        const zf = (rowIdx3 % 2 === 0) ? 'F9FAFB' : null;
-        const bf = (r._src === 'B') ? 'FEF3C7' : zf;
-        const cells = [
-          cCell(periodLabel, { fill: bf, align: 'center' }),
-          cCell(r.date, { fill: bf }), cCell(r.customer, { fill: bf }), cCell(r.route, { fill: bf }), cCell(r.vtype, { fill: bf }),
-          cCell(r.recv, { numFmt: nTHB, align: 'right', fill: bf }), cCell(r.pay, { numFmt: nTHB, align: 'right', fill: bf }), cCell(r.oil, { numFmt: nTHB, align: 'right', fill: bf }),
-          mar < 0 ? rCell(mar, { numFmt: nTHB, align: 'right', fill: bf }) : gCell(mar, { numFmt: nTHB, align: 'right', fill: bf }),
-          cCell(pct / 100, { numFmt: nPct, align: 'right', fill: bf })
-        ];
-        if (note.includes('ขาดทุน')) cells.push(rCell(note, { fill: bf }));
-        else if (note.includes('สำรองน้ำมัน')) cells.push(oCell(note, { fill: bf }));
-        else cells.push(cCell(note, { fill: bf }));
-        ws3Data.push(cells);
-        rowIdx3++;
-      });
-      if (allTrips.length === 0) {
-        const noDataRow3 = [mCell('ไม่พบข้อมูลตามเงื่อนไขที่เลือก', { align: 'center', bold: true })];
-        for (let i = 1; i < 11; i++) noDataRow3.push(cCell(''));
-        ws3Data.push(noDataRow3);
-      }
-
-      const ws3 = XLSX.utils.aoa_to_sheet(ws3Data);
-      ws3['!cols'] = [{ wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 30 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 35 }];
-      ws3['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 10 } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: 10 } },
-        { s: { r: 2, c: 0 }, e: { r: 2, c: 10 } }
-      ];
-      ws3['!autofilter'] = { ref: 'A5:K5' };
-      ws3['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
+      const ws2 = buildNormalQaSheet(_stA, periodALabel);
 
       let ws4 = null, ws5 = null, ws6 = null;
       if (!_isSingleMode && _stB) {
@@ -5896,10 +6433,9 @@ function buildDailyCompare(data) {
         ws4Data.push([cCell('แสดงเส้นทางที่มีสัญญาณผิดปกติจากข้อมูลเปรียบเทียบทั้งสองช่วง: ' + periodALabel + ' และ ' + periodBLabel, { color: '374151', sz: 9 })]);
         ws4Data.push([]);
         const h4 = [
-          'ลูกค้า', 'เส้นทาง', 'ประเภทรถ',
-          addPeriod('วันที่', periodALabel), addPeriod('พขร.', periodALabel), addPeriod('ราคาน้ำมัน', periodALabel), addPeriod('ราคารับ', periodALabel), addPeriod('ราคาจ่าย', periodALabel), addPeriod('สำรองน้ำมัน', periodALabel), addPeriod('ส่วนต่าง', periodALabel),
-          addPeriod('วันที่', periodBLabel), addPeriod('พขร.', periodBLabel), addPeriod('ราคาน้ำมัน', periodBLabel), addPeriod('ราคารับ', periodBLabel), addPeriod('ราคาจ่าย', periodBLabel), addPeriod('สำรองน้ำมัน', periodBLabel), addPeriod('ส่วนต่าง', periodBLabel),
-          'Δ ส่วนต่าง', 'สัญญาณผิดปกติ'
+          'ลูกค้า', 'เส้นทาง', 'วันที่หลัก', 'วันที่เปรียบเทียบ', 'พขร.',
+          'ประเภทรถ', 'ทะเบียน', 'ราคาน้ำมัน A/B/Δ', 'สำรองน้ำมัน A/B/Δ',
+          'ราคารับ A/B/Δ', 'ราคาจ่าย A/B/Δ', 'ส่วนต่าง A/B/Δ', 'ความผิดปกติ'
         ];
         const headerRow4 = ws4Data.length;
         ws4Data.push(h4.map(t => hCell(t)));
@@ -5910,11 +6446,9 @@ function buildDailyCompare(data) {
             cCell(card.ga.customer || '-', { bold: true, fill: 'DBEAFE' }),
             cCell(card.ga.route || '-', { bold: true, fill: 'DBEAFE' }),
             cCell(card.ga.vtype || '-', { bold: true, fill: 'DBEAFE' }),
-            cCell('พบผิดปกติ ' + (card.rows || []).length + ' รายการ', { bold: true, fill: 'DBEAFE' }),
-            cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }),
-            cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }),
-            cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' })
+            cCell('รวม ' + (card.rows || []).length + ' คู่เทียบ', { bold: true, fill: 'DBEAFE' })
           ];
+          while (top.length < h4.length) top.push(cCell('', { fill: 'DBEAFE' }));
           ws4Data.push(top);
           rowIdx4++;
 
@@ -5923,31 +6457,23 @@ function buildDailyCompare(data) {
             const rb = entry.rb || {};
             const mA = (ra.margin == null || isNaN(ra.margin)) ? ((ra.recv || 0) - (ra.pay || 0) - (ra.oil || 0)) : ra.margin;
             const mB = (rb.margin == null || isNaN(rb.margin)) ? ((rb.recv || 0) - (rb.pay || 0) - (rb.oil || 0)) : rb.margin;
-            const dM = mA - mB;
-            const reasons = (entry.reasons || []).join(', ');
             const oilPriceA = getOilPriceByDate(ra.date);
             const oilPriceB = getOilPriceByDate(rb.date);
             const zf = (rowIdx4 % 2 === 0) ? 'F9FAFB' : null;
             const row = [
               cCell(ra.customer || rb.customer || '-', { fill: zf }),
               cCell(ra.route || rb.route || '-', { fill: zf }),
-              cCell(ra.vtype || rb.vtype || '-', { fill: zf }),
               cCell(ra.date || '-', { fill: zf }),
-              cCell(ra.driver || '-', { fill: zf }),
-              hasNum(oilPriceA) ? cCell(oilPriceA, { numFmt: nTHB, align: 'right', fill: zf }) : cCell('-', { align: 'right', fill: zf }),
-              cCell(ra.recv, { numFmt: nTHB, align: 'right', fill: zf }),
-              cCell(ra.pay, { numFmt: nTHB, align: 'right', fill: zf }),
-              cCell(ra.oil, { numFmt: nTHB, align: 'right', fill: zf }),
-              mA < 0 ? rCell(mA, { numFmt: nTHB, align: 'right', fill: zf }) : gCell(mA, { numFmt: nTHB, align: 'right', fill: zf }),
               cCell(rb.date || '-', { fill: zf }),
-              cCell(rb.driver || '-', { fill: zf }),
-              hasNum(oilPriceB) ? cCell(oilPriceB, { numFmt: nTHB, align: 'right', fill: zf }) : cCell('-', { align: 'right', fill: zf }),
-              cCell(rb.recv, { numFmt: nTHB, align: 'right', fill: zf }),
-              cCell(rb.pay, { numFmt: nTHB, align: 'right', fill: zf }),
-              cCell(rb.oil, { numFmt: nTHB, align: 'right', fill: zf }),
-              mB < 0 ? rCell(mB, { numFmt: nTHB, align: 'right', fill: zf }) : gCell(mB, { numFmt: nTHB, align: 'right', fill: zf }),
-              dM < 0 ? rCell(dM, { numFmt: nTHB, align: 'right', fill: zf, bold: true }) : gCell(dM, { numFmt: nTHB, align: 'right', fill: zf, bold: true }),
-              rCell(reasons, { fill: zf })
+              cCell(ra.driver || rb.driver || '-', { fill: zf }),
+              cCell((ra.vtype || '-') + ' / ' + (rb.vtype || '-'), { fill: zf }),
+              cCell((ra.plate || '-') + ' / ' + (rb.plate || '-'), { fill: zf }),
+              metricPairCell(oilPriceA, oilPriceB, { fill: zf }),
+              metricPairCell(ra.oil, rb.oil, { fill: zf }),
+              metricPairCell(ra.recv, rb.recv, { fill: zf }),
+              metricPairCell(ra.pay, rb.pay, { fill: zf }),
+              metricPairCell(mA, mB, { fill: zf, bold: true }),
+              statusStyledCell(entry.statuses || ['normal'], { fill: zf })
             ];
             ws4Data.push(row);
             rowIdx4++;
@@ -5955,24 +6481,24 @@ function buildDailyCompare(data) {
         });
 
         if (anomalyCards.length === 0) {
-          const noData4 = [mCell('ไม่พบความผิดปกติในช่วงเวลาที่เลือก', { align: 'center', bold: true })];
-          for (let i = 1; i < 19; i++) noData4.push(cCell(''));
+          const noData4 = [mCell('ไม่พบคู่เปรียบเทียบในช่วงเวลาที่เลือก', { align: 'center', bold: true })];
+          for (let i = 1; i < h4.length; i++) noData4.push(cCell(''));
           ws4Data.push(noData4);
         }
 
         ws4 = XLSX.utils.aoa_to_sheet(ws4Data);
         ws4['!cols'] = [
-          { wch: 14 }, { wch: 34 }, { wch: 12 },
-          { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
-          { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
-          { wch: 14 }, { wch: 40 }
+          { wch: 14 }, { wch: 34 }, { wch: 12 }, { wch: 12 }, { wch: 18 },
+          { wch: 16 }, { wch: 22 }, { wch: 16 }, { wch: 18 },
+          { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 34 }
         ];
+        ws4['!rows'] = ws4Data.map((_, idx) => idx >= headerRow4 + 1 ? { hpt: 46 } : {});
         ws4['!merges'] = [
-          { s: { r: 0, c: 0 }, e: { r: 0, c: 18 } },
-          { s: { r: 1, c: 0 }, e: { r: 1, c: 18 } },
-          { s: { r: 2, c: 0 }, e: { r: 2, c: 18 } }
+          { s: { r: 0, c: 0 }, e: { r: 0, c: h4.length - 1 } },
+          { s: { r: 1, c: 0 }, e: { r: 1, c: h4.length - 1 } },
+          { s: { r: 2, c: 0 }, e: { r: 2, c: h4.length - 1 } }
         ];
-        ws4['!autofilter'] = { ref: 'A5:S5' };
+        ws4['!autofilter'] = { ref: 'A5:' + XLSX.utils.encode_cell({ c: h4.length - 1, r: 4 }) };
         ws4['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
 
         const unmatchedACards = buildUnmatchedExportCards(_stA.rows, _stB.rows);
@@ -5993,9 +6519,8 @@ function buildDailyCompare(data) {
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws1, 'สรุปผล');
-      XLSX.utils.book_append_sheet(wb, ws2, 'รายละเอียดเส้นทาง');
-      XLSX.utils.book_append_sheet(wb, ws3, 'รายเที่ยว');
-      if (ws4) XLSX.utils.book_append_sheet(wb, ws4, 'ผิดปกติรายเส้นทาง');
+      XLSX.utils.book_append_sheet(wb, ws2, 'มุมมองปกติ');
+      if (ws4) XLSX.utils.book_append_sheet(wb, ws4, 'ถูกเปรียบเทียบ');
       if (ws5) XLSX.utils.book_append_sheet(wb, ws5, 'ไม่ถูกเทียบช่วงแรก');
       if (ws6) XLSX.utils.book_append_sheet(wb, ws6, 'ไม่ถูกเทียบช่วงหลัง');
 
@@ -6929,13 +7454,26 @@ function buildOilPricePage(d) {
 
 function initNav() {
   const nav = document.getElementById('navList');
-  const sidebarToggle = document.getElementById('sidebarToggle');
+  const sidebarMobileToggle = document.getElementById('sidebarMobileToggle');
   const sidebarBackdrop = document.getElementById('sidebarBackdrop');
   const sidebar = document.querySelector('.sidebar');
   if (!nav || !sidebar) return;
 
   let sidebarAnimating = false;
   let pendingSidebarState = null;
+  let sidebarAutoEnabled = false;
+  let sidebarHoverOpenTimer = 0;
+  let sidebarHoverCloseTimer = 0;
+  let sidebarHoverTransitionTimer = 0;
+  let sidebarPointerX = -1;
+  let sidebarPointerY = -1;
+  const hoverSidebarQuery = window.matchMedia?.('(min-width: 1024px) and (hover: hover) and (pointer: fine)');
+  const setMobileSidebarOpen = (open) => {
+    document.body.classList.toggle('sidebar-open', open);
+    if (sidebarBackdrop) sidebarBackdrop.hidden = !open;
+    sidebarMobileToggle?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  const closeMobileSidebar = () => setMobileSidebarOpen(false);
   const applySidebarState = (collapsed) => {
     document.body.classList.toggle('sidebar-collapsed', collapsed);
   };
@@ -6943,33 +7481,142 @@ function initNav() {
     pendingSidebarState = collapsed;
     if (sidebarAnimating) return;
     sidebarAnimating = true;
-    // Hint compositor only during animation, then release to free GPU memory
-    sidebar.style.willChange = 'width';
+    document.body.classList.add('sidebar-animating');
+    sidebar.style.willChange = 'width, transform';
     window.requestAnimationFrame(() => {
       const next = pendingSidebarState;
       pendingSidebarState = null;
       applySidebarState(next);
+      let finished = false;
       const finish = () => {
-        sidebar.removeEventListener('transitionend', finish);
+        if (finished) return;
+        finished = true;
+        sidebar.removeEventListener('transitionend', onTransitionEnd);
         sidebarAnimating = false;
         sidebar.style.willChange = '';
-        // Defer non-critical meta update until after animation completes
-        updateSidebarMeta();
+        document.body.classList.remove('sidebar-animating');
+        const updateMeta = () => updateSidebarMeta();
+        if ('requestIdleCallback' in window) {
+          window.requestIdleCallback(updateMeta, { timeout: 500 });
+        } else {
+          window.setTimeout(updateMeta, 0);
+        }
         if (pendingSidebarState !== null && pendingSidebarState !== document.body.classList.contains('sidebar-collapsed')) {
           const queued = pendingSidebarState;
           pendingSidebarState = null;
           setSidebarState(queued);
         }
       };
-      sidebar.addEventListener('transitionend', finish);
-      window.setTimeout(() => {
-        sidebar.removeEventListener('transitionend', finish);
+      const onTransitionEnd = (event) => {
+        if (event.target !== sidebar) return;
+        if (event.propertyName !== 'width' && event.propertyName !== 'transform') return;
         finish();
-      }, 380);
+      };
+      sidebar.addEventListener('transitionend', onTransitionEnd);
+      window.setTimeout(() => {
+        sidebar.removeEventListener('transitionend', onTransitionEnd);
+        finish();
+      }, 420);
     });
   };
 
-  nav.innerHTML = PAGES.map((p, idx) => `<button type="button" class="nav-item${idx === 0 ? ' active' : ''}" data-idx="${idx}" aria-label="${p.title}">
+  const clearSidebarHoverTimers = () => {
+    if (sidebarHoverOpenTimer) window.clearTimeout(sidebarHoverOpenTimer);
+    if (sidebarHoverCloseTimer) window.clearTimeout(sidebarHoverCloseTimer);
+    if (sidebarHoverTransitionTimer) window.clearTimeout(sidebarHoverTransitionTimer);
+    sidebarHoverOpenTimer = 0;
+    sidebarHoverCloseTimer = 0;
+    sidebarHoverTransitionTimer = 0;
+    document.body.classList.remove('sidebar-hover-transitioning');
+  };
+
+  const isPointerInsideSidebar = () => {
+    if (!sidebarAutoEnabled || sidebarPointerX < 0 || sidebarPointerY < 0) return false;
+    const rect = sidebar.getBoundingClientRect();
+    return sidebarPointerX >= rect.left &&
+      sidebarPointerX <= rect.right &&
+      sidebarPointerY >= rect.top &&
+      sidebarPointerY <= rect.bottom;
+  };
+
+  const setSidebarHoverExpanded = (expanded) => {
+    if (!sidebarAutoEnabled) return;
+    if (document.body.classList.contains('sidebar-hover-expanded') === expanded) return;
+    document.body.classList.add('sidebar-hover-transitioning');
+    document.body.classList.toggle('sidebar-hover-expanded', expanded);
+    if (sidebarHoverTransitionTimer) window.clearTimeout(sidebarHoverTransitionTimer);
+    sidebarHoverTransitionTimer = window.setTimeout(() => {
+      document.body.classList.remove('sidebar-hover-transitioning');
+      sidebarHoverTransitionTimer = 0;
+      reconcileSidebarHover();
+    }, 260);
+  };
+
+  const scheduleSidebarOpen = (delay = 35) => {
+    if (sidebarHoverCloseTimer) window.clearTimeout(sidebarHoverCloseTimer);
+    if (sidebarHoverOpenTimer) window.clearTimeout(sidebarHoverOpenTimer);
+    sidebarHoverOpenTimer = window.setTimeout(() => {
+      sidebarHoverOpenTimer = 0;
+      if (isPointerInsideSidebar()) setSidebarHoverExpanded(true);
+    }, delay);
+  };
+
+  const scheduleSidebarClose = (delay = 120) => {
+    if (sidebarHoverOpenTimer) window.clearTimeout(sidebarHoverOpenTimer);
+    if (sidebarHoverCloseTimer) window.clearTimeout(sidebarHoverCloseTimer);
+    sidebarHoverCloseTimer = window.setTimeout(() => {
+      sidebarHoverCloseTimer = 0;
+      if (!isPointerInsideSidebar()) setSidebarHoverExpanded(false);
+    }, delay);
+  };
+
+  function reconcileSidebarHover() {
+    if (!sidebarAutoEnabled) return;
+    if (isPointerInsideSidebar()) {
+      scheduleSidebarOpen(0);
+    } else {
+      scheduleSidebarClose(document.body.classList.contains('sidebar-hover-expanded') ? 80 : 0);
+    }
+  }
+
+  const syncSidebarAutoMode = () => {
+    sidebarAutoEnabled = Boolean(hoverSidebarQuery?.matches);
+    clearSidebarHoverTimers();
+    document.body.classList.toggle('sidebar-auto', sidebarAutoEnabled);
+    document.body.classList.remove('sidebar-hover-expanded', 'sidebar-hover-transitioning');
+    if (sidebarAutoEnabled) {
+      document.body.classList.remove('sidebar-collapsed');
+      closeMobileSidebar();
+      sidebarAnimating = false;
+      pendingSidebarState = null;
+      sidebar.style.willChange = '';
+    } else {
+      closeMobileSidebar();
+    }
+  };
+
+  syncSidebarAutoMode();
+  if (hoverSidebarQuery?.addEventListener) {
+    hoverSidebarQuery.addEventListener('change', syncSidebarAutoMode);
+  } else if (hoverSidebarQuery?.addListener) {
+    hoverSidebarQuery.addListener(syncSidebarAutoMode);
+  }
+
+  sidebar.addEventListener('pointerenter', e => {
+    if (!sidebarAutoEnabled || e.pointerType === 'touch') return;
+    sidebarPointerX = e.clientX;
+    sidebarPointerY = e.clientY;
+    scheduleSidebarOpen(35);
+  });
+
+  sidebar.addEventListener('pointerleave', e => {
+    if (!sidebarAutoEnabled || e.pointerType === 'touch') return;
+    sidebarPointerX = e.clientX;
+    sidebarPointerY = e.clientY;
+    scheduleSidebarClose(120);
+  });
+
+  nav.innerHTML = PAGES.map((p, idx) => `<button type="button" class="nav-item${idx === 0 ? ' active' : ''}" data-idx="${idx}" aria-label="${p.title}"${idx === 0 ? ' aria-current="page"' : ''}>
     <span class="nav-icon" aria-hidden="true">${p.icon}</span>
     <span class="nav-copy">
       <span class="nav-label">${p.title}</span>
@@ -6979,22 +7626,27 @@ function initNav() {
   nav.addEventListener('click', e => {
     const item = e.target.closest('.nav-item');
     if (!item) return;
-    nav.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    nav.querySelectorAll('.nav-item').forEach(n => {
+      n.classList.remove('active');
+      n.removeAttribute('aria-current');
+    });
     item.classList.add('active');
+    item.setAttribute('aria-current', 'page');
     showPage(+item.dataset.idx);
-    document.body.classList.remove('sidebar-open');
+    closeMobileSidebar();
   });
 
-  sidebarToggle?.addEventListener('click', () => {
-    const collapsed = !document.body.classList.contains('sidebar-collapsed');
-    setSidebarState(collapsed);
-    document.body.classList.remove('sidebar-open');
+  sidebarMobileToggle?.addEventListener('click', () => {
+    if (sidebarAutoEnabled) return;
+    const open = !document.body.classList.contains('sidebar-open');
+    document.body.classList.remove('sidebar-collapsed');
+    setMobileSidebarOpen(open);
   });
   sidebarBackdrop?.addEventListener('click', () => {
-    document.body.classList.remove('sidebar-open');
+    closeMobileSidebar();
   });
   window.addEventListener('keydown', e => {
-    if (e.key === 'Escape') document.body.classList.remove('sidebar-open');
+    if (e.key === 'Escape') closeMobileSidebar();
   });
 }
 
@@ -7027,6 +7679,9 @@ function showPage(idx) {
     c.style.overflow = '';
   }
   document.body.classList.remove('sidebar-open');
+  const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+  if (sidebarBackdrop) sidebarBackdrop.hidden = true;
+  document.getElementById('sidebarMobileToggle')?.setAttribute('aria-expanded', 'false');
   const builders = [buildMasterDashboard, buildDailyCompare, buildOilPricePage];
   c.innerHTML = `${renderDataSourceNotice()}${builders[idx](DATA)}`;
   c.scrollTop = 0;
@@ -7061,8 +7716,11 @@ function updateSidebarMeta() {
   const first = MTH[months[0]] || months[0];
   const last = MTH[months[months.length - 1]] || months[months.length - 1];
   const total = d.summary?.totalTrips ?? 0;
-  const year = new Date().getFullYear() + 543;
-  const label = months.length > 1 ? `${first} - ${last} ${year}` : `${first} ${year}`;
+  // Year-aware: derive from daily data, fallback to current calendar year
+  const years = Array.isArray(d.daily) ? getYearsFromRows(d.daily) : [];
+  const beYears = years.length > 0 ? years.map(y => y + 543) : [new Date().getFullYear() + 543];
+  const yearLabel = beYears.length > 1 ? `${beYears[0]}–${beYears[beYears.length - 1]}` : `${beYears[0]}`;
+  const label = months.length > 1 ? `${first} - ${last} ${yearLabel}` : `${first} ${yearLabel}`;
   const el = document.getElementById('sidebarMeta');
   if (el) el.textContent = `${label} | ${fmt(total)} เที่ยว`;
   const titleEl = document.getElementById('sidebarBrand');
@@ -7139,7 +7797,7 @@ async function loadTripsSource() {
 }
 
 async function ensureTripsReady() {
-  if (TRIPS_READY) return deepClone(window.FRAUD_DATA || []);
+  if (TRIPS_READY) return window.FRAUD_DATA || [];
   if (TRIPS_LOADING_PROMISE) return TRIPS_LOADING_PROMISE;
 
   TRIPS_LOADING_PROMISE = (async () => {
@@ -7147,7 +7805,7 @@ async function ensureTripsReady() {
     const normalized = Array.isArray(tripsSource) ? tripsSource.map(canonicalizeTripRow) : [];
     window.FRAUD_DATA = normalized;
     TRIPS_READY = true;
-    return deepClone(normalized);
+    return normalized;
   })().finally(() => {
     TRIPS_LOADING_PROMISE = null;
   });

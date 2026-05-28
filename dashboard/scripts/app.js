@@ -3720,6 +3720,10 @@ function buildDailyCompare(data) {
   let _isSingleMode = false;
   let _viewMode = 'normal';
   let _comparePresetMode = 'manual';
+  // _stRef: reference-day stats for single mode cross-day comparison.
+  // Computed automatically by dcRunCompare when _isSingleMode is true.
+  let _stRef = null;
+  let _labelRef = '';
   const _compareStatusFilters = {
     normal: new Set(),
     anomaly: new Set(),
@@ -3794,6 +3798,22 @@ function buildDailyCompare(data) {
       .map(v => ({ ...v, pct: v.recv ? v.margin / v.recv * 100 : 0 }))
       .sort((a, b) => b.margin - a.margin);
     return { dateStart, dateEnd, label, recv, pay, oil, margin, trips, pct, oilRatio, routes, rows };
+  }
+
+  // ── findRefDate: หาวันอ้างอิงสำหรับ single mode ──────────────────────────
+  // คืนวันที่ใน allDates ที่อยู่ก่อน targetDate และใกล้ที่สุด
+  // ย้อนหลังสูงสุด maxLookback วัน (นับตามปฏิทิน ไม่ใช่ index)
+  function findRefDate(targetDate, maxLookback) {
+    if (!targetDate) return null;
+    const limit = maxLookback || 3;
+    // สร้าง Date object จาก targetDate แล้วลบทีละวัน
+    const [y, m, d] = targetDate.split('-').map(Number);
+    for (let i = 1; i <= limit; i++) {
+      const dt = new Date(y, m - 1, d - i);
+      const iso = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+      if (allDates.includes(iso)) return iso;
+    }
+    return null;
   }
 
   // ── dcOpenRouteModal — แสดง Modal รายเที่ยวในเส้นทาง ────────────────
@@ -4467,6 +4487,30 @@ function buildDailyCompare(data) {
         _stB = rangeStats(b1, b2, custF, routeF, vtypeF);
         _labelA = fmtRange(a1, a2 || a1);
         _labelB = fmtRange(b1, b2 || b1);
+
+        // Single mode: auto-find reference days (up to 3 days back) for cross-day comparison.
+        // We load ALL 3 candidate days so each route can independently fall back to the
+        // nearest day that actually has data for that specific route.
+        if (_isSingleMode) {
+          const [y, m, d] = a1.split('-').map(Number);
+          const refCandidates = [];
+          for (let i = 1; i <= 3; i++) {
+            const dt = new Date(y, m - 1, d - i);
+            const iso = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+            if (allDates.includes(iso)) refCandidates.push(iso);
+          }
+          if (refCandidates.length > 0) {
+            // Load stats for each candidate day (reuse custF/routeF/vtypeF filters).
+            _stRef = refCandidates.map(iso => rangeStats(iso, iso, custF, routeF, vtypeF)).filter(Boolean);
+            _labelRef = fmtDate(refCandidates[0]); // label = nearest day (for header badge)
+          } else {
+            _stRef = [];
+            _labelRef = '';
+          }
+        } else {
+          _stRef = [];
+          _labelRef = '';
+        }
         _viewMode = 'anomaly';
         syncComparePresetUi();
         renderAll({ animate: true });
@@ -4484,7 +4528,10 @@ function buildDailyCompare(data) {
       const fUb = Array.from(_compareStatusFilters.unmatched_b || []).sort().join(',');
       const stAKey = _stA ? `${_stA.rows?.length || 0}|${_stA.routes?.length || 0}|${_stA.trips || 0}|${_stA.recv || 0}|${_stA.margin || 0}` : 'na';
       const stBKey = _stB ? `${_stB.rows?.length || 0}|${_stB.routes?.length || 0}|${_stB.trips || 0}|${_stB.recv || 0}|${_stB.margin || 0}` : 'nb';
-      return [_isSingleMode ? 1 : 0, _viewMode || 'anomaly', _labelA || '', _labelB || '', stAKey, stBKey, fNormal, fAn, fUa, fUb].join('||');
+      const stRefKey = Array.isArray(_stRef) && _stRef.length > 0
+        ? _stRef.map(s => `${s.rows?.length || 0}|${s.dateStart || ''}`).join('+')
+        : 'nr';
+      return [_isSingleMode ? 1 : 0, _viewMode || 'anomaly', _labelA || '', _labelB || '', stAKey, stBKey, stRefKey, fNormal, fAn, fUa, fUb].join('||');
     }
     // CLEANUP NOTE: Legacy renderers have been removed.
     // The active UI is defined in the "ACTIVE QA RENDER OVERRIDES" block near
@@ -4600,14 +4647,18 @@ function buildDailyCompare(data) {
 
     function getSelectedCompareStatuses(modeKey, optionKeys) {
       const current = _compareStatusFilters[modeKey] ? Array.from(_compareStatusFilters[modeKey]) : [];
-      const filtered = current.filter(v => optionKeys.includes(v));
+      const filtered = current
+        .map(v => v === 'oilHigh' ? 'payHigh' : v)
+        .filter(v => optionKeys.includes(v));
       if (filtered.length === 0) return [...optionKeys];
-      return filtered;
+      return [...new Set(filtered)];
     }
 
     function normalizeCompareStatuses(values, optionKeys) {
-      const filtered = (values || []).filter(v => optionKeys.includes(v));
-      return filtered.length ? filtered : [...optionKeys];
+      const filtered = (values || [])
+        .map(v => v === 'oilHigh' ? 'payHigh' : v)
+        .filter(v => optionKeys.includes(v));
+      return filtered.length ? [...new Set(filtered)] : [...optionKeys];
     }
 
     function scheduleCompareStatusVisibility(modeKey) {
@@ -4629,7 +4680,7 @@ function buildDailyCompare(data) {
       if (cards.length === 0) return;
       cards.forEach(card => {
         const raw = card.getAttribute('data-status-keys') || '';
-        const statuses = raw.split(',').map(v => v.trim()).filter(Boolean);
+        const statuses = raw.split(',').map(v => v.trim()).filter(Boolean).map(v => v === 'oilHigh' ? 'payHigh' : v);
         const visible = statuses.some(s => selectedSet.has(s));
         card.style.display = visible ? '' : 'none';
       });
@@ -4644,9 +4695,43 @@ function buildDailyCompare(data) {
         if (routesEl) routesEl.textContent = String(visibleCards.length);
         if (tripsEl) tripsEl.textContent = String(visibleTrips);
         if (anomsEl) anomsEl.textContent = String(visibleAnoms);
+
+        // Per-customer aggregate update: recompute totals from currently visible routes inside.
         document.querySelectorAll('.dc-normal-customer-section').forEach(section => {
-          const hasVisibleRoute = Array.from(section.querySelectorAll('.dc-status-card-normal')).some(card => card.style.display !== 'none');
-          section.style.display = hasVisibleRoute ? '' : 'none';
+          const visibleRoutes = Array.from(section.querySelectorAll('.dc-status-card-normal'))
+            .filter(card => card.style.display !== 'none');
+          section.style.display = visibleRoutes.length > 0 ? '' : 'none';
+          const custCard = section.querySelector('.dc-normal-customer-card');
+          if (!custCard) return;
+          const sumAttr = (sel) => visibleRoutes.reduce((s, c) => s + (Number(c.getAttribute(sel)) || 0), 0);
+          const cTrips = sumAttr('data-trip-count');
+          const cRecv  = sumAttr('data-recv');
+          const cPay   = sumAttr('data-pay');
+          const cOil   = sumAttr('data-oil');
+          const cMargin= sumAttr('data-margin');
+          const cAnoms = sumAttr('data-anom-count');
+          const cPct   = cRecv > 0 ? cMargin / cRecv * 100 : 0;
+          const tone   = cMargin >= 0 ? '#22c55e' : '#ef4444';
+          const setText = (sel, val) => { const el = custCard.querySelector(sel); if (el) el.textContent = val; };
+          setText('.js-cust-routes', String(visibleRoutes.length));
+          setText('.js-cust-trips',  String(cTrips));
+          setText('.js-cust-recv',   fmt(cRecv));
+          setText('.js-cust-pay',    fmt(cPay));
+          setText('.js-cust-oil',    fmt(cOil));
+          // Margin/pct also need color update.
+          const marginEl = custCard.querySelector('.js-cust-margin');
+          if (marginEl) { marginEl.textContent = fmt(cMargin); marginEl.style.color = tone; }
+          const pctEl = custCard.querySelector('.js-cust-pct');
+          if (pctEl) { pctEl.textContent = cPct.toFixed(1) + '%'; pctEl.style.color = tone; }
+          // Anomaly badge: swap between .dc-normal-alert and .dc-normal-ok.
+          const anomWrap = custCard.querySelector('.js-cust-anom-wrap');
+          if (anomWrap) {
+            if (cAnoms > 0) {
+              anomWrap.innerHTML = `<span class="dc-normal-alert"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg><b class="js-cust-anoms">${cAnoms}</b><span>ความผิดปกติ</span></span>`;
+            } else {
+              anomWrap.innerHTML = '<span class="dc-normal-ok">ปกติ</span>';
+            }
+          }
         });
       } else if (modeKey === 'anomaly') {
         const routesEl = document.getElementById('dc-summary-routes-anomaly');
@@ -4737,7 +4822,6 @@ function buildDailyCompare(data) {
         loss: 'ขาดทุน',
         oil50: 'สำรองน้ำมัน>50%',
         payHigh: 'ราคาจ่ายแพงกว่าเดิม',
-        oilHigh: 'สำรองน้ำมันแพงกว่าเดิม',
         recvLow: 'ราคารับผิดปกติ',
         normal: 'ปกติ'
       };
@@ -4747,7 +4831,7 @@ function buildDailyCompare(data) {
       const labels = getCompareStatusLabelMap();
       const selectedSet = new Set(selectedKeys);
       const allChecked = optionKeys.every(k => selectedSet.has(k));
-      const order = ['loss', 'oil50', 'payHigh', 'oilHigh', 'recvLow', 'normal'];
+      const order = ['loss', 'oil50', 'payHigh', 'recvLow', 'normal'];
       const orderedKeys = [...optionKeys].sort((a, b) => {
         const ai = order.indexOf(a);
         const bi = order.indexOf(b);
@@ -4759,7 +4843,7 @@ function buildDailyCompare(data) {
 
       const getCmpColor = (k) => {
         if (k === 'loss') return 'red';
-        if (k === 'oil50' || k === 'oilHigh') return 'orange';
+        if (k === 'oil50') return 'orange';
         if (k === 'payHigh') return 'purple';
         if (k === 'recvLow') return 'blue';
         if (k === 'normal') return 'green';
@@ -5157,13 +5241,13 @@ function buildDailyCompare(data) {
       const addPeriod = (title, periodLabel) => `${title} (${periodLabel || '-'})`;
       const qaStatusLabels = () => (typeof getCompareStatusLabelMap === 'function')
         ? getCompareStatusLabelMap()
-        : { loss: 'ขาดทุน', oil50: 'สำรองน้ำมัน>50%', payHigh: 'ราคาจ่ายสูงผิดปกติ', oilHigh: 'สำรองน้ำมันสูงผิดปกติ', recvLow: 'ราคารับผิดปกติ', normal: 'ปกติ' };
+        : { loss: 'ขาดทุน', oil50: 'สำรองน้ำมัน>50%', payHigh: 'ราคาจ่ายสูงผิดปกติ', recvLow: 'ราคารับผิดปกติ', normal: 'ปกติ' };
       const cleanStatuses = statuses => {
-        const values = [...new Set(statuses && statuses.length ? statuses : ['normal'])];
+        const values = [...new Set((statuses && statuses.length ? statuses : ['normal']).map(s => s === 'oilHigh' ? 'payHigh' : s))];
         return values.some(s => s !== 'normal') ? values.filter(s => s !== 'normal') : values;
       };
-      // Priority order matches dcQaStatusRank: loss(4) > oil50(3) > payHigh/oilHigh/recvLow(2) > normal(0)
-      const statusPriorityOrder = ['loss', 'oil50', 'payHigh', 'oilHigh', 'recvLow', 'normal'];
+      // Priority order matches dcQaStatusRank: loss(4) > oil50(3) > payHigh/recvLow(2) > normal(0)
+      const statusPriorityOrder = ['loss', 'oil50', 'payHigh', 'recvLow', 'normal'];
       const statusText = statuses => {
         const labels = qaStatusLabels();
         const sorted = [...cleanStatuses(statuses)].sort(
@@ -5179,7 +5263,6 @@ function buildDailyCompare(data) {
         if (values.includes('loss')) return 'loss';
         if (values.includes('oil50')) return 'oil50';
         if (values.includes('payHigh')) return 'payHigh';
-        if (values.includes('oilHigh')) return 'oilHigh';
         if (values.includes('recvLow')) return 'recvLow';
         return 'normal';
       };
@@ -5188,7 +5271,6 @@ function buildDailyCompare(data) {
         loss:     'DC2626',
         oil50:    'EA580C',
         payHigh:  'A855F7',
-        oilHigh:  'EA580C',
         recvLow:  '3B82F6',
         normal:   '16A34A'
       };
@@ -5204,7 +5286,7 @@ function buildDailyCompare(data) {
         const base = { ...(opts || {}), wrap: true, valign: 'top' };
         const color = statusColor(values);
         if (color === 'loss') return rCell(text, base);
-        if (color === 'oil50' || color === 'oilHigh') return oCell(text, base);
+        if (color === 'oil50') return oCell(text, base);
         if (color === 'payHigh') return pCell(text, base);
         if (color === 'recvLow') return bCell(text, base);
         if (color === 'normal') return gCell(text, base);
@@ -5512,7 +5594,7 @@ function buildDailyCompare(data) {
       // Filter selections from UI status panels (so XLSX matches what user sees on screen).
       // Each panel uses the same option keys; if the user has nothing selected the helper
       // returns the full option list, so cards remain unfiltered by default.
-      const exportStatusOptionKeys = ['loss', 'oil50', 'payHigh', 'oilHigh', 'recvLow', 'normal'];
+      const exportStatusOptionKeys = ['loss', 'oil50', 'payHigh', 'recvLow', 'normal'];
       const exportLabelMap = qaStatusLabels();
       const anomalySelectedRaw = (typeof getSelectedCompareStatuses === 'function')
         ? getSelectedCompareStatuses('anomaly', exportStatusOptionKeys)
@@ -5788,14 +5870,13 @@ function buildDailyCompare(data) {
     // 3. Re-test normal mode, matched comparison, unmatched A/B, popup opening,
     //    status filters, XLSX export, and PNG export.
     const dcQaExportIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M240-80q-33 0-56.5-23.5T160-160v-400q0-33 23.5-56.5T240-640h120v80H240v400h480v-400H600v-80h120q33 0 56.5 23.5T800-560v400q0 33-23.5 56.5T720-80H240Zm200-240v-447l-64 64-56-57 160-160 160 160-56 57-64-64v447h-80Z"/></svg>';
-    const dcQaStatusOrder = ['loss', 'oil50', 'payHigh', 'oilHigh', 'recvLow', 'normal'];
+    const dcQaStatusOrder = ['loss', 'oil50', 'payHigh', 'recvLow', 'normal'];
 
     function dcQaStatusLabels() {
       return {
         loss: 'ขาดทุน',
         oil50: 'สำรองน้ำมัน>50%',
         payHigh: 'ราคาจ่ายสูงผิดปกติ',
-        oilHigh: 'สำรองน้ำมันสูงผิดปกติ',
         recvLow: 'ราคารับผิดปกติ',
         normal: 'ปกติ'
       };
@@ -5809,7 +5890,7 @@ function buildDailyCompare(data) {
       const values = statuses || [];
       if (values.includes('loss')) return 4;
       if (values.includes('oil50')) return 3;
-      if (values.includes('payHigh') || values.includes('oilHigh') || values.includes('recvLow')) return 2;
+      if (values.includes('payHigh') || values.includes('recvLow')) return 2;
       if (values.includes('normal')) return 0;
       return 1;
     }
@@ -5831,7 +5912,7 @@ function buildDailyCompare(data) {
 
     function dcQaStatusBadges(statuses) {
       const labels = dcQaStatusLabels();
-      const unique = [...new Set(statuses && statuses.length ? statuses : ['normal'])];
+      const unique = [...new Set((statuses && statuses.length ? statuses : ['normal']).map(s => s === 'oilHigh' ? 'payHigh' : s))];
       unique.sort((a, b) => dcQaStatusOrder.indexOf(a) - dcQaStatusOrder.indexOf(b));
       return `<div class="dc-qa-badges">${unique.map(key => `<span class="dc-qa-badge is-${esc(key)}">${esc(labels[key] || key)}</span>`).join('')}</div>`;
     }
@@ -5849,10 +5930,10 @@ function buildDailyCompare(data) {
     // - loss: margin < 0
     // - oil50: oil > pay * 0.5
     // - payHigh: trip.pay > pay ของแถวอื่นอย่างน้อย 1 แถวใน peer (card เดียวกัน)
-    // - oilHigh: trip.oil > oil ของแถวอื่นอย่างน้อย 1 แถวใน peer
+    // - payHigh: trip.pay/trip.oil สูงกว่าแถวอื่นอย่างน้อย 1 แถวใน peer
     // - recvLow: มีแถวอื่นใน peer ที่ราคาน้ำมันเท่ากัน แต่ recv ต่างกัน
     // - normal: ไม่เข้าเงื่อนไขใดเลย
-    // กรณีพิเศษ: ถ้า peer มีแค่ 1 แถว (รวมตัวเอง) จะไม่ติด payHigh / oilHigh / recvLow
+    // กรณีพิเศษ: ถ้า peer มีแค่ 1 แถว (รวมตัวเอง) จะไม่ติด payHigh / recvLow
     function dcQaTripStatuses(trip, peers = []) {
       const statuses = new Set();
       if ((trip.margin || 0) < 0) statuses.add('loss');
@@ -5867,7 +5948,7 @@ function buildDailyCompare(data) {
         for (const peer of peers) {
           if (peer === trip) continue;
           if (tripPay > 0 && (peer.pay || 0) > 0 && tripPay > (peer.pay || 0)) statuses.add('payHigh');
-          if (tripOil > 0 && (peer.oil || 0) > 0 && tripOil > (peer.oil || 0)) statuses.add('oilHigh');
+          if (tripOil > 0 && (peer.oil || 0) > 0 && tripOil > (peer.oil || 0)) statuses.add('payHigh');
           if (hasNum(tripOilPrice)) {
             const peerOilPrice = getOilPriceByDate(peer?.date);
             if (hasNum(peerOilPrice) && Math.abs((tripOilPrice || 0) - (peerOilPrice || 0)) < 0.0001 &&
@@ -5887,7 +5968,7 @@ function buildDailyCompare(data) {
     // - loss: margin ของ A หรือ B ติดลบ
     // - oil50: A หรือ B มี oil > pay * 0.5
     // - payHigh: A.pay > B.pay
-    // - oilHigh: A.oil > B.oil
+    // - payHigh: A.pay หรือ A.oil > B
     // - recvLow: ราคาน้ำมันของ A/B เท่ากัน และ recv ของ A/B ต่างกัน
     // - normal: ไม่เข้าเงื่อนไขใดเลย
     function dcQaCompareStatuses(ra, rb) {
@@ -5897,7 +5978,7 @@ function buildDailyCompare(data) {
         ((rb.oil || 0) > (rb.pay || 0) * 0.5 && (rb.pay || 0) > 0)) statuses.add('oil50');
 
       if ((ra.pay || 0) > (rb.pay || 0)) statuses.add('payHigh');
-      if ((ra.oil || 0) > (rb.oil || 0)) statuses.add('oilHigh');
+      if ((ra.oil || 0) > (rb.oil || 0)) statuses.add('payHigh');
 
       const oilPriceA = getOilPriceByDate(ra?.date);
       const oilPriceB = getOilPriceByDate(rb?.date);
@@ -5913,7 +5994,7 @@ function buildDailyCompare(data) {
       if (statuses.includes('loss')) labels.push('ตรวจส่วนต่าง');
       if (statuses.includes('oil50')) labels.push('ตรวจสำรองน้ำมัน');
       if (statuses.includes('payHigh')) labels.push(`จ่าย A สูงกว่า B ${fmt((ra.pay || 0) - (rb.pay || 0))}`);
-      if (statuses.includes('oilHigh')) labels.push(`น้ำมัน A สูงกว่า B ${fmt((ra.oil || 0) - (rb.oil || 0))}`);
+      if ((ra.oil || 0) > (rb.oil || 0)) labels.push(`น้ำมัน A สูงกว่า B ${fmt((ra.oil || 0) - (rb.oil || 0))}`);
       if (statuses.includes('recvLow')) labels.push(`ราคารับ A/B ไม่เท่ากัน ${fmt(Math.abs((ra.recv || 0) - (rb.recv || 0)))}`);
       return labels.length ? labels.join(', ') : 'ไม่มีสัญญาณเพิ่ม';
     }
@@ -5971,33 +6052,36 @@ function buildDailyCompare(data) {
       const anoms = items.reduce((sum, item) => sum + (item.anomCount || 0), 0);
       const color = colors[String(customer || '').trim().toUpperCase()] || '#60a5fa';
       const tone = margin >= 0 ? '#22c55e' : '#ef4444';
-      return `<section class="dc-normal-customer-card">
+      // data-customer-key lets the visibility updater locate this card and recompute
+      // its aggregates from the currently-visible route cards inside it.
+      const customerKey = String(customer || '').trim();
+      return `<section class="dc-normal-customer-card" data-customer-key="${esc(customerKey)}">
         <div class="dc-normal-customer-main">
           <div class="dc-normal-customer-id">
             <span class="dc-normal-dot" style="background:${color};box-shadow:0 0 10px ${color}55"></span>
-            <div><h3>${esc(customer)}</h3><p>${items.length} เส้นทาง · ${trips} เที่ยว</p></div>
+            <div><h3>${esc(customer)}</h3><p><span class="js-cust-routes">${items.length}</span> เส้นทาง · <span class="js-cust-trips">${trips}</span> เที่ยว</p></div>
           </div>
           <div class="dc-normal-customer-score">
-            <div><span>ส่วนต่างรวม</span><b style="color:${tone}">${fmt(margin)}</b></div>
-            <div><span>กำไร %</span><b style="color:${tone}">${pct.toFixed(1)}%</b></div>
-            ${anoms > 0 ? `<span class="dc-normal-alert"><svg xmlns="http://www.w3.org/2000/svg" height="12px" viewBox="0 -960 960 960" width="12px" fill="currentColor" style="margin-right:6px;display:inline-block;vertical-align:middle;margin-top:-2px"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg>${anoms} ความผิดปกติ</span>` : '<span class="dc-normal-ok">ปกติ</span>'}
+            <div><span>ส่วนต่างรวม</span><b class="js-cust-margin" style="color:${tone}">${fmt(margin)}</b></div>
+            <div><span>กำไร %</span><b class="js-cust-pct" style="color:${tone}">${pct.toFixed(1)}%</b></div>
+          <span class="js-cust-anom-wrap">${anoms > 0 ? `<span class="dc-normal-alert"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg><b class="js-cust-anoms">${anoms}</b><span>ความผิดปกติ</span></span>` : '<span class="dc-normal-ok">ปกติ</span>'}</span>
           </div>
         </div>
         <div class="dc-normal-customer-metrics">
-          <div><span>ราคารับรวม</span><b>${fmt(recv)}</b></div>
-          <div><span>ราคาจ่ายรวม</span><b>${fmt(pay)}</b></div>
-          <div><span>สำรองน้ำมัน</span><b class="is-oil">${fmt(oil)}</b></div>
+          <div><span>ราคารับรวม</span><b class="js-cust-recv">${fmt(recv)}</b></div>
+          <div><span>ราคาจ่ายรวม</span><b class="js-cust-pay">${fmt(pay)}</b></div>
+          <div><span>สำรองน้ำมัน</span><b class="is-oil js-cust-oil">${fmt(oil)}</b></div>
         </div>
         ${routeCardsHtml ? `<div class="dc-normal-route-list">${routeCardsHtml}</div>` : ''}
       </section>`;
     }
 
-    function dcQaSingleReportHead(cases, stA) {
+    function dcQaSingleReportHead(cases, stA, refLabel) {
       const totalAnoms = cases.reduce((sum, item) => sum + (item.anomCount || 0), 0);
       return `<header class="dc-normal-summary-head">
         <div class="dc-normal-title-wrap"><span></span><h2>รายงานวิเคราะห์เส้นทางประจำวัน</h2></div>
         <div class="dc-normal-summary-meta">
-          ${totalAnoms > 0 ? `<span class="dc-normal-total-alert"><svg xmlns="http://www.w3.org/2000/svg" height="12px" viewBox="0 -960 960 960" width="12px" fill="currentColor" style="margin-right:6px;display:inline-block;vertical-align:middle;margin-top:-2px"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg>พบ&nbsp; <b id="dc-summary-anoms-normal">${totalAnoms}</b> &nbsp;รายการผิดปกติ</span>` : '<span class="dc-normal-ok">ปกติ</span>'}
+          ${totalAnoms > 0 ? `<span class="dc-normal-total-alert"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg><span>พบ</span><b id="dc-summary-anoms-normal">${totalAnoms}</b><span>รายการผิดปกติ</span></span>` : '<span class="dc-normal-ok">ปกติ</span>'}
           <span><span id="dc-summary-routes-normal">${cases.length}</span>&nbsp;เส้นทาง&nbsp;<span id="dc-summary-trips-normal">${stA.trips || 0}</span>&nbsp;เที่ยว</span>
         </div>
       </header>`;
@@ -6177,7 +6261,7 @@ function buildDailyCompare(data) {
       const stateKey = renderStateKey();
       let html = '';
       if (_isSingleMode) {
-        html = renderSingleTable(_stA);
+        html = renderSingleTable(_stA, _stRef, _labelRef);
       } else {
         const qfBar = renderQFBarModern();
         let tbl = '';
@@ -6195,12 +6279,45 @@ function buildDailyCompare(data) {
       if (shouldUpdate && animate) dcAnimateSections();
     }
 
-    function renderSingleTable(stA) {
+    function renderSingleTable(stA, stRef, labelRef) {
       if (!stA || !stA.routes || stA.routes.length === 0) return dcQaEmpty('ไม่มีข้อมูลสำหรับช่วงเวลาที่เลือก');
+
+      // stRef is now an array of rangeStats objects (one per candidate day, nearest first).
+      // Build per-day lookup: dateStr → { routeKey → trips[] }
+      // Each route independently picks the nearest day that has data for it.
+      const refDays = Array.isArray(stRef) ? stRef : (stRef ? [stRef] : []);
+      const refDayMaps = refDays.map(st => {
+        const map = {};
+        (st.rows || []).forEach(r => {
+          const k = dcQaRouteKey(r);
+          if (!map[k]) map[k] = [];
+          map[k].push(r);
+        });
+        return { dateLabel: fmtDate(st.dateStart), map };
+      });
+      const hasRef = refDayMaps.length > 0;
+
+      // Per-route: find the nearest ref day that has trips for this route.
+      const getRefForRoute = (routeKey) => {
+        for (const day of refDayMaps) {
+          if (day.map[routeKey] && day.map[routeKey].length > 0) {
+            return { trips: day.map[routeKey].slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))), dateLabel: day.dateLabel };
+          }
+        }
+        return null; // no ref data found for this route in any candidate day
+      };
+
       const cases = stA.routes.map(route => {
         const trips = (stA.rows || []).filter(r => r.customer === route.customer && r.route === route.route && r.vtype === route.vtype)
           .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
-        const rows = trips.map(ra => ({ ra, statuses: dcQaTripStatuses(ra, trips) }))
+
+        // Per-route: find nearest ref day that has data for this route+vtype.
+        const routeKey = trips.length > 0 ? dcQaRouteKey(trips[0]) : null;
+        const refResult = (hasRef && routeKey) ? getRefForRoute(routeKey) : null;
+        const refTripsForRoute = refResult ? refResult.trips : [];
+        const peers = refTripsForRoute.length > 0 ? [...trips, ...refTripsForRoute] : trips;
+
+        const rows = trips.map(ra => ({ ra, statuses: dcQaTripStatuses(ra, peers) }))
           .sort((a, b) => {
             const rankA = dcQaStatusRank(a.statuses);
             const rankB = dcQaStatusRank(b.statuses);
@@ -6211,14 +6328,14 @@ function buildDailyCompare(data) {
         const statusSet = new Set();
         rows.forEach(r => r.statuses.forEach(s => statusSet.add(s)));
         if (anomCount > 0) statusSet.delete('normal');
-        return { route, rows, anomCount, statuses: [...statusSet], severity: Math.max(...rows.map(r => dcQaStatusRank(r.statuses))) };
+        return { route, rows, anomCount, statuses: [...statusSet], severity: Math.max(...rows.map(r => dcQaStatusRank(r.statuses))), refTripsForRoute, refDateLabel: refResult ? refResult.dateLabel : null };
       }).sort((a, b) => {
         if (b.severity !== a.severity) return b.severity - a.severity;
         if (b.anomCount !== a.anomCount) return b.anomCount - a.anomCount;
         return routeDisplay(a.route).localeCompare(routeDisplay(b.route), 'th');
       });
 
-      const normalOptionKeys = ['loss', 'oil50', 'payHigh', 'oilHigh', 'recvLow', 'normal'];
+      const normalOptionKeys = ['loss', 'oil50', 'payHigh', 'recvLow', 'normal'];
       const selectedNormalStatuses = getSelectedCompareStatuses('normal', normalOptionKeys);
       const selectedNormalSet = new Set(selectedNormalStatuses);
       const counts = {};
@@ -6226,10 +6343,50 @@ function buildDailyCompare(data) {
 
       const renderCaseCard = (item) => {
         const { route, rows, anomCount, statuses } = item;
-        const previewRows = (anomCount ? rows.filter(r => !r.statuses.includes('normal')) : rows).slice(0, 6);
-        const hiddenCount = rows.length - previewRows.length;
+        // Show ALL A-rows (no preview limit). User wants to see every trip.
+        const previewRows = anomCount ? rows.filter(r => !r.statuses.includes('normal')) : rows;
         const displayStyle = statuses.some(s => selectedNormalSet.has(s)) ? '' : 'display:none;';
-        return `<article class="dc-qa-case dc-qa-clickable dc-status-card dc-status-card-normal" data-severity="${item.severity}" data-status-keys="${esc(statuses.join(','))}" data-anom-count="${anomCount}" data-trip-count="${rows.length}" style="${displayStyle}" onclick="dcOpenRouteModal('${stA.dateStart}','${stA.dateEnd}','${esc(route.route)}','${esc(route.customer)}','${esc(route.vtype)}')">
+
+        // Reference-day trips for this route (already sorted by date in the cases loop).
+        // Match key is route+vtype only; drivers are independent — show all ref trips.
+        const refTripsForCard = item.refTripsForRoute || [];
+        const routeHasRefTrips = refTripsForCard.length > 0;
+
+        // Render a reference-day trip row (muted, no status badge).
+        const renderRefRow = (refTrip) => {
+          const refMarginClass = (refTrip.margin || 0) >= 0 ? 'is-positive' : 'is-negative';
+          return `<tr class="dc-qa-ref-row">
+            <td class="dc-qa-date">${esc(dcQaShortDate(refTrip.date))}</td>
+            <td class="dc-qa-driver" title="${esc(refTrip.driver || '-')}">${esc(refTrip.driver || '-')}</td>
+            <td class="is-right">${dcQaOilPrice(refTrip.date)}</td>
+            <td class="is-right is-oil">${dcQaNum(refTrip.oil)}</td>
+            <td class="is-right">${dcQaNum(refTrip.recv)}</td>
+            <td class="is-right">${dcQaNum(refTrip.pay)}</td>
+            <td class="is-right ${refMarginClass}">${dcQaNum(refTrip.margin)}</td>
+            <td></td>
+          </tr>`;
+        };
+
+        // Strip label: show the actual ref date used for THIS route (may differ per route).
+        const cardRefLabel = item.refDateLabel || null;
+        let stripRefLabel = '';
+        if (hasRef) {
+          if (routeHasRefTrips && cardRefLabel) {
+            stripRefLabel = `<span class="dc-qa-ref-strip-label">⇄ ${esc(cardRefLabel)} (${refTripsForCard.length} เที่ยว)</span>`;
+          } else {
+            // No ref data found for this route in any of the 3 candidate days.
+            const nearestLabel = labelRef || (refDayMaps.length > 0 ? refDayMaps[0].dateLabel : '');
+            stripRefLabel = nearestLabel
+              ? `<span class="dc-qa-ref-strip-label is-no-match" title="ไม่พบเส้นทางนี้ในวันก่อนหน้า (ลองถึง ${esc(nearestLabel)})">ไม่มีข้อมูลเปรียบเทียบ</span>`
+              : '';
+          }
+        }
+
+        // Body rows: A trips first, then all ref trips directly (no divider row).
+        const aRowsHtml = previewRows.map(row => dcQaSingleTripRow(row.ra, row.statuses, false)).join('');
+        const refRowsHtml = routeHasRefTrips ? refTripsForCard.map(renderRefRow).join('') : '';
+
+        return `<article class="dc-qa-case dc-qa-clickable dc-status-card dc-status-card-normal" data-severity="${item.severity}" data-status-keys="${esc(statuses.join(','))}" data-anom-count="${anomCount}" data-trip-count="${rows.length}" data-recv="${route.recv || 0}" data-pay="${route.pay || 0}" data-oil="${route.oil || 0}" data-margin="${route.margin || 0}" style="${displayStyle}" onclick="dcOpenRouteModal('${stA.dateStart}','${stA.dateEnd}','${esc(route.route)}','${esc(route.customer)}','${esc(route.vtype)}')">
           <header class="dc-qa-case-head">
             <div class="dc-qa-title-block">
               <div class="dc-qa-identity"><span class="dc-qa-customer">${esc(route.customer || '-')}</span><span class="dc-qa-vtype">${esc(route.vtype || '-')}</span></div>
@@ -6239,15 +6396,15 @@ function buildDailyCompare(data) {
           </header>
           <div class="dc-qa-case-strip">
             <span>${esc(fmtRange(stA.dateStart, stA.dateEnd))}</span>
+            ${stripRefLabel}
             <span>${anomCount ? `ต้องตรวจสอบ ${anomCount} เที่ยว` : 'ไม่พบความผิดปกติ'}</span>
           </div>
           <div class="dc-qa-table-wrap">
             <table class="dc-qa-table">
               <thead><tr><th>วันที่</th><th>พขร.</th><th class="is-right">ราคาน้ำมัน</th><th class="is-right">สำรองน้ำมัน</th><th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">ส่วนต่าง</th><th>ความผิดปกติ</th></tr></thead>
-              <tbody>${previewRows.map(row => dcQaSingleTripRow(row.ra, row.statuses, false)).join('')}</tbody>
+              <tbody>${aRowsHtml}${refRowsHtml}</tbody>
             </table>
           </div>
-          ${hiddenCount > 0 ? `<div class="dc-qa-more">มีเที่ยววิ่งเพิ่มเติมอีก ${hiddenCount} เที่ยว (คลิกเพื่อดูรายละเอียด)</div>` : ''}
         </article>`;
       };
 
@@ -6267,7 +6424,7 @@ function buildDailyCompare(data) {
 
       return `<section class="dc-qa-page">
         <section class="dc-normal-summary">
-          ${dcQaSingleReportHead(cases, stA)}
+          ${dcQaSingleReportHead(cases, stA, hasRef ? labelRef : null)}
           <div class="dc-summary-filter dc-normal-filter">${renderCompareStatusFilter('normal', normalOptionKeys, selectedNormalStatuses, counts)}</div>
         </section>
         ${body}
@@ -6280,7 +6437,7 @@ function buildDailyCompare(data) {
       const cardsData = dcQaBuildAnomalyCards(stA, stB);
       window._anomalyCardsData = cardsData;
       if (!cardsData.length) return dcQaEmpty('ไม่พบเส้นทางที่จับคู่ driver ได้ในช่วงเวลานี้');
-      const optionKeys = ['loss', 'oil50', 'payHigh', 'oilHigh', 'recvLow', 'normal'];
+      const optionKeys = ['loss', 'oil50', 'payHigh', 'recvLow', 'normal'];
       const selected = getSelectedCompareStatuses('anomaly', optionKeys);
       const selectedSet = new Set(selected);
       const visibleCards = cardsData.filter(card => card.statuses.some(s => selectedSet.has(s)));
@@ -6323,7 +6480,7 @@ function buildDailyCompare(data) {
       const cardsData = dcQaBuildUnmatchedCards(stA, stB, side);
       window._unmatchedCardsData = cardsData;
       if (!cardsData.length) return dcQaEmpty('ไม่พบรายการเที่ยววิ่งที่จับคู่ไม่ได้ในหน้าต่างนี้');
-      const optionKeys = ['loss', 'oil50', 'payHigh', 'oilHigh', 'recvLow', 'normal'];
+      const optionKeys = ['loss', 'oil50', 'payHigh', 'recvLow', 'normal'];
       const modeKey = isA ? 'unmatched_a' : 'unmatched_b';
       const selected = getSelectedCompareStatuses(modeKey, optionKeys);
       const selectedSet = new Set(selected);

@@ -3717,7 +3717,7 @@ function buildDailyCompare(data) {
     'SPX-FSOC': 5, 'SPX': 5
   };
 
-  let _isSingleMode = false;
+  let _isSingleMode = true;  // default: single/normal view on startup
   let _viewMode = 'normal';
   let _comparePresetMode = 'manual';
   // _stRef: reference-day stats for single mode cross-day comparison.
@@ -4685,13 +4685,72 @@ function buildDailyCompare(data) {
         card.style.display = visible ? '' : 'none';
       });
 
+      // Lens filter for normal mode: when user selects a SUBSET of statuses,
+      // hide badges that don't match the selection (focus on the picked status only).
+      // When all options are selected (default), show every badge as usual.
+      if (modeKey === 'normal') {
+        const isSubset = selected.length > 0 && selected.length < optionKeys.length;
+        cards.forEach(card => {
+          if (card.style.display === 'none') return;
+          const badges = card.querySelectorAll('.dc-qa-badge[data-status-key]');
+          badges.forEach(b => {
+            const key = b.getAttribute('data-status-key');
+            // Treat oilHigh same as payHigh (already collapsed in dcQaStatusBadges).
+            const norm = key === 'oilHigh' ? 'payHigh' : key;
+            b.style.display = (isSubset && !selectedSet.has(norm)) ? 'none' : '';
+          });
+          // If a row's badges are all hidden, also hide the row itself so the table
+          // doesn't show empty status cells (keeps the lens consistent).
+          card.querySelectorAll('.dc-qa-table tbody tr').forEach(tr => {
+            // Skip ref-rows (they don't have status badges by design).
+            if (tr.classList.contains('dc-qa-ref-row')) return;
+            const visBadges = tr.querySelectorAll('.dc-qa-badge[data-status-key]:not([style*="display: none"])');
+            tr.style.display = (isSubset && visBadges.length === 0) ? 'none' : '';
+          });
+        });
+      }
+
       const visibleCards = Array.from(cards).filter(card => card.style.display !== 'none');
+      // Helper: count trip rows that are still visible inside a card (subset filter
+      // may hide some trip rows even when the card itself is shown).
+      const countVisibleTripRows = (card) => {
+        const rows = card.querySelectorAll('.dc-qa-table tbody tr');
+        let n = 0;
+        rows.forEach(tr => {
+          if (tr.classList.contains('dc-qa-ref-row')) return;
+          if (tr.style.display === 'none') return;
+          n++;
+        });
+        return n;
+      };
+      // Helper: count visible trip rows that have at least one anomaly badge visible.
+      const countVisibleAnomRows = (card) => {
+        const rows = card.querySelectorAll('.dc-qa-table tbody tr');
+        let n = 0;
+        rows.forEach(tr => {
+          if (tr.classList.contains('dc-qa-ref-row')) return;
+          if (tr.style.display === 'none') return;
+          const visBadges = Array.from(tr.querySelectorAll('.dc-qa-badge[data-status-key]'))
+            .filter(b => b.style.display !== 'none');
+          const hasAnom = visBadges.some(b => b.getAttribute('data-status-key') !== 'normal');
+          if (hasAnom) n++;
+        });
+        return n;
+      };
       if (modeKey === 'normal') {
         const routesEl = document.getElementById('dc-summary-routes-normal');
         const tripsEl = document.getElementById('dc-summary-trips-normal');
         const anomsEl = document.getElementById('dc-summary-anoms-normal');
-        const visibleTrips = visibleCards.reduce((sum, card) => sum + (Number(card.getAttribute('data-trip-count')) || 0), 0);
-        const visibleAnoms = visibleCards.reduce((sum, card) => sum + (Number(card.getAttribute('data-anom-count')) || 0), 0);
+        // When a SUBSET filter is active we must count visible trip rows inside each card,
+        // because some rows may be hidden by the lens-filter while the card stays visible.
+        // When ALL options are selected we can use the cheap data-* attributes directly.
+        const isSubset = selected.length > 0 && selected.length < optionKeys.length;
+        const visibleTrips = isSubset
+          ? visibleCards.reduce((sum, card) => sum + countVisibleTripRows(card), 0)
+          : visibleCards.reduce((sum, card) => sum + (Number(card.getAttribute('data-trip-count')) || 0), 0);
+        const visibleAnoms = isSubset
+          ? visibleCards.reduce((sum, card) => sum + countVisibleAnomRows(card), 0)
+          : visibleCards.reduce((sum, card) => sum + (Number(card.getAttribute('data-anom-count')) || 0), 0);
         if (routesEl) routesEl.textContent = String(visibleCards.length);
         if (tripsEl) tripsEl.textContent = String(visibleTrips);
         if (anomsEl) anomsEl.textContent = String(visibleAnoms);
@@ -4704,12 +4763,16 @@ function buildDailyCompare(data) {
           const custCard = section.querySelector('.dc-normal-customer-card');
           if (!custCard) return;
           const sumAttr = (sel) => visibleRoutes.reduce((s, c) => s + (Number(c.getAttribute(sel)) || 0), 0);
-          const cTrips = sumAttr('data-trip-count');
+          const cTrips = isSubset
+            ? visibleRoutes.reduce((s, c) => s + countVisibleTripRows(c), 0)
+            : sumAttr('data-trip-count');
           const cRecv  = sumAttr('data-recv');
           const cPay   = sumAttr('data-pay');
           const cOil   = sumAttr('data-oil');
           const cMargin= sumAttr('data-margin');
-          const cAnoms = sumAttr('data-anom-count');
+          const cAnoms = isSubset
+            ? visibleRoutes.reduce((s, c) => s + countVisibleAnomRows(c), 0)
+            : sumAttr('data-anom-count');
           const cPct   = cRecv > 0 ? cMargin / cRecv * 100 : 0;
           const tone   = cMargin >= 0 ? '#22c55e' : '#ef4444';
           const setText = (sel, val) => { const el = custCard.querySelector(sel); if (el) el.textContent = val; };
@@ -4723,13 +4786,13 @@ function buildDailyCompare(data) {
           if (marginEl) { marginEl.textContent = fmt(cMargin); marginEl.style.color = tone; }
           const pctEl = custCard.querySelector('.js-cust-pct');
           if (pctEl) { pctEl.textContent = cPct.toFixed(1) + '%'; pctEl.style.color = tone; }
-          // Anomaly badge: swap between .dc-normal-alert and .dc-normal-ok.
+          // Anomaly metric: update count in metrics row (same style as recv/pay/oil).
           const anomWrap = custCard.querySelector('.js-cust-anom-wrap');
           if (anomWrap) {
             if (cAnoms > 0) {
-              anomWrap.innerHTML = `<span class="dc-normal-alert"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg><b class="js-cust-anoms">${cAnoms}</b><span>ความผิดปกติ</span></span>`;
+              anomWrap.innerHTML = `<span>ความผิดปกติ</span><b class="js-cust-anoms dc-normal-metrics-anom">${cAnoms}</b>`;
             } else {
-              anomWrap.innerHTML = '<span class="dc-normal-ok">ปกติ</span>';
+              anomWrap.innerHTML = `<span>ความผิดปกติ</span><b class="dc-normal-metrics-ok">ปกติ</b>`;
             }
           }
         });
@@ -5914,7 +5977,9 @@ function buildDailyCompare(data) {
       const labels = dcQaStatusLabels();
       const unique = [...new Set((statuses && statuses.length ? statuses : ['normal']).map(s => s === 'oilHigh' ? 'payHigh' : s))];
       unique.sort((a, b) => dcQaStatusOrder.indexOf(a) - dcQaStatusOrder.indexOf(b));
-      return `<div class="dc-qa-badges">${unique.map(key => `<span class="dc-qa-badge is-${esc(key)}">${esc(labels[key] || key)}</span>`).join('')}</div>`;
+      // data-status-key on each badge enables per-badge filtering by the status panel
+      // (used in single-mode "Lens" filtering — show only the status the user picked).
+      return `<div class="dc-qa-badges">${unique.map(key => `<span class="dc-qa-badge is-${esc(key)}" data-status-key="${esc(key)}">${esc(labels[key] || key)}</span>`).join('')}</div>`;
     }
 
     function dcQaRouteKey(r) {
@@ -6064,13 +6129,16 @@ function buildDailyCompare(data) {
           <div class="dc-normal-customer-score">
             <div><span>ส่วนต่างรวม</span><b class="js-cust-margin" style="color:${tone}">${fmt(margin)}</b></div>
             <div><span>กำไร %</span><b class="js-cust-pct" style="color:${tone}">${pct.toFixed(1)}%</b></div>
-          <span class="js-cust-anom-wrap">${anoms > 0 ? `<span class="dc-normal-alert"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg><b class="js-cust-anoms">${anoms}</b><span>ความผิดปกติ</span></span>` : '<span class="dc-normal-ok">ปกติ</span>'}</span>
           </div>
         </div>
         <div class="dc-normal-customer-metrics">
           <div><span>ราคารับรวม</span><b class="js-cust-recv">${fmt(recv)}</b></div>
           <div><span>ราคาจ่ายรวม</span><b class="js-cust-pay">${fmt(pay)}</b></div>
           <div><span>สำรองน้ำมัน</span><b class="is-oil js-cust-oil">${fmt(oil)}</b></div>
+          <div class="js-cust-anom-wrap">${anoms > 0
+            ? `<span>ความผิดปกติ</span><b class="js-cust-anoms dc-normal-metrics-anom">${anoms}</b>`
+            : `<span>ความผิดปกติ</span><b class="dc-normal-metrics-ok">ปกติ</b>`
+          }</div>
         </div>
         ${routeCardsHtml ? `<div class="dc-normal-route-list">${routeCardsHtml}</div>` : ''}
       </section>`;
@@ -6078,11 +6146,27 @@ function buildDailyCompare(data) {
 
     function dcQaSingleReportHead(cases, stA, refLabel) {
       const totalAnoms = cases.reduce((sum, item) => sum + (item.anomCount || 0), 0);
+      const anomPill = totalAnoms > 0
+        ? `<span class="dc-normal-stat-pill is-alert">
+             <span class="dc-normal-stat-label">รายการผิดปกติ</span>
+             <b id="dc-summary-anoms-normal" class="dc-normal-stat-value">${totalAnoms}</b>
+           </span>`
+        : `<span class="dc-normal-stat-pill is-ok">
+             <span class="dc-normal-stat-label">ปกติ</span>
+             <b class="dc-normal-stat-value">—</b>
+           </span>`;
       return `<header class="dc-normal-summary-head">
         <div class="dc-normal-title-wrap"><span></span><h2>รายงานวิเคราะห์เส้นทางประจำวัน</h2></div>
         <div class="dc-normal-summary-meta">
-          ${totalAnoms > 0 ? `<span class="dc-normal-total-alert"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg><span>พบ</span><b id="dc-summary-anoms-normal">${totalAnoms}</b><span>รายการผิดปกติ</span></span>` : '<span class="dc-normal-ok">ปกติ</span>'}
-          <span><span id="dc-summary-routes-normal">${cases.length}</span>&nbsp;เส้นทาง&nbsp;<span id="dc-summary-trips-normal">${stA.trips || 0}</span>&nbsp;เที่ยว</span>
+          ${anomPill}
+          <span class="dc-normal-stat-pill">
+            <span class="dc-normal-stat-label">เส้นทาง</span>
+            <b id="dc-summary-routes-normal" class="dc-normal-stat-value">${cases.length}</b>
+          </span>
+          <span class="dc-normal-stat-pill">
+            <span class="dc-normal-stat-label">เที่ยว</span>
+            <b id="dc-summary-trips-normal" class="dc-normal-stat-value">${stA.trips || 0}</b>
+          </span>
         </div>
       </header>`;
     }
@@ -6573,6 +6657,8 @@ function buildDailyCompare(data) {
     };
 
     document.getElementById('dc_compare_btn')?.addEventListener('click', dcRunCompare);
+    // Start in single/normal mode by default.
+    window.dcSetMode('single', true);
     dcRunCompare();
   }, 50);
 

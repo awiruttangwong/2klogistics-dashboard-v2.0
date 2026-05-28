@@ -5060,60 +5060,181 @@ body.sidebar-animating .chart-card {
 .dc-normal-summary-meta {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
-  color: #9aa7bd;
-  font-size: 12px;
-  font-weight: 550;
-  font-family: 'Prompt', 'Inter', 'Noto Sans Thai', 'Segoe UI', sans-serif !important;
+  font-family: 'Prompt', 'Inter', 'Noto Sans Thai', 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
-.dc-normal-summary-meta > span {
+/* ─── Stat Pill — report header KPI chips ───────────────────────────────────
+   Each pill shows a label (top) and a numeric value (bottom).
+   All pills share the same size for visual balance.
+*/
+.dc-normal-stat-pill {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  text-align: center;
-  min-height: 28px;
-  padding: 4px 13px;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, .08);
+  gap: 2px;
+  min-width: 80px;
+  padding: 7px 16px;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, .06);
   border: 1px solid rgba(148, 163, 184, .14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03);
+  transition: border-color .18s ease, background-color .18s ease;
 }
 
+.dc-normal-stat-pill.is-alert {
+  background: rgba(239, 68, 68, .07);
+  border-color: rgba(239, 68, 68, .22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03), 0 2px 8px rgba(239, 68, 68, .06);
+}
+
+.dc-normal-stat-pill.is-ok {
+  background: rgba(16, 185, 129, .07);
+  border-color: rgba(16, 185, 129, .20);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03);
+}
+
+.dc-normal-stat-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: #6b7280;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.dc-normal-stat-pill.is-alert .dc-normal-stat-label {
+  color: rgba(252, 165, 165, .7);
+}
+
+.dc-normal-stat-pill.is-ok .dc-normal-stat-label {
+  color: rgba(110, 231, 183, .7);
+}
+
+.dc-normal-stat-value {
+  display: block;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -.3px;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  white-space: nowrap;
+}
+
+.dc-normal-stat-pill.is-alert .dc-normal-stat-value {
+  color: #fca5a5;
+}
+
+.dc-normal-stat-pill.is-ok .dc-normal-stat-value {
+  color: #6ee7b7;
+}
+
+/* Legacy — keep for backward compat with updateCompareStatusVisibility */
 .dc-normal-summary-meta b {
-  font-weight: 600 !important;
+  font-weight: 600;
   color: #e2e8f0;
 }
 
-.dc-normal-total-alert,
-.dc-normal-alert {
-  color: #ff8b8b !important;
-  background: rgba(239, 68, 68, .08) !important;
-  border: 1px solid rgba(239, 68, 68, .22) !important;
+/* ─── Customer Status Badge (Alert / OK) ─────────────────────────────────────
+   Used in customer summary card (top-right) and in report header.
+   Designed for clear hierarchy: icon → bold count → soft label.
+*/
+.dc-normal-alert,
+.dc-normal-ok,
+.dc-normal-total-alert {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border-radius: 10px;
   font-family: 'Prompt', 'Inter', 'Noto Sans Thai', 'Segoe UI', sans-serif !important;
+  font-size: 12.5px !important;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+  white-space: nowrap;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  letter-spacing: 0.1px;
+  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.dc-normal-total-alert b,
-.dc-normal-alert b {
-  font-weight: 600 !important;
+/* Alert variant — used when there are anomalies */
+.dc-normal-alert,
+.dc-normal-total-alert {
+  color: #fca5a5 !important;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(239, 68, 68, 0.06)) !important;
+  border: 1px solid rgba(239, 68, 68, 0.28) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 8px rgba(239, 68, 68, 0.08);
+}
+
+.dc-normal-alert:hover,
+.dc-normal-total-alert:hover {
+  border-color: rgba(239, 68, 68, 0.42) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 4px 14px rgba(239, 68, 68, 0.14);
+}
+
+.dc-normal-alert b,
+.dc-normal-total-alert b {
+  font-weight: 700 !important;
   color: #ff8b8b !important;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  margin: 0 1px;
 }
 
-.dc-normal-total-alert i,
-.dc-normal-alert i {
+/* Inline SVG icon — sized consistently and aligned with text */
+.dc-normal-alert svg,
+.dc-normal-total-alert svg {
+  width: 14px !important;
+  height: 14px !important;
+  margin: 0 !important;
+  vertical-align: middle !important;
+  flex-shrink: 0;
+  opacity: 0.88;
+}
+
+/* Legacy <i> dot — kept for backward compatibility */
+.dc-normal-alert i,
+.dc-normal-total-alert i {
   width: 7px;
   height: 7px;
-  margin-right: 7px;
+  margin: 0;
   border-radius: 999px;
   background: #ff4d4f;
   display: inline-block;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px rgba(255, 77, 79, 0.5);
+}
+
+/* OK variant — used when no anomalies */
+.dc-normal-ok {
+  color: #6ee7b7 !important;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(16, 185, 129, 0.06)) !important;
+  border: 1px solid rgba(16, 185, 129, 0.28) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 8px rgba(16, 185, 129, 0.06);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.dc-normal-ok::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+  flex-shrink: 0;
 }
 
 .dc-normal-customer-list {
@@ -5205,26 +5326,63 @@ body.sidebar-animating .chart-card {
   font-variant-numeric: tabular-nums;
 }
 
-.dc-normal-alert,
-.dc-normal-ok {
-  display: inline-flex !important;
+/* Reference-day badge in single mode header */
+.dc-normal-ref-badge {
+  display: inline-flex;
   align-items: center;
-  min-height: 34px;
-  padding: 6px 13px;
-  border-radius: 10px;
-  font-size: 12px !important;
-  font-weight: 550; /* Reduced from 750 */
+  gap: 5px;
+  min-height: 28px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
   white-space: nowrap;
-  font-family: 'Prompt', 'Inter', 'Noto Sans Thai', 'Segoe UI', sans-serif !important;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+  color: #93c5fd;
+  background: rgba(59, 130, 246, .10);
+  border: 1px solid rgba(59, 130, 246, .22);
+}
+.dc-normal-ref-badge::before {
+  content: '⇄';
+  font-size: 12px;
+  opacity: .8;
+}
+.dc-normal-ref-badge.is-none {
+  color: #6b7280;
+  background: rgba(107, 114, 128, .08);
+  border-color: rgba(107, 114, 128, .18);
 }
 
-.dc-normal-ok {
-  color: #34d399 !important;
-  background: rgba(16, 185, 129, .10) !important;
-  border: 1px solid rgba(16, 185, 129, .20) !important;
+/* Reference-day row inside card table — IDENTICAL typography to A-day row.
+   Same font-size, font-weight, and color inheritance as .dc-qa-table td.
+   Only a subtle background tint + dashed top border distinguishes the section.
+*/
+.dc-qa-ref-row td {
+  background: rgba(59, 130, 246, .045) !important;
+  border-bottom: 1px dashed rgba(59, 130, 246, .16) !important;
+}
+/* First ref row gets a stronger top border to mark the section start */
+.dc-qa-ref-row:first-of-type td {
+  border-top: 1px dashed rgba(59, 130, 246, .26) !important;
+}
+
+/* Strip label showing ref date inside card strip */
+.dc-qa-ref-strip-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 9px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, .10);
+  border: 1px solid rgba(59, 130, 246, .20);
+  color: #93c5fd;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dc-qa-ref-strip-label.is-no-match {
+  background: rgba(107, 114, 128, .08);
+  border-color: rgba(107, 114, 128, .18);
+  color: #6b7280;
 }
 
 .dc-normal-customer-metrics {
@@ -5241,12 +5399,21 @@ body.sidebar-animating .chart-card {
   margin-top: 4px;
   color: #e2e8f0;
   font-size: 14px;
-  font-weight: 750;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .dc-normal-customer-metrics .is-oil {
-  color: #ffb020;
+  color: #e2e8f0;
+}
+
+/* Anomaly count in metrics row */
+.dc-normal-metrics-anom {
+  color: #ff4d4f !important;
+}
+
+.dc-normal-metrics-ok {
+  color: #6ee7b7 !important;
 }
 
 .dc-qa-page-head {

@@ -4991,7 +4991,7 @@ function buildDailyCompare(data) {
         if (opts.numFmt === nTHB) v = fmtMoney(v);
         else if (opts.numFmt === nPct) v = fmtPercent(v);
         else if (opts.numFmt === '#,##0') v = fmtInt(v);
-        const s = { font: { sz: 10 }, alignment: { vertical: 'center' }, border: allBorders };
+        const s = { font: { sz: 10 }, alignment: { vertical: opts.valign || 'center' }, border: allBorders };
         if (opts.numFmt) s.numFmt = opts.numFmt;
         if (opts.align) s.alignment.horizontal = opts.align;
         if (opts.wrap) s.alignment.wrapText = true;
@@ -5006,7 +5006,7 @@ function buildDailyCompare(data) {
         if (opts.numFmt === nTHB) v = fmtMoney(v);
         else if (opts.numFmt === nPct) v = fmtPercent(v);
         else if (opts.numFmt === '#,##0') v = fmtInt(v);
-        const s = { font: { sz: 10, color: { rgb: 'DC2626' } }, alignment: { vertical: 'center' }, border: allBorders };
+        const s = { font: { sz: 10, color: { rgb: 'DC2626' } }, alignment: { vertical: opts.valign || 'center' }, border: allBorders };
         if (opts.numFmt) s.numFmt = opts.numFmt;
         if (opts.align) s.alignment.horizontal = opts.align;
         if (opts.wrap) s.alignment.wrapText = true;
@@ -5020,7 +5020,7 @@ function buildDailyCompare(data) {
         if (opts.numFmt === nTHB) v = fmtMoney(v);
         else if (opts.numFmt === nPct) v = fmtPercent(v);
         else if (opts.numFmt === '#,##0') v = fmtInt(v);
-        const s = { font: { sz: 10, color: { rgb: '16A34A' } }, alignment: { vertical: 'center' }, border: allBorders };
+        const s = { font: { sz: 10, color: { rgb: '16A34A' } }, alignment: { vertical: opts.valign || 'center' }, border: allBorders };
         if (opts.numFmt) s.numFmt = opts.numFmt;
         if (opts.align) s.alignment.horizontal = opts.align;
         if (opts.wrap) s.alignment.wrapText = true;
@@ -5034,7 +5034,7 @@ function buildDailyCompare(data) {
         if (opts.numFmt === nTHB) v = fmtMoney(v);
         else if (opts.numFmt === nPct) v = fmtPercent(v);
         else if (opts.numFmt === '#,##0') v = fmtInt(v);
-        const s = { font: { sz: 10, color: { rgb: 'EA580C' } }, alignment: { vertical: 'center' }, border: allBorders };
+        const s = { font: { sz: 10, color: { rgb: 'EA580C' } }, alignment: { vertical: opts.valign || 'center' }, border: allBorders };
         if (opts.numFmt) s.numFmt = opts.numFmt;
         if (opts.align) s.alignment.horizontal = opts.align;
         if (opts.wrap) s.alignment.wrapText = true;
@@ -5048,7 +5048,7 @@ function buildDailyCompare(data) {
         if (opts.numFmt === nTHB) v = fmtMoney(v);
         else if (opts.numFmt === nPct) v = fmtPercent(v);
         else if (opts.numFmt === '#,##0') v = fmtInt(v);
-        const s = { font: { sz: 10, color: { rgb: '6B7280' } }, alignment: { vertical: 'center' }, border: allBorders };
+        const s = { font: { sz: 10, color: { rgb: '6B7280' } }, alignment: { vertical: opts.valign || 'center' }, border: allBorders };
         if (opts.numFmt) s.numFmt = opts.numFmt;
         if (opts.align) s.alignment.horizontal = opts.align;
         if (opts.wrap) s.alignment.wrapText = true;
@@ -5062,7 +5062,7 @@ function buildDailyCompare(data) {
         if (opts.numFmt === nTHB) v = fmtMoney(v);
         else if (opts.numFmt === nPct) v = fmtPercent(v);
         else if (opts.numFmt === '#,##0') v = fmtInt(v);
-        const s = { font: { sz: 10, color: { rgb: 'A855F7' } }, alignment: { vertical: 'center' }, border: allBorders };
+        const s = { font: { sz: 10, color: { rgb: 'A855F7' } }, alignment: { vertical: opts.valign || 'center' }, border: allBorders };
         if (opts.numFmt) s.numFmt = opts.numFmt;
         if (opts.align) s.alignment.horizontal = opts.align;
         if (opts.wrap) s.alignment.wrapText = true;
@@ -5076,7 +5076,7 @@ function buildDailyCompare(data) {
         if (opts.numFmt === nTHB) v = fmtMoney(v);
         else if (opts.numFmt === nPct) v = fmtPercent(v);
         else if (opts.numFmt === '#,##0') v = fmtInt(v);
-        const s = { font: { sz: 10, color: { rgb: '3B82F6' } }, alignment: { vertical: 'center' }, border: allBorders };
+        const s = { font: { sz: 10, color: { rgb: '3B82F6' } }, alignment: { vertical: opts.valign || 'center' }, border: allBorders };
         if (opts.numFmt) s.numFmt = opts.numFmt;
         if (opts.align) s.alignment.horizontal = opts.align;
         if (opts.wrap) s.alignment.wrapText = true;
@@ -5097,39 +5097,99 @@ function buildDailyCompare(data) {
         const values = [...new Set(statuses && statuses.length ? statuses : ['normal'])];
         return values.some(s => s !== 'normal') ? values.filter(s => s !== 'normal') : values;
       };
+      // Priority order matches dcQaStatusRank: loss(4) > oil50(3) > payHigh/oilHigh/recvLow(2) > normal(0)
+      const statusPriorityOrder = ['loss', 'oil50', 'payHigh', 'oilHigh', 'recvLow', 'normal'];
       const statusText = statuses => {
         const labels = qaStatusLabels();
-        return cleanStatuses(statuses).map(k => labels[k] || k).join(', ') || labels.normal || 'ปกติ';
+        const sorted = [...cleanStatuses(statuses)].sort(
+          (a, b) => statusPriorityOrder.indexOf(a) - statusPriorityOrder.indexOf(b)
+        );
+        // One problem per line so row height can be calculated from line count.
+        return sorted.map(k => labels[k] || k).join('\n') || labels.normal || 'ปกติ';
       };
+      // Returns number of display lines for a status cell (used to compute row height).
+      const statusLineCount = statuses => cleanStatuses(statuses).length || 1;
+      // Color is determined by the highest-priority (most severe) problem in the list.
+      const statusColor = values => {
+        if (values.includes('loss')) return 'loss';
+        if (values.includes('oil50')) return 'oil50';
+        if (values.includes('payHigh')) return 'payHigh';
+        if (values.includes('oilHigh')) return 'oilHigh';
+        if (values.includes('recvLow')) return 'recvLow';
+        return 'normal';
+      };
+      // Color map for each status key — used by statusStyledCell.
+      const statusColorMap = {
+        loss:     'DC2626',
+        oil50:    'EA580C',
+        payHigh:  'A855F7',
+        oilHigh:  'EA580C',
+        recvLow:  '3B82F6',
+        normal:   '16A34A'
+      };
+      // statusRichCell: xlsx-js-style does NOT support per-run font colors (rich text).
+      // Falls back to statusStyledCell using the highest-priority problem color.
+      // Kept as alias so call sites don't need changing.
+      function statusRichCell(statuses, opts) {
+        return statusStyledCell(statuses, opts);
+      }
       function statusStyledCell(statuses, opts) {
         const values = cleanStatuses(statuses);
         const text = statusText(values);
-        if (values.includes('loss')) return rCell(text, opts);
-        if (values.includes('oil50') || values.includes('oilHigh')) return oCell(text, opts);
-        if (values.includes('payHigh')) return pCell(text, opts);
-        if (values.includes('recvLow')) return bCell(text, opts);
-        if (values.includes('normal')) return gCell(text, opts);
-        return mCell(text, opts);
+        const base = { ...(opts || {}), wrap: true, valign: 'top' };
+        const color = statusColor(values);
+        if (color === 'loss') return rCell(text, base);
+        if (color === 'oil50' || color === 'oilHigh') return oCell(text, base);
+        if (color === 'payHigh') return pCell(text, base);
+        if (color === 'recvLow') return bCell(text, base);
+        if (color === 'normal') return gCell(text, base);
+        return mCell(text, base);
       }
       function signedMoney(n) {
         if (!hasNum(n)) return '-';
         const value = Number(n);
         return (value > 0 ? '+' : '') + fmtMoney(value);
       }
-      function metricPairText(a, b) {
+      // Bullet pair text format: "• A\n• B\nΔ ±diff" (Δ omitted when values match exactly).
+      // Mirrors the Excel template the team approved (compares two periods stacked in one cell).
+      function bulletPairText(a, b) {
         const canDiff = hasNum(a) && hasNum(b);
-        return 'A ' + (hasNum(a) ? fmtMoney(a) : '-') +
-          '\nB ' + (hasNum(b) ? fmtMoney(b) : '-') +
-          '\nΔ ' + (canDiff ? signedMoney(Number(a) - Number(b)) : '-');
+        const aText = hasNum(a) ? fmtMoney(a) : '-';
+        const bText = hasNum(b) ? fmtMoney(b) : '-';
+        const lines = ['• ' + aText, '• ' + bText];
+        if (canDiff) {
+          const diff = Number(a) - Number(b);
+          if (Math.abs(diff) >= 0.0001) lines.push('Δ ' + signedMoney(diff));
+        }
+        return lines.join('\n');
       }
-      function metricPairCell(a, b, opts, invertColor = false) {
+      function bulletPairCell(a, b, opts, invertColor = false) {
         const canDiff = hasNum(a) && hasNum(b);
         const diff = canDiff ? Number(a) - Number(b) : 0;
         const base = { ...(opts || {}), align: 'right', wrap: true };
-        if (!canDiff || Math.abs(diff) < 0.0001) return mCell(metricPairText(a, b), base);
+        // neutralColor: always use dark text (111827) regardless of Δ direction.
+        if (base.neutralColor) {
+          delete base.neutralColor;
+          return cCell(bulletPairText(a, b), { ...base, color: '111827' });
+        }
+        if (!canDiff || Math.abs(diff) < 0.0001) return mCell(bulletPairText(a, b), base);
         const isGood = invertColor ? (diff < 0) : (diff > 0);
-        return isGood ? gCell(metricPairText(a, b), base) : rCell(metricPairText(a, b), base);
+        return isGood ? gCell(bulletPairText(a, b), base) : rCell(bulletPairText(a, b), base);
       }
+      // Single-value bullet (used by unmatched sheets where no B counterpart exists).
+      function bulletSingleText(a) {
+        return '• ' + (hasNum(a) ? fmtMoney(a) : '-');
+      }
+      function bulletSingleCell(a, opts, isMargin = false) {
+        const base = { ...(opts || {}), align: 'right', wrap: true };
+        if (!hasNum(a)) return mCell(bulletSingleText(a), base);
+        if (!isMargin) return cCell(bulletSingleText(a), base);
+        return Number(a) < 0 ? rCell(bulletSingleText(a), base) : gCell(bulletSingleText(a), base);
+      }
+      // Legacy aliases preserved for any caller still using the old names; both now produce
+      // the bullet template.
+      const metricPairText = bulletPairText;
+      const metricPairCell = bulletPairCell;
       function rowPeerRows(sourceRows, row) {
         return (sourceRows || []).filter(r =>
           r.customer === row.customer && r.route === row.route && r.vtype === row.vtype
@@ -5281,30 +5341,38 @@ function buildDailyCompare(data) {
           .map(card => ({ ...card, rows: card.unRows || [] }));
       }
 
-      function buildUnmatchedSheet(cards, sheetTitle, myPeriodLabel, otherPeriodLabel) {
+      function buildUnmatchedSheet(cards, sheetTitle, myPeriodLabel, otherPeriodLabel, statusSelectedRaw) {
         const wsData = [];
         wsData.push([cCell(sheetTitle, { bold: true, sz: 12, color: '111827' })]);
-        wsData.push([cCell(filterSummaryText(), { color: '6B7280', sz: 9 })]);
-        wsData.push([cCell('ช่วงข้อมูลหลัก: ' + myPeriodLabel + ' | ช่วงเปรียบเทียบ: ' + otherPeriodLabel, { color: '374151', sz: 9 })]);
+        wsData.push([cCell(filterSummaryText() + ' | หน้าที่ส่งออก: ' + sheetTitle, { color: '6B7280', sz: 9 })]);
+        wsData.push([cCell('สถานะที่เลือก: ' + formatStatusLabels(statusSelectedRaw || []) + ' | ส่งออกเฉพาะข้อมูลที่ผ่านตัวกรองบนหน้าจอ', { color: '374151', sz: 9 })]);
+        wsData.push([cCell('ช่วงข้อมูลหลัก: ' + myPeriodLabel + ' | ช่วงข้อมูลเปรียบเทียบ: ' + otherPeriodLabel + ' | (เที่ยวที่ไม่มีคู่เปรียบเทียบในอีกช่วง)', { color: '374151', sz: 9 })]);
         wsData.push([]);
         const headers = [
-          'ลูกค้า', 'เส้นทาง', 'ประเภทรถ', 'วันที่', 'พขร.', 'ทะเบียน',
-          'ราคาน้ำมัน', 'สำรองน้ำมัน', 'ราคารับ', 'ราคาจ่าย', 'ส่วนต่าง', 'ความผิดปกติ'
+          'ลูกค้า', 'เส้นทาง', 'วันที่', 'พขร.', 'ประเภทรถ', 'ทะเบียน',
+          'ราคาน้ำมัน', 'สำรองน้ำมัน', 'ราคารับ', 'ราคาจ่าย', 'ส่วนต่าง', 'ความผิดปกติ', 'หมายเหตุ'
         ];
         const headerRow = wsData.length;
         wsData.push(headers.map(t => hCell(t)));
         let rowIdx = headerRow + 1;
+        const unmGroupHeaderRows = [];
 
         cards.forEach(card => {
+          // Group header: A=customer, B=route, C+D='ประเภทรถ: <vtype>', E+F='ต้องตรวจสอบ N เที่ยว'
+          const cardAnomCount = (card.rows || []).filter(r => !(r.statuses || []).includes('normal')).length;
+          const summaryText = cardAnomCount > 0
+            ? 'ต้องตรวจสอบ ' + cardAnomCount + ' เที่ยว'
+            : 'รวม ' + (card.rows || []).length + ' เที่ยว';
           const top = [
             cCell(card.ga.customer || '-', { bold: true, fill: 'DBEAFE' }),
             cCell(card.ga.route || '-', { bold: true, fill: 'DBEAFE' }),
-            cCell(card.ga.vtype || '-', { bold: true, fill: 'DBEAFE' }),
-            cCell('รวม ' + (card.rows || []).length + ' เที่ยว', { bold: true, fill: 'DBEAFE' }),
-            cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }),
-            cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' }),
-            cCell('', { fill: 'DBEAFE' }), cCell('', { fill: 'DBEAFE' })
+            cCell('ประเภทรถ: ' + (card.ga.vtype || '-'), { bold: true, fill: 'DBEAFE', wrap: false }),
+            cCell('', { fill: 'DBEAFE' }),   // D — merged with C
+            cCell(summaryText, { bold: true, fill: 'DBEAFE' }),
+            cCell('', { fill: 'DBEAFE' })    // F — merged with E
           ];
+          while (top.length < headers.length) top.push(cCell('', { fill: 'DBEAFE' }));
+          unmGroupHeaderRows.push(wsData.length);
           wsData.push(top);
           rowIdx++;
 
@@ -5317,16 +5385,17 @@ function buildDailyCompare(data) {
             const row = [
               cCell(r.customer || '-', { fill: zf }),
               cCell(r.route || '-', { fill: zf }),
-              cCell(r.vtype || '-', { fill: zf }),
               cCell(r.date || '-', { fill: zf }),
               cCell(r.driver || '-', { fill: zf }),
+              cCell(r.vtype || '-', { fill: zf }),
               cCell(r.plate || '-', { fill: zf }),
-              hasNum(oilPrice) ? cCell(oilPrice, { numFmt: nTHB, align: 'right', fill: zf }) : cCell('-', { align: 'right', fill: zf }),
-              cCell(r.oil, { numFmt: nTHB, align: 'right', fill: zf }),
-              cCell(r.recv, { numFmt: nTHB, align: 'right', fill: zf }),
-              cCell(r.pay, { numFmt: nTHB, align: 'right', fill: zf }),
-              mar < 0 ? rCell(mar, { numFmt: nTHB, align: 'right', fill: zf }) : gCell(mar, { numFmt: nTHB, align: 'right', fill: zf }),
-              statusStyledCell(statuses, { fill: zf })
+              hasNum(oilPrice) ? cCell(fmtMoney(oilPrice), { align: 'right', fill: zf }) : cCell('-', { align: 'right', fill: zf }),
+              cCell(fmtMoney(r.oil), { align: 'right', fill: zf }),
+              cCell(fmtMoney(r.recv), { align: 'right', fill: zf }),
+              cCell(fmtMoney(r.pay), { align: 'right', fill: zf }),
+              mar < 0 ? rCell(fmtMoney(mar), { align: 'right', fill: zf }) : gCell(fmtMoney(mar), { align: 'right', fill: zf }),
+              statusRichCell(statuses, { fill: zf, align: 'left', wrap: true, valign: 'top' }),
+              cCell('', { fill: zf })
             ];
             wsData.push(row);
             rowIdx++;
@@ -5340,93 +5409,191 @@ function buildDailyCompare(data) {
         }
 
         const ws = XLSX.utils.aoa_to_sheet(wsData);
+        // Column widths: C+D merged in group header shows "ประเภทรถ: 6W7.2" (~18 chars),
+        // so C needs wch:18 to avoid truncation when not merged (data rows show date).
+        // B=route (~26), D=driver (~18), E=vtype — wch:10 so header "ประเภทรถ" fits on one line, F=plate (~12).
         ws['!cols'] = [
-          { wch: 14 }, { wch: 34 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 13 },
-          { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 40 }
+          { wch: 11 }, { wch: 26 }, { wch: 18 }, { wch: 18 }, { wch: 10 }, { wch: 12 },
+          { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 22 }, { wch: 14 }
         ];
+        // Row heights: group headers = 20pt, data rows = proportional to status line count.
+        const unmGroupHeaderSet = new Set(unmGroupHeaderRows);
+        ws['!rows'] = wsData.map((rowData, idx) => {
+          if (idx <= headerRow) return {};
+          if (unmGroupHeaderSet.has(idx)) return { hpt: 20 };
+          // Status cell is at col index 11 (col L).
+          const statusCell = rowData[11];
+          const statusLines = statusCell && statusCell.v
+            ? String(statusCell.v).split('\n').length : 1;
+          return { hpt: Math.max(statusLines * 14 + 6, 20) };
+        });
         ws['!merges'] = [
           { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
           { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } },
-          { s: { r: 2, c: 0 }, e: { r: 2, c: headers.length - 1 } }
+          { s: { r: 2, c: 0 }, e: { r: 2, c: headers.length - 1 } },
+          { s: { r: 3, c: 0 }, e: { r: 3, c: headers.length - 1 } },
+          // Per-card group header: merge C+D (col 2-3) and E+F (col 4-5)
+          ...unmGroupHeaderRows.flatMap(r => [
+            { s: { r, c: 2 }, e: { r, c: 3 } },
+            { s: { r, c: 4 }, e: { r, c: 5 } }
+          ])
         ];
-        ws['!autofilter'] = { ref: 'A5:' + XLSX.utils.encode_cell({ c: headers.length - 1, r: 4 }) };
-        ws['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
+        ws['!autofilter'] = { ref: 'A6:' + XLSX.utils.encode_cell({ c: headers.length - 1, r: 5 }) };
+        ws['!freeze'] = { xSplit: 0, ySplit: 6, topLeftCell: 'A7', activePane: 'bottomLeft', state: 'frozen' };
         return ws;
       }
 
-      // Sheet 1: สรุปผล
+      // ─── Compute filter selections + filtered cards FIRST ──────────────────────
+      // Filter selections from UI status panels (so XLSX matches what user sees on screen).
+      // Each panel uses the same option keys; if the user has nothing selected the helper
+      // returns the full option list, so cards remain unfiltered by default.
+      const exportStatusOptionKeys = ['loss', 'oil50', 'payHigh', 'oilHigh', 'recvLow', 'normal'];
+      const exportLabelMap = qaStatusLabels();
+      const anomalySelectedRaw = (typeof getSelectedCompareStatuses === 'function')
+        ? getSelectedCompareStatuses('anomaly', exportStatusOptionKeys)
+        : exportStatusOptionKeys;
+      const unmatchedASelectedRaw = (typeof getSelectedCompareStatuses === 'function')
+        ? getSelectedCompareStatuses('unmatched_a', exportStatusOptionKeys)
+        : exportStatusOptionKeys;
+      const unmatchedBSelectedRaw = (typeof getSelectedCompareStatuses === 'function')
+        ? getSelectedCompareStatuses('unmatched_b', exportStatusOptionKeys)
+        : exportStatusOptionKeys;
+      const anomalySelectedSet = new Set(anomalySelectedRaw);
+      const unmatchedASelectedSet = new Set(unmatchedASelectedRaw);
+      const unmatchedBSelectedSet = new Set(unmatchedBSelectedRaw);
+      const matchesStatusFilter = (card, selectedSet) => {
+        const statuses = (card && Array.isArray(card.statuses) && card.statuses.length) ? card.statuses : ['normal'];
+        return statuses.some(s => selectedSet.has(s));
+      };
+      const formatStatusLabels = keys => {
+        const list = (keys || []).map(k => exportLabelMap[k] || k);
+        return list.length ? list.join(', ') : '-';
+      };
+
+      // Pre-compute filtered cards (used by both Sheet 1 summary and per-view sheets).
+      let anomalyCardsAll = [], anomalyCards = [];
+      let unmatchedACardsAll = [], unmatchedACards = [];
+      let unmatchedBCardsAll = [], unmatchedBCards = [];
+      if (!_isSingleMode && _stB) {
+        anomalyCardsAll = buildAnomalyExportCards(_stA, _stB);
+        anomalyCards = anomalyCardsAll.filter(card => matchesStatusFilter(card, anomalySelectedSet));
+        unmatchedACardsAll = buildUnmatchedExportCards(_stA.rows, _stB.rows);
+        unmatchedBCardsAll = buildUnmatchedExportCards(_stB.rows, _stA.rows);
+        unmatchedACards = unmatchedACardsAll.filter(card => matchesStatusFilter(card, unmatchedASelectedSet));
+        unmatchedBCards = unmatchedBCardsAll.filter(card => matchesStatusFilter(card, unmatchedBSelectedSet));
+      }
+
+      const sumAnomalyPairs = anomalyCards.reduce((s, c) => s + (c.rows || []).length, 0);
+      const sumAnomalyAnoms = anomalyCards.reduce((s, c) => s + (c.rows || []).filter(r => !(r.statuses || []).includes('normal')).length, 0);
+      const sumUnmatchedATrips = unmatchedACards.reduce((s, c) => s + (c.rows || []).length, 0);
+      const sumUnmatchedAAnoms = unmatchedACards.reduce((s, c) => s + (c.rows || []).filter(r => !(r.statuses || []).includes('normal')).length, 0);
+      const sumUnmatchedBTrips = unmatchedBCards.reduce((s, c) => s + (c.rows || []).length, 0);
+      const sumUnmatchedBAnoms = unmatchedBCards.reduce((s, c) => s + (c.rows || []).filter(r => !(r.statuses || []).includes('normal')).length, 0);
+
+      // ─── Sheet 1: สรุปผลดำเนินงาน (template-driven) ─────────────────────────────
       const ws1Data = [];
       ws1Data.push([cCell('รายงานวิเคราะห์และเปรียบเทียบผลการดำเนินงาน', { bold: true, color: '111827', sz: 14 }), cCell(''), cCell(''), cCell('')]);
-      ws1Data.push([cCell('เงื่อนไขการกรองข้อมูล', { bold: true })]);
-      ws1Data.push([cCell(
-        filterSummaryText(),
-        { color: '6B7280', sz: 9 }
-      ), cCell(''), cCell(''), cCell('')]);
-      ws1Data.push([cCell('หมายเหตุ: ไฟล์นี้สร้างจากข้อมูลในหน้าวิเคราะห์และเปรียบเทียบผลการดำเนินงาน', { color: '6B7280', sz: 9 }), cCell(''), cCell(''), cCell('')]);
+      ws1Data.push([cCell('ส่งออกตามมุมมองปัจจุบัน', { bold: true })]);
+      ws1Data.push([cCell(filterSummaryText(), { color: '6B7280', sz: 9 }), cCell(''), cCell(''), cCell('')]);
+      if (_isSingleMode) {
+        ws1Data.push([cCell('สถานะที่เลือก: -', { color: '374151', sz: 9 }), cCell(''), cCell(''), cCell('')]);
+      } else {
+        ws1Data.push([cCell('สถานะที่เลือก (รายเส้นทางที่ถูกเปรียบเทียบ): ' + formatStatusLabels(anomalySelectedRaw), { color: '374151', sz: 9 }), cCell(''), cCell(''), cCell('')]);
+        ws1Data.push([cCell('สถานะที่เลือก (ไม่ถูกเปรียบเทียบช่วงแรก): ' + formatStatusLabels(unmatchedASelectedRaw), { color: '374151', sz: 9 }), cCell(''), cCell(''), cCell('')]);
+        ws1Data.push([cCell('สถานะที่เลือก (ไม่ถูกเปรียบเทียบช่วงหลัง): ' + formatStatusLabels(unmatchedBSelectedRaw), { color: '374151', sz: 9 }), cCell(''), cCell(''), cCell('')]);
+      }
+      ws1Data.push([cCell('ส่งออกเฉพาะข้อมูลที่ผ่านตัวกรองบนหน้าจอ', { color: '6B7280', sz: 9 }), cCell(''), cCell(''), cCell('')]);
       ws1Data.push([]);
 
       if (_isSingleMode) {
-        ws1Data.push([hCell('รายการ'), hCell('ค่า'), cCell(''), cCell('')]);
+        ws1Data.push([hCell('รายการ'), hCell('ค่า'), hCell(''), hCell('')]);
         const d1 = [
-          [cCell('ช่วงเวลา', { bold: true }), cCell(periodALabel)],
-          [cCell('ราคารับรวม', { bold: true }), cCell(fmtNum(_stA.recv), { numFmt: nTHB, align: 'right' })],
-          [cCell('ราคาจ่ายรวม', { bold: true }), cCell(fmtNum(_stA.pay), { numFmt: nTHB, align: 'right' })],
-          [cCell('สำรองน้ำมัน', { bold: true }), cCell(fmtNum(_stA.oil), { numFmt: nTHB, align: 'right' })],
-          [cCell('ส่วนต่างรวม', { bold: true }), _stA.margin < 0 ? rCell(fmtNum(_stA.margin), { numFmt: nTHB, align: 'right' }) : gCell(fmtNum(_stA.margin), { numFmt: nTHB, align: 'right' })],
-          [cCell('จำนวนเที่ยว', { bold: true }), cCell(_stA.trips, { numFmt: '#,##0', align: 'right' })],
-          [cCell('กำไร %', { bold: true }), cCell(_stA.pct / 100, { numFmt: nPct, align: 'right' })]
+          [cCell('ช่วงเวลา', { bold: true }), cCell(periodALabel), cCell(''), cCell('')],
+          [cCell('จำนวนเที่ยว', { bold: true }), cCell(_stA.trips, { numFmt: '#,##0', align: 'right' }), cCell(''), cCell('')],
+          [cCell('ราคารับรวม', { bold: true }), cCell(fmtNum(_stA.recv), { numFmt: nTHB, align: 'right' }), cCell(''), cCell('')],
+          [cCell('ราคาจ่ายรวม', { bold: true }), cCell(fmtNum(_stA.pay), { numFmt: nTHB, align: 'right' }), cCell(''), cCell('')],
+          [cCell('สำรองน้ำมันรวม', { bold: true }), cCell(fmtNum(_stA.oil), { numFmt: nTHB, align: 'right' }), cCell(''), cCell('')],
+          [cCell('ส่วนต่างรวม', { bold: true }), _stA.margin < 0 ? rCell(fmtNum(_stA.margin), { numFmt: nTHB, align: 'right' }) : gCell(fmtNum(_stA.margin), { numFmt: nTHB, align: 'right' }), cCell(''), cCell('')],
+          [cCell('กำไร %', { bold: true }), cCell(_stA.pct / 100, { numFmt: nPct, align: 'right' }), cCell(''), cCell('')]
         ];
         d1.forEach(r => ws1Data.push(r));
       } else {
-        ws1Data.push([hCell('รายการ'), hCell(periodALabel), hCell(periodBLabel), hCell('ผลต่าง')]);
+        ws1Data.push([hCell('รายการ'), hCell(periodALabel), hCell(periodBLabel), hCell('ผลต่าง (' + periodALabel + ' - ' + periodBLabel + ')')]);
         const dR = _stA.recv - _stB.recv, dP = _stA.pay - _stB.pay, dO = _stA.oil - _stB.oil, dM = _stA.margin - _stB.margin;
+        const dT = (_stA.trips || 0) - (_stB.trips || 0);
+        const dPct = ((_stA.pct || 0) - (_stB.pct || 0)) / 100;
+        // Counts derived from filter-applied sheets so user sees what they actually exported.
+        const totalRoutesExported = anomalyCards.length + unmatchedACards.length + unmatchedBCards.length;
+        const totalAnomCount = sumAnomalyAnoms + sumUnmatchedAAnoms + sumUnmatchedBAnoms;
         const rows = [
+          [cCell('จำนวนเส้นทางที่ส่งออก', { bold: true }), cCell(totalRoutesExported, { numFmt: '#,##0', align: 'right' }), cCell('-', { align: 'right' }), cCell('-', { align: 'right' })],
+          [cCell('จำนวนคู่/เที่ยวที่ส่งออก', { bold: true }), cCell(sumAnomalyPairs + sumUnmatchedATrips, { numFmt: '#,##0', align: 'right' }), cCell(sumAnomalyPairs + sumUnmatchedBTrips, { numFmt: '#,##0', align: 'right' }), cCell('-', { align: 'right' })],
+          [cCell('จำนวนรายการที่มีความผิดปกติ', { bold: true }), cCell(totalAnomCount, { numFmt: '#,##0', align: 'right' }), cCell('-', { align: 'right' }), cCell('-', { align: 'right' })],
+          [cCell('จำนวนเที่ยว (รวมทั้งช่วง)', { bold: true }), cCell(_stA.trips, { numFmt: '#,##0', align: 'right' }), cCell(_stB.trips, { numFmt: '#,##0', align: 'right' }), gCell(dT, { numFmt: '#,##0', align: 'right' })],
           [cCell('ราคารับรวม', { bold: true }), cCell(fmtNum(_stA.recv), { numFmt: nTHB, align: 'right' }), cCell(fmtNum(_stB.recv), { numFmt: nTHB, align: 'right' }), dR < 0 ? rCell(fmtNum(dR), { numFmt: nTHB, align: 'right' }) : gCell(fmtNum(dR), { numFmt: nTHB, align: 'right' })],
           [cCell('ราคาจ่ายรวม', { bold: true }), cCell(fmtNum(_stA.pay), { numFmt: nTHB, align: 'right' }), cCell(fmtNum(_stB.pay), { numFmt: nTHB, align: 'right' }), dP < 0 ? rCell(fmtNum(dP), { numFmt: nTHB, align: 'right' }) : gCell(fmtNum(dP), { numFmt: nTHB, align: 'right' })],
-          [cCell('สำรองน้ำมัน', { bold: true }), cCell(fmtNum(_stA.oil), { numFmt: nTHB, align: 'right' }), cCell(fmtNum(_stB.oil), { numFmt: nTHB, align: 'right' }), dO < 0 ? rCell(fmtNum(dO), { numFmt: nTHB, align: 'right' }) : gCell(fmtNum(dO), { numFmt: nTHB, align: 'right' })],
+          [cCell('สำรองน้ำมันรวม', { bold: true }), cCell(fmtNum(_stA.oil), { numFmt: nTHB, align: 'right' }), cCell(fmtNum(_stB.oil), { numFmt: nTHB, align: 'right' }), dO < 0 ? rCell(fmtNum(dO), { numFmt: nTHB, align: 'right' }) : gCell(fmtNum(dO), { numFmt: nTHB, align: 'right' })],
           [cCell('ส่วนต่างรวม', { bold: true }), _stA.margin < 0 ? rCell(fmtNum(_stA.margin), { numFmt: nTHB, align: 'right' }) : gCell(fmtNum(_stA.margin), { numFmt: nTHB, align: 'right' }), _stB.margin < 0 ? rCell(fmtNum(_stB.margin), { numFmt: nTHB, align: 'right' }) : gCell(fmtNum(_stB.margin), { numFmt: nTHB, align: 'right' }), dM < 0 ? rCell(fmtNum(dM), { numFmt: nTHB, align: 'right' }) : gCell(fmtNum(dM), { numFmt: nTHB, align: 'right' })],
-          [cCell('จำนวนเที่ยว', { bold: true }), cCell(_stA.trips, { numFmt: '#,##0', align: 'right' }), cCell(_stB.trips, { numFmt: '#,##0', align: 'right' }), gCell(_stA.trips - _stB.trips, { numFmt: '#,##0', align: 'right' })],
-          [cCell('กำไร %', { bold: true }), cCell(_stA.pct / 100, { numFmt: nPct, align: 'right' }), cCell(_stB.pct / 100, { numFmt: nPct, align: 'right' }), gCell((_stA.pct - _stB.pct) / 100, { numFmt: nPct, align: 'right' })]
+          [cCell('กำไร %', { bold: true }), cCell(_stA.pct / 100, { numFmt: nPct, align: 'right' }), cCell(_stB.pct / 100, { numFmt: nPct, align: 'right' }), dPct < 0 ? rCell(dPct, { numFmt: nPct, align: 'right' }) : gCell(dPct, { numFmt: nPct, align: 'right' })]
         ];
         rows.forEach(r => ws1Data.push(r));
       }
       ws1Data.push([]);
       ws1Data.push([cCell('สร้างเมื่อ: ' + new Date().toLocaleString('th-TH'), { color: '6B7280', sz: 9 })]);
-      ws1Data.push([cCell('รูปแบบไฟล์: .xlsx สำหรับการเปิดใช้งานทั่วไป และมีข้อมูลชีทครบถ้วน', { color: '6B7280', sz: 9 })]);
 
       const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
-      ws1['!cols'] = [{ wch: 32 }, { wch: 24 }, { wch: 24 }, { wch: 24 }];
-      ws1['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }, { s: { r: 2, c: 0 }, e: { r: 2, c: 3 } }, { s: { r: 3, c: 0 }, e: { r: 3, c: 3 } }];
-      ws1['!autofilter'] = { ref: 'A5:D5' };
-      ws1['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
-
-      const ws2 = buildNormalQaSheet(_stA, periodALabel);
+      ws1['!cols'] = [{ wch: 34 }, { wch: 30 }, { wch: 30 }, { wch: 38 }];
+      // Header row count differs by mode:
+      //   Single:  rows 0-4 (title, subtitle, filter, status, footer) + blank + col-header
+      //   Compare: rows 0-6 (title, subtitle, filter, status×3, footer) + blank + col-header
+      const ws1MetaRows = _isSingleMode ? 4 : 6;  // last meta row index (0-based)
+      const ws1BlankRow = ws1MetaRows + 1;
+      const ws1ColHeaderRow = ws1MetaRows + 2;
+      // Build merges: title row + all meta rows span A:D
+      const ws1Merges = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
+      for (let r = 2; r <= ws1MetaRows; r++) ws1Merges.push({ s: { r, c: 0 }, e: { r, c: 3 } });
+      ws1['!merges'] = ws1Merges;
+      if (!_isSingleMode) {
+        ws1['!autofilter'] = { ref: 'A' + (ws1ColHeaderRow + 1) + ':D' + (ws1ColHeaderRow + 1) };
+      }
+      ws1['!freeze'] = { xSplit: 0, ySplit: ws1ColHeaderRow + 1, topLeftCell: 'A' + (ws1ColHeaderRow + 2), activePane: 'bottomLeft', state: 'frozen' };
 
       let ws4 = null, ws5 = null, ws6 = null;
       if (!_isSingleMode && _stB) {
-        const anomalyCards = buildAnomalyExportCards(_stA, _stB);
         const ws4Data = [];
         ws4Data.push([cCell('รายเส้นทางที่ถูกเปรียบเทียบ', { bold: true, sz: 12, color: '111827' })]);
-        ws4Data.push([cCell(filterSummaryText(), { color: '6B7280', sz: 9 })]);
-        ws4Data.push([cCell('แสดงเส้นทางที่มีสัญญาณผิดปกติจากข้อมูลเปรียบเทียบทั้งสองช่วง: ' + periodALabel + ' และ ' + periodBLabel, { color: '374151', sz: 9 })]);
+        ws4Data.push([cCell(filterSummaryText() + ' | หน้าที่ส่งออก: รายเส้นทางที่ถูกเปรียบเทียบ', { color: '6B7280', sz: 9 })]);
+        ws4Data.push([cCell('สถานะที่เลือก: ' + formatStatusLabels(anomalySelectedRaw) + ' | ส่งออกเฉพาะข้อมูลที่ผ่านตัวกรองบนหน้าจอ', { color: '374151', sz: 9 })]);
+        ws4Data.push([cCell('ช่วงข้อมูลหลัก: ' + periodALabel + ' | ช่วงข้อมูลเปรียบเทียบ: ' + periodBLabel + ' | Δ = ' + periodALabel + ' - ' + periodBLabel, { color: '374151', sz: 9 })]);
         ws4Data.push([]);
         const h4 = [
           'ลูกค้า', 'เส้นทาง', 'วันที่หลัก', 'วันที่เปรียบเทียบ', 'พขร.',
-          'ประเภทรถ', 'ทะเบียน', 'ราคาน้ำมัน A/B/Δ', 'สำรองน้ำมัน A/B/Δ',
-          'ราคารับ A/B/Δ', 'ราคาจ่าย A/B/Δ', 'ส่วนต่าง A/B/Δ', 'ความผิดปกติ'
+          'ประเภทรถ', 'ทะเบียน', 'ราคาน้ำมัน', 'สำรองน้ำมัน',
+          'ราคารับ', 'ราคาจ่าย', 'ส่วนต่าง', 'ความผิดปกติ', 'หมายเหตุ'
         ];
         const headerRow4 = ws4Data.length;
         ws4Data.push(h4.map(t => hCell(t)));
         let rowIdx4 = headerRow4 + 1;
 
+        // Track group-header rows that need C+D and E+F merges.
+        const ws4GroupHeaderRows = [];
+
         anomalyCards.forEach(card => {
+          // Group header: A=customer, B=route, C+D='ประเภทรถ: <vtype>', E+F='ต้องตรวจสอบ N คู่'
+          const cardAnomCount = (card.rows || []).filter(r => !(r.statuses || []).includes('normal')).length;
+          const summaryText = cardAnomCount > 0
+            ? 'ต้องตรวจสอบ ' + cardAnomCount + ' คู่เปรียบเทียบ'
+            : 'รวม ' + (card.rows || []).length + ' คู่เปรียบเทียบ';
           const top = [
             cCell(card.ga.customer || '-', { bold: true, fill: 'DBEAFE' }),
             cCell(card.ga.route || '-', { bold: true, fill: 'DBEAFE' }),
-            cCell(card.ga.vtype || '-', { bold: true, fill: 'DBEAFE' }),
-            cCell('รวม ' + (card.rows || []).length + ' คู่เปรียบเทียบ', { bold: true, fill: 'DBEAFE' })
+            cCell('ประเภทรถ: ' + (card.ga.vtype || '-'), { bold: true, fill: 'DBEAFE' }),
+            cCell('', { fill: 'DBEAFE' }),                                    // D — merged with C
+            cCell(summaryText, { bold: true, fill: 'DBEAFE' }),
+            cCell('', { fill: 'DBEAFE' })                                     // F — merged with E
           ];
           while (top.length < h4.length) top.push(cCell('', { fill: 'DBEAFE' }));
+          ws4GroupHeaderRows.push(ws4Data.length); // record row index for merge
           ws4Data.push(top);
           rowIdx4++;
 
@@ -5438,6 +5605,10 @@ function buildDailyCompare(data) {
             const oilPriceA = getOilPriceByDate(ra.date);
             const oilPriceB = getOilPriceByDate(rb.date);
             const zf = (rowIdx4 % 2 === 0) ? 'F9FAFB' : null;
+            // Bullet cells: vertical align top so • A / • B / Δ lines up at top of tall row.
+            const bOpts = f => ({ fill: f, align: 'right', wrap: true, valign: 'top' });
+            // Neutral bullet: col J (ราคารับ) and K (ราคาจ่าย) use dark text regardless of Δ.
+            const bOptsNeutral = f => ({ fill: f, align: 'right', wrap: true, valign: 'top', neutralColor: true });
             const row = [
               cCell(ra.customer || rb.customer || '-', { fill: zf }),
               cCell(ra.route || rb.route || '-', { fill: zf }),
@@ -5446,12 +5617,13 @@ function buildDailyCompare(data) {
               cCell(ra.driver || rb.driver || '-', { fill: zf }),
               cCell((ra.vtype || '-') + ' / ' + (rb.vtype || '-'), { fill: zf }),
               cCell((ra.plate || '-') + ' / ' + (rb.plate || '-'), { fill: zf }),
-              metricPairCell(oilPriceA, oilPriceB, { fill: zf }, true),
-              metricPairCell(ra.oil, rb.oil, { fill: zf }, true),
-              metricPairCell(ra.recv, rb.recv, { fill: zf }, false),
-              metricPairCell(ra.pay, rb.pay, { fill: zf }, true),
-              metricPairCell(mA, mB, { fill: zf, bold: true }, false),
-              statusStyledCell(entry.statuses || ['normal'], { fill: zf })
+              bulletPairCell(oilPriceA, oilPriceB, bOpts(zf), true),
+              bulletPairCell(ra.oil, rb.oil, bOpts(zf), true),
+              bulletPairCell(ra.recv, rb.recv, bOptsNeutral(zf), false),   // col J — dark
+              bulletPairCell(ra.pay, rb.pay, bOptsNeutral(zf), true),      // col K — dark
+              bulletPairCell(mA, mB, bOpts(zf), false),                    // col L — colored
+              statusRichCell(entry.statuses || ['normal'], { fill: zf }),
+              cCell('', { fill: zf })
             ];
             ws4Data.push(row);
             rowIdx4++;
@@ -5464,43 +5636,71 @@ function buildDailyCompare(data) {
           ws4Data.push(noData4);
         }
 
+        // Row height map: group headers = 20pt, data rows = proportional to content.
+        // Excel row height in points: each line of sz:10 font needs ~14pt.
+        // Add 6pt padding. Formula: lines × 14 + 6, min 20pt.
+        const ws4GroupHeaderSet = new Set(ws4GroupHeaderRows);
+        const ws4RowHeights = ws4Data.map((rowData, idx) => {
+          if (idx <= headerRow4) return {};
+          if (ws4GroupHeaderSet.has(idx)) return { hpt: 20 };
+          // Count lines in all bullet columns H(7) I(8) J(9) K(10) L(11) and status M(12).
+          const countLines = colIdx => {
+            const cell = rowData[colIdx];
+            return (cell && cell.v) ? String(cell.v).split('\n').length : 1;
+          };
+          const lines = Math.max(
+            countLines(7),   // H ราคาน้ำมัน
+            countLines(8),   // I สำรองน้ำมัน
+            countLines(9),   // J ราคารับ
+            countLines(10),  // K ราคาจ่าย
+            countLines(11),  // L ส่วนต่าง
+            countLines(12),  // M ความผิดปกติ
+            1
+          );
+          return { hpt: Math.max(lines * 14 + 6, 20) };
+        });
         ws4 = XLSX.utils.aoa_to_sheet(ws4Data);
         ws4['!cols'] = [
-          { wch: 14 }, { wch: 34 }, { wch: 12 }, { wch: 12 }, { wch: 18 },
-          { wch: 16 }, { wch: 22 }, { wch: 16 }, { wch: 18 },
-          { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 34 }
+          { wch: 12 }, { wch: 22 }, { wch: 12 }, { wch: 18 }, { wch: 18 },
+          { wch: 13 }, { wch: 18 }, { wch: 16 }, { wch: 16 },
+          { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 24 }, { wch: 16 }
         ];
-        ws4['!rows'] = ws4Data.map((_, idx) => idx >= headerRow4 + 1 ? { hpt: 46 } : {});
+        ws4['!rows'] = ws4RowHeights;
         ws4['!merges'] = [
           { s: { r: 0, c: 0 }, e: { r: 0, c: h4.length - 1 } },
           { s: { r: 1, c: 0 }, e: { r: 1, c: h4.length - 1 } },
-          { s: { r: 2, c: 0 }, e: { r: 2, c: h4.length - 1 } }
+          { s: { r: 2, c: 0 }, e: { r: 2, c: h4.length - 1 } },
+          { s: { r: 3, c: 0 }, e: { r: 3, c: h4.length - 1 } },
+          // Per-card group header: merge C+D (col 2-3) and E+F (col 4-5)
+          ...ws4GroupHeaderRows.flatMap(r => [
+            { s: { r, c: 2 }, e: { r, c: 3 } },
+            { s: { r, c: 4 }, e: { r, c: 5 } }
+          ])
         ];
-        ws4['!autofilter'] = { ref: 'A5:' + XLSX.utils.encode_cell({ c: h4.length - 1, r: 4 }) };
-        ws4['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
+        ws4['!autofilter'] = { ref: 'A6:' + XLSX.utils.encode_cell({ c: h4.length - 1, r: 5 }) };
+        ws4['!freeze'] = { xSplit: 0, ySplit: 6, topLeftCell: 'A7', activePane: 'bottomLeft', state: 'frozen' };
 
-        const unmatchedACards = buildUnmatchedExportCards(_stA.rows, _stB.rows);
-        const unmatchedBCards = buildUnmatchedExportCards(_stB.rows, _stA.rows);
         ws5 = buildUnmatchedSheet(
           unmatchedACards,
           'รายเส้นทางที่ไม่ถูกเปรียบเทียบ: ' + periodALabel,
           periodALabel,
-          periodBLabel
+          periodBLabel,
+          unmatchedASelectedRaw
         );
         ws6 = buildUnmatchedSheet(
           unmatchedBCards,
           'รายเส้นทางที่ไม่ถูกเปรียบเทียบ: ' + periodBLabel,
           periodBLabel,
-          periodALabel
+          periodALabel,
+          unmatchedBSelectedRaw
         );
       }
 
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws1, 'สรุปผล');
-      XLSX.utils.book_append_sheet(wb, ws2, 'มุมมองปกติ');
-      if (ws4) XLSX.utils.book_append_sheet(wb, ws4, 'ถูกเปรียบเทียบ');
-      if (ws5) XLSX.utils.book_append_sheet(wb, ws5, 'ไม่ถูกเทียบช่วงแรก');
-      if (ws6) XLSX.utils.book_append_sheet(wb, ws6, 'ไม่ถูกเทียบช่วงหลัง');
+      XLSX.utils.book_append_sheet(wb, ws1, 'สรุปผลดำเนินงาน');
+      if (ws4) XLSX.utils.book_append_sheet(wb, ws4, 'รายเส้นทางที่ถูกเปรียบเทียบ');
+      if (ws5) XLSX.utils.book_append_sheet(wb, ws5, 'ไม่ถูกเปรียบเทียบช่วงแรก');
+      if (ws6) XLSX.utils.book_append_sheet(wb, ws6, 'ไม่ถูกเปรียบเทียบช่วงหลัง');
 
       const safeFilePart = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_');
       const fileName = 'วิเคราะห์ผลการดำเนินงาน_' + safeFilePart(periodALabel) + (_isSingleMode ? '' : '_vs_' + safeFilePart(periodBLabel)) + '_' + new Date().toISOString().slice(0, 10) + '.xlsx';

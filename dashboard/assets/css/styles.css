@@ -5931,12 +5931,10 @@ body.sidebar-animating .chart-card {
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
-  border-left: 1px solid rgba(148, 163, 184, .10);
   padding-left: 12px;
 }
 
 .dc-qa-single-table th:last-child {
-  border-left: 1px solid rgba(148, 163, 184, .10);
   padding-left: 12px;
 }
 

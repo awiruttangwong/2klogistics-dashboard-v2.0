@@ -5423,7 +5423,7 @@ function buildDailyCompare(data) {
             cCell(card.ga.customer || '-', { bold: true, fill: 'DBEAFE' }),
             cCell(card.ga.route || '-', { bold: true, fill: 'DBEAFE' }),
             cCell(card.ga.vtype || '-', { bold: true, fill: 'DBEAFE' }),
-            cCell('รวม ' + (card.rows || []).length + ' คู่เทียบ', { bold: true, fill: 'DBEAFE' })
+            cCell('รวม ' + (card.rows || []).length + ' คู่เปรียบเทียบ', { bold: true, fill: 'DBEAFE' })
           ];
           while (top.length < h4.length) top.push(cCell('', { fill: 'DBEAFE' }));
           ws4Data.push(top);
@@ -6021,7 +6021,7 @@ function buildDailyCompare(data) {
             </div>
             <div class="dc-qa-head-actions"></div>
           </header>
-          <div class="dc-qa-case-strip"><span>${esc(_labelA)}</span><span>${esc(_labelB)}</span>${anomCount ? `<span>ต้องตรวจสอบ ${anomCount} คู่เทียบ</span>` : '<span>คู่ข้อมูลปกติ</span>'}</div>
+          <div class="dc-qa-case-strip"><span>${esc(_labelA)}</span><span>${esc(_labelB)}</span>${anomCount ? `<span>ต้องตรวจสอบ ${anomCount} คู่เปรียบเทียบ</span>` : '<span>คู่ข้อมูลปกติ</span>'}</div>
           <div class="dc-qa-table-wrap">
             <table class="dc-qa-table dc-qa-pair-table">
               <thead><tr><th>วันที่หลัก</th><th>วันที่เปรียบเทียบ</th><th>พขร.</th><th>ราคาน้ำมัน</th><th>สำรองน้ำมัน</th><th>ราคารับ</th><th>ราคาจ่าย</th><th class="dc-qa-th-diff">ส่วนต่าง</th><th class="dc-qa-th-flag">ความผิดปกติ</th></tr></thead>
@@ -6033,7 +6033,7 @@ function buildDailyCompare(data) {
       }).join('');
       return `<section class="dc-qa-page">
         <div class="dc-summary-head dc-qa-filter-head" style="flex-direction:column;align-items:flex-start;">
-          <div class="dc-summary-copy"><h3 class="dc-summary-title">รายเส้นทางที่ถูกเปรียบเทียบ <span id="dc-summary-routes-anomaly">${visibleCards.length}</span> เส้นทาง</h3><p class="dc-summary-sub">พบความผิดปกติที่ต้องตรวจสอบ <span id="dc-summary-anoms-anomaly">${visibleAnoms}</span> คู่เทียบ จากข้อมูลที่จับคู่ พขร. ได้ทั้งสองช่วง</p></div>
+          <div class="dc-summary-copy"><h3 class="dc-summary-title">รายเส้นทางที่ถูกเปรียบเทียบ <span id="dc-summary-routes-anomaly">${visibleCards.length}</span> เส้นทาง</h3><p class="dc-summary-sub">พบความผิดปกติที่ต้องตรวจสอบ <span id="dc-summary-anoms-anomaly">${visibleAnoms}</span> คู่เปรียบเทียบ จากข้อมูลที่จับคู่ พขร. ได้ทั้งสองช่วง</p></div>
           <div class="dc-summary-filter" style="width:100%;min-width:0;">${renderCompareStatusFilter('anomaly', optionKeys, selected, counts)}</div>
         </div>
         ${cardsHtml}

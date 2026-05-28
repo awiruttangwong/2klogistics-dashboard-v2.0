@@ -5090,8 +5090,8 @@ function buildDailyCompare(data) {
       const periodALabel = _stA ? (_labelA || fmtRange(_stA.dateStart, _stA.dateEnd)) : (_labelA || '-');
       const periodBLabel = (_stB && !_isSingleMode) ? (_labelB || fmtRange(_stB.dateStart, _stB.dateEnd)) : '';
       const addPeriod = (title, periodLabel) => `${title} (${periodLabel || '-'})`;
-      const qaStatusLabels = () => (typeof dcQaStatusLabels === 'function')
-        ? dcQaStatusLabels()
+      const qaStatusLabels = () => (typeof getCompareStatusLabelMap === 'function')
+        ? getCompareStatusLabelMap()
         : { loss: 'ขาดทุน', oil50: 'สำรองน้ำมัน>50%', payHigh: 'ราคาจ่ายสูงผิดปกติ', oilHigh: 'สำรองน้ำมันสูงผิดปกติ', recvLow: 'ราคารับผิดปกติ', normal: 'ปกติ' };
       const cleanStatuses = statuses => {
         const values = [...new Set(statuses && statuses.length ? statuses : ['normal'])];
@@ -5122,12 +5122,13 @@ function buildDailyCompare(data) {
           '\nB ' + (hasNum(b) ? fmtMoney(b) : '-') +
           '\nΔ ' + (canDiff ? signedMoney(Number(a) - Number(b)) : '-');
       }
-      function metricPairCell(a, b, opts) {
+      function metricPairCell(a, b, opts, invertColor = false) {
         const canDiff = hasNum(a) && hasNum(b);
         const diff = canDiff ? Number(a) - Number(b) : 0;
         const base = { ...(opts || {}), align: 'right', wrap: true };
         if (!canDiff || Math.abs(diff) < 0.0001) return mCell(metricPairText(a, b), base);
-        return diff < 0 ? rCell(metricPairText(a, b), base) : gCell(metricPairText(a, b), base);
+        const isGood = invertColor ? (diff < 0) : (diff > 0);
+        return isGood ? gCell(metricPairText(a, b), base) : rCell(metricPairText(a, b), base);
       }
       function rowPeerRows(sourceRows, row) {
         return (sourceRows || []).filter(r =>
@@ -5445,11 +5446,11 @@ function buildDailyCompare(data) {
               cCell(ra.driver || rb.driver || '-', { fill: zf }),
               cCell((ra.vtype || '-') + ' / ' + (rb.vtype || '-'), { fill: zf }),
               cCell((ra.plate || '-') + ' / ' + (rb.plate || '-'), { fill: zf }),
-              metricPairCell(oilPriceA, oilPriceB, { fill: zf }),
-              metricPairCell(ra.oil, rb.oil, { fill: zf }),
-              metricPairCell(ra.recv, rb.recv, { fill: zf }),
-              metricPairCell(ra.pay, rb.pay, { fill: zf }),
-              metricPairCell(mA, mB, { fill: zf, bold: true }),
+              metricPairCell(oilPriceA, oilPriceB, { fill: zf }, true),
+              metricPairCell(ra.oil, rb.oil, { fill: zf }, true),
+              metricPairCell(ra.recv, rb.recv, { fill: zf }, false),
+              metricPairCell(ra.pay, rb.pay, { fill: zf }, true),
+              metricPairCell(mA, mB, { fill: zf, bold: true }, false),
               statusStyledCell(entry.statuses || ['normal'], { fill: zf })
             ];
             ws4Data.push(row);
@@ -5659,10 +5660,18 @@ function buildDailyCompare(data) {
       </div>`;
     }
 
-    function dcQaPairCell(a, b, cls = '', isModal = false) {
+    function dcQaPairCell(a, b, cls = '', isModal = false, invertColor = false) {
       const canDiff = hasNum(a) && hasNum(b);
       const diff = canDiff ? (Number(a) - Number(b)) : 0;
-      const diffClass = !canDiff ? 'is-muted' : (Math.abs(diff) < 0.0001 ? 'is-zero' : (diff > 0 ? 'is-positive' : 'is-negative'));
+      let diffClass = 'is-muted';
+      if (canDiff) {
+        if (Math.abs(diff) < 0.0001) {
+          diffClass = 'is-zero';
+        } else {
+          const isGood = invertColor ? (diff < 0) : (diff > 0);
+          diffClass = isGood ? 'is-positive' : 'is-negative';
+        }
+      }
       const diffText = canDiff ? `${diff > 0 ? '+' : ''}${fmt(diff)}` : '-';
       return `<div class="dc-qa-pair-cell ${cls} ${isModal && canDiff && Math.abs(diff) >= 0.0001 ? 'has-inline-delta' : ''}">
         <div class="dc-qa-ab-row">
@@ -5755,10 +5764,10 @@ function buildDailyCompare(data) {
         <td class="dc-qa-date"><span class="dc-qa-date-chip is-b">${esc(dcQaShortDate(rb.date))}</span></td>
         <td class="${driverClass}" title="${esc(ra.driver || rb.driver || '-')}">${esc(ra.driver || rb.driver || '-')}</td>
         ${isModal ? `<td>${dcQaPairTextCell(ra.vtype, rb.vtype)}</td><td>${dcQaPairTextCell(ra.plate, rb.plate)}</td>` : ''}
-        <td>${dcQaPairCell(getOilPriceByDate(ra.date), getOilPriceByDate(rb.date), 'is-blue', isModal)}</td>
-        <td>${dcQaPairCell(ra.oil, rb.oil, 'is-oil', isModal)}</td>
-        <td>${dcQaPairCell(ra.recv, rb.recv, '', isModal)}</td>
-        <td>${dcQaPairCell(ra.pay, rb.pay, '', isModal)}</td>
+        <td>${dcQaPairCell(getOilPriceByDate(ra.date), getOilPriceByDate(rb.date), 'is-blue', isModal, true)}</td>
+        <td>${dcQaPairCell(ra.oil, rb.oil, 'is-oil', isModal, true)}</td>
+        <td>${dcQaPairCell(ra.recv, rb.recv, '', isModal, false)}</td>
+        <td>${dcQaPairCell(ra.pay, rb.pay, '', isModal, true)}</td>
         <td class="dc-qa-td-diff">${dcQaPairDiffCell(ra.margin, rb.margin)}</td>
         <td class="dc-qa-td-flag">${dcQaStatusBadges(statuses)}</td>
       </tr>`;

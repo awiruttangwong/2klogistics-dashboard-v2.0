@@ -5757,11 +5757,20 @@ function buildDailyCompare(data) {
           });
         });
 
+        const [y, m, d] = _stA.dateStart.split('-').map(Number);
+        const getDayNum = (offset) => {
+          const dt = new Date(y, m - 1, d - offset);
+          return dt.getDate();
+        };
+        const d1 = getDayNum(1);
+        const d2 = getDayNum(2);
+        const d3 = getDayNum(3);
+
         // Section 1: Overview
         ws1Data.push([hCell('รายการ'), hCell('ค่า'), hCell(''), hCell('')]);
         const overview = [
           [cCell('ช่วงเวลาหลัก', { bold: true }), cCell(periodALabel), cCell(''), cCell('')],
-          [cCell('วันอ้างอิงเพื่อเปรียบเทียบ (ย้อนหลัง 3 วัน)', { bold: true }), cCell(refDaysList.length ? refDaysList.join(', ') + ' (ระบบจะดึงข้อมูลเที่ยววิ่งของเส้นทางเดียวกันที่ใกล้ที่สุดย้อนหลัง 3 วันเพื่อประกบคู่เปรียบเทียบหาความผิดปกติ)' : 'ไม่พบข้อมูลย้อนหลัง', { wrap: true }), cCell(''), cCell('')],
+          [cCell('วันอ้างอิงเพื่อเปรียบเทียบ (ย้อนหลัง 3 วัน)', { bold: true }), cCell(refDaysList.length ? refDaysList.join(', ') + ` (เปรียบเทียบเที่ยววิ่งอดีต: เริ่มหาจากวันที่ ${d1} ➔ ไม่มีข้อมูล ➔ หาที่วันที่ ${d2} ➔ ไม่มีข้อมูล ➔ หาที่วันที่ ${d3})` : 'ไม่พบข้อมูลย้อนหลัง', { wrap: true }), cCell(''), cCell(''), cCell(''), cCell(''), cCell('')],
           [cCell('จำนวนเส้นทาง', { bold: true }), cCell((_stA.routes || []).length, { numFmt: '#,##0', align: 'right' }), cCell(''), cCell('')],
           [cCell('เส้นทางที่มีข้อมูลเปรียบเทียบ', { bold: true }), cCell(routesWithRefCount, { numFmt: '#,##0', align: 'right' }), cCell(''), cCell('')],
           [cCell('จำนวนเที่ยว', { bold: true }), cCell(_stA.trips || 0, { numFmt: '#,##0', align: 'right' }), cCell(''), cCell('')],
@@ -5847,7 +5856,7 @@ function buildDailyCompare(data) {
       const ws1ColHeaderRow = 2;
       const ws1Merges = [
         { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
-        { s: { r: 4, c: 1 }, e: { r: 4, c: 2 } } // Merge B4:C4 for the detailed reference explanation
+        { s: { r: 4, c: 1 }, e: { r: 4, c: 6 } } // Merge B4:G4 for the detailed reference explanation
       ];
       const bottomEndIdx = ws1Data.length - 1;
       for (let r = bottomStartIdx + 1; r <= bottomEndIdx; r++) {

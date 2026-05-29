@@ -5668,9 +5668,15 @@ function buildDailyCompare(data) {
       const unmatchedBSelectedRaw = (typeof getSelectedCompareStatuses === 'function')
         ? getSelectedCompareStatuses('unmatched_b', exportStatusOptionKeys)
         : exportStatusOptionKeys;
+      // Single-mode (normal view) status filter — controls which trips appear in the
+      // "รายเส้นทางที่เปรียบเทียบ" sheet (mirrors the on-screen toggle behaviour).
+      const normalSelectedRaw = (typeof getSelectedCompareStatuses === 'function')
+        ? getSelectedCompareStatuses('normal', exportStatusOptionKeys)
+        : exportStatusOptionKeys;
       const anomalySelectedSet = new Set(anomalySelectedRaw);
       const unmatchedASelectedSet = new Set(unmatchedASelectedRaw);
       const unmatchedBSelectedSet = new Set(unmatchedBSelectedRaw);
+      const normalSelectedSet = new Set(normalSelectedRaw);
       const matchesStatusFilter = (card, selectedSet) => {
         const statuses = (card && Array.isArray(card.statuses) && card.statuses.length) ? card.statuses : ['normal'];
         return statuses.some(s => selectedSet.has(s));
@@ -5703,30 +5709,102 @@ function buildDailyCompare(data) {
       // ─── Sheet 1: สรุปผลดำเนินงาน (template-driven) ─────────────────────────────
       const ws1Data = [];
       ws1Data.push([cCell('รายงานวิเคราะห์และเปรียบเทียบผลการดำเนินงาน', { bold: true, color: '111827', sz: 14 }), cCell(''), cCell(''), cCell('')]);
-      ws1Data.push([cCell('ส่งออกตามมุมมองปัจจุบัน', { bold: true })]);
-      ws1Data.push([cCell(filterSummaryText(), { color: '6B7280', sz: 9 }), cCell(''), cCell(''), cCell('')]);
-      if (_isSingleMode) {
-        ws1Data.push([cCell('สถานะที่เลือก: -', { color: '374151', sz: 9 }), cCell(''), cCell(''), cCell('')]);
-      } else {
-        ws1Data.push([cCell('สถานะที่เลือก (รายเส้นทางที่ถูกเปรียบเทียบ): ' + formatStatusLabels(anomalySelectedRaw), { color: '374151', sz: 9 }), cCell(''), cCell(''), cCell('')]);
-        ws1Data.push([cCell('สถานะที่เลือก (ไม่ถูกเปรียบเทียบช่วงแรก): ' + formatStatusLabels(unmatchedASelectedRaw), { color: '374151', sz: 9 }), cCell(''), cCell(''), cCell('')]);
-        ws1Data.push([cCell('สถานะที่เลือก (ไม่ถูกเปรียบเทียบช่วงหลัง): ' + formatStatusLabels(unmatchedBSelectedRaw), { color: '374151', sz: 9 }), cCell(''), cCell(''), cCell('')]);
-      }
-      ws1Data.push([cCell('ส่งออกเฉพาะข้อมูลที่ผ่านตัวกรองบนหน้าจอ', { color: '6B7280', sz: 9 }), cCell(''), cCell(''), cCell('')]);
       ws1Data.push([]);
 
       if (_isSingleMode) {
+        // Compute single-mode breakdown using the same logic as renderSingleTable.
+        // We need: total routes, total trips, anomaly count, per-status counts, ref days.
+        const refDaysList = (Array.isArray(_stRef) ? _stRef : (_stRef ? [_stRef] : []))
+          .map(st => fmtDate(st.dateStart));
+        const refDayMapsForSummary = (Array.isArray(_stRef) ? _stRef : (_stRef ? [_stRef] : []))
+          .map(st => {
+            const map = {};
+            (st.rows || []).forEach(r => {
+              const k = dcQaRouteKey(r);
+              if (!map[k]) map[k] = [];
+              map[k].push(r);
+            });
+            return { dateLabel: fmtDate(st.dateStart), map };
+          });
+        const getRefForRouteSummary = (routeKey) => {
+          for (const day of refDayMapsForSummary) {
+            if (day.map[routeKey] && day.map[routeKey].length > 0) {
+              return day.map[routeKey];
+            }
+          }
+          return [];
+        };
+        // Walk all routes → all trips → tally statuses (matches what user sees on screen).
+        const statusCount = { loss: 0, oil50: 0, payHigh: 0, recvLow: 0, normal: 0 };
+        let totalAnomCount = 0;
+        let routesWithRefCount = 0;
+        (_stA.routes || []).forEach(route => {
+          const trips = (_stA.rows || []).filter(r => r.customer === route.customer && r.route === route.route && r.vtype === route.vtype);
+          if (trips.length === 0) return;
+          const routeKey = dcQaRouteKey(trips[0]);
+          const refTripsForRoute = getRefForRouteSummary(routeKey);
+          if (refTripsForRoute.length > 0) routesWithRefCount++;
+          const peers = refTripsForRoute.length > 0 ? [...trips, ...refTripsForRoute] : trips;
+          trips.forEach(ra => {
+            const statuses = dcQaTripStatuses(ra, peers);
+            const cleaned = statuses.some(s => s !== 'normal') ? statuses.filter(s => s !== 'normal') : statuses;
+            if (cleaned.includes('normal')) statusCount.normal++;
+            else totalAnomCount++;
+            if (cleaned.includes('loss'))    statusCount.loss++;
+            if (cleaned.includes('oil50'))   statusCount.oil50++;
+            if (cleaned.includes('payHigh')) statusCount.payHigh++;
+            if (cleaned.includes('recvLow')) statusCount.recvLow++;
+          });
+        });
+
+        // Section 1: Overview
         ws1Data.push([hCell('รายการ'), hCell('ค่า'), hCell(''), hCell('')]);
-        const d1 = [
-          [cCell('ช่วงเวลา', { bold: true }), cCell(periodALabel), cCell(''), cCell('')],
-          [cCell('จำนวนเที่ยว', { bold: true }), cCell(_stA.trips, { numFmt: '#,##0', align: 'right' }), cCell(''), cCell('')],
+        const overview = [
+          [cCell('ช่วงเวลาหลัก', { bold: true }), cCell(periodALabel), cCell(''), cCell('')],
+          [cCell('วันอ้างอิงเพื่อเปรียบเทียบ (ย้อนหลัง 3 วัน)', { bold: true }), cCell(refDaysList.length ? refDaysList.join(', ') : 'ไม่พบข้อมูลย้อนหลัง', { wrap: true }), cCell(''), cCell('')],
+          [cCell('จำนวนเส้นทาง', { bold: true }), cCell((_stA.routes || []).length, { numFmt: '#,##0', align: 'right' }), cCell(''), cCell('')],
+          [cCell('เส้นทางที่มีข้อมูลเปรียบเทียบ', { bold: true }), cCell(routesWithRefCount, { numFmt: '#,##0', align: 'right' }), cCell(''), cCell('')],
+          [cCell('จำนวนเที่ยว', { bold: true }), cCell(_stA.trips || 0, { numFmt: '#,##0', align: 'right' }), cCell(''), cCell('')],
+          [cCell('จำนวนรายการที่มีความผิดปกติ', { bold: true }), totalAnomCount > 0 ? rCell(totalAnomCount, { numFmt: '#,##0', align: 'right' }) : gCell(totalAnomCount, { numFmt: '#,##0', align: 'right' }), cCell(''), cCell('')]
+        ];
+        overview.forEach(r => ws1Data.push(r));
+
+        // Section 2: Financial summary
+        ws1Data.push([]);
+        ws1Data.push([cCell('สรุปการเงิน', { bold: true, sz: 11, color: '111827' }), cCell(''), cCell(''), cCell('')]);
+        const financial = [
           [cCell('ราคารับรวม', { bold: true }), cCell(fmtNum(_stA.recv), { numFmt: nTHB, align: 'right' }), cCell(''), cCell('')],
           [cCell('ราคาจ่ายรวม', { bold: true }), cCell(fmtNum(_stA.pay), { numFmt: nTHB, align: 'right' }), cCell(''), cCell('')],
           [cCell('สำรองน้ำมันรวม', { bold: true }), cCell(fmtNum(_stA.oil), { numFmt: nTHB, align: 'right' }), cCell(''), cCell('')],
           [cCell('ส่วนต่างรวม', { bold: true }), _stA.margin < 0 ? rCell(fmtNum(_stA.margin), { numFmt: nTHB, align: 'right' }) : gCell(fmtNum(_stA.margin), { numFmt: nTHB, align: 'right' }), cCell(''), cCell('')],
-          [cCell('กำไร %', { bold: true }), cCell(_stA.pct / 100, { numFmt: nPct, align: 'right' }), cCell(''), cCell('')]
+          [cCell('กำไร %', { bold: true }), cCell((_stA.pct || 0) / 100, { numFmt: nPct, align: 'right' }), cCell(''), cCell('')]
         ];
-        d1.forEach(r => ws1Data.push(r));
+        financial.forEach(r => ws1Data.push(r));
+
+        // Section 3: Anomaly breakdown by status
+        ws1Data.push([]);
+        ws1Data.push([cCell('แยกตามประเภทความผิดปกติ', { bold: true, sz: 11, color: '111827' }), cCell(''), cCell(''), cCell('')]);
+        ws1Data.push([hCell('สถานะ'), hCell('จำนวนเที่ยว'), hCell('สัดส่วน'), hCell('')]);
+        const totalForPct = _stA.trips || 0;
+        const pctOf = (n) => totalForPct > 0 ? n / totalForPct : 0;
+        const breakdown = [
+          ['ขาดทุน',                statusCount.loss,    'loss'],
+          ['สำรองน้ำมัน > 50%',      statusCount.oil50,   'oil50'],
+          ['ราคาจ่ายสูงผิดปกติ',     statusCount.payHigh, 'payHigh'],
+          ['ราคารับผิดปกติ',         statusCount.recvLow, 'recvLow'],
+          ['ปกติ',                  statusCount.normal,  'normal']
+        ];
+        breakdown.forEach(([label, count, key]) => {
+          const valueCell = key === 'normal'
+            ? gCell(count, { numFmt: '#,##0', align: 'right' })
+            : (count > 0 ? rCell(count, { numFmt: '#,##0', align: 'right' }) : cCell(count, { numFmt: '#,##0', align: 'right' }));
+          ws1Data.push([
+            cCell(label, { bold: true }),
+            valueCell,
+            cCell(pctOf(count), { numFmt: nPct, align: 'right' }),
+            cCell('')
+          ]);
+        });
       } else {
         ws1Data.push([hCell('รายการ'), hCell(periodALabel), hCell(periodBLabel), hCell('ผลต่าง (' + periodALabel + ' - ' + periodBLabel + ')')]);
         const dR = _stA.recv - _stB.recv, dP = _stA.pay - _stB.pay, dO = _stA.oil - _stB.oil, dM = _stA.margin - _stB.margin;
@@ -5748,20 +5826,30 @@ function buildDailyCompare(data) {
         ];
         rows.forEach(r => ws1Data.push(r));
       }
+      const bottomStartIdx = ws1Data.length;
       ws1Data.push([]);
+      ws1Data.push([cCell('หมายเหตุ', { bold: true, sz: 10, color: '111827' })]);
+      ws1Data.push([cCell('ส่งออกตามมุมมองปัจจุบัน', { bold: true, sz: 9 })]);
+      ws1Data.push([cCell(filterSummaryText(), { color: '6B7280', sz: 9 })]);
+      if (_isSingleMode) {
+        ws1Data.push([cCell('สถานะที่เลือก (มุมมองปกติ): ' + formatStatusLabels(normalSelectedRaw), { color: '374151', sz: 9 })]);
+      } else {
+        ws1Data.push([cCell('สถานะที่เลือก (รายเส้นทางที่ถูกเปรียบเทียบ): ' + formatStatusLabels(anomalySelectedRaw), { color: '374151', sz: 9 })]);
+        ws1Data.push([cCell('สถานะที่เลือก (ไม่ถูกเปรียบเทียบช่วงแรก): ' + formatStatusLabels(unmatchedASelectedRaw), { color: '374151', sz: 9 })]);
+        ws1Data.push([cCell('สถานะที่เลือก (ไม่ถูกเปรียบเทียบช่วงหลัง): ' + formatStatusLabels(unmatchedBSelectedRaw), { color: '374151', sz: 9 })]);
+      }
+      ws1Data.push([cCell('ส่งออกเฉพาะข้อมูลที่ผ่านตัวกรองบนหน้าจอ', { color: '6B7280', sz: 9 })]);
       ws1Data.push([cCell('สร้างเมื่อ: ' + new Date().toLocaleString('th-TH'), { color: '6B7280', sz: 9 })]);
 
       const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
       ws1['!cols'] = [{ wch: 34 }, { wch: 30 }, { wch: 30 }, { wch: 38 }];
-      // Header row count differs by mode:
-      //   Single:  rows 0-4 (title, subtitle, filter, status, footer) + blank + col-header
-      //   Compare: rows 0-6 (title, subtitle, filter, status×3, footer) + blank + col-header
-      const ws1MetaRows = _isSingleMode ? 4 : 6;  // last meta row index (0-based)
-      const ws1BlankRow = ws1MetaRows + 1;
-      const ws1ColHeaderRow = ws1MetaRows + 2;
-      // Build merges: title row + all meta rows span A:D
+      
+      const ws1ColHeaderRow = 2;
       const ws1Merges = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
-      for (let r = 2; r <= ws1MetaRows; r++) ws1Merges.push({ s: { r, c: 0 }, e: { r, c: 3 } });
+      const bottomEndIdx = ws1Data.length - 1;
+      for (let r = bottomStartIdx + 1; r <= bottomEndIdx; r++) {
+        ws1Merges.push({ s: { r, c: 0 }, e: { r, c: 3 } });
+      }
       ws1['!merges'] = ws1Merges;
       if (!_isSingleMode) {
         ws1['!autofilter'] = { ref: 'A' + (ws1ColHeaderRow + 1) + ':D' + (ws1ColHeaderRow + 1) };
@@ -5911,6 +5999,351 @@ function buildDailyCompare(data) {
       if (ws4) XLSX.utils.book_append_sheet(wb, ws4, 'รายเส้นทางที่ถูกเปรียบเทียบ');
       if (ws5) XLSX.utils.book_append_sheet(wb, ws5, 'ไม่ถูกเปรียบเทียบช่วงแรก');
       if (ws6) XLSX.utils.book_append_sheet(wb, ws6, 'ไม่ถูกเปรียบเทียบช่วงหลัง');
+
+      // ─── Single-mode (มุมมองปกติ) extra sheets ──────────────────────────────
+      // 1 sheet for ALL data + 4 sheets each filtered to a single status tag.
+      // Reuses the same template, formatting, and column layout as compare mode (ws4).
+      if (_isSingleMode && _stA) {
+        const refDays = Array.isArray(_stRef) ? _stRef : (_stRef ? [_stRef] : []);
+        // Build per-route ref lookup (same logic as renderSingleTable).
+        const refDayMaps = refDays.map(st => {
+          const map = {};
+          (st.rows || []).forEach(r => {
+            const k = dcQaRouteKey(r);
+            if (!map[k]) map[k] = [];
+            map[k].push(r);
+          });
+          return { dateLabel: fmtDate(st.dateStart), map };
+        });
+        const getRefForRoute = (routeKey) => {
+          for (const day of refDayMaps) {
+            if (day.map[routeKey] && day.map[routeKey].length > 0) {
+              return { trips: day.map[routeKey].slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))), dateLabel: day.dateLabel };
+            }
+          }
+          return null;
+        };
+        // Build cases (route + per-trip statuses + ref trips), identical to renderSingleTable.
+        const buildSingleCases = () => {
+          return (_stA.routes || []).map(route => {
+            const trips = (_stA.rows || []).filter(r => r.customer === route.customer && r.route === route.route && r.vtype === route.vtype)
+              .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+            const routeKey = trips.length > 0 ? dcQaRouteKey(trips[0]) : null;
+            const refResult = routeKey ? getRefForRoute(routeKey) : null;
+            const refTripsForRoute = refResult ? refResult.trips : [];
+            const peers = refTripsForRoute.length > 0 ? [...trips, ...refTripsForRoute] : trips;
+            const rows = trips.map(ra => ({ ra, statuses: dcQaTripStatuses(ra, peers) }))
+              .sort((a, b) => {
+                const rankA = dcQaStatusRank(a.statuses);
+                const rankB = dcQaStatusRank(b.statuses);
+                if (rankB !== rankA) return rankB - rankA;
+                return String(a.ra.date || '').localeCompare(String(b.ra.date || ''));
+              });
+            return { route, rows, refTripsForRoute, refDateLabel: refResult ? refResult.dateLabel : null };
+          }).sort((a, b) => {
+            const ca = String(a.route.customer || '').trim().toUpperCase();
+            const cb = String(b.route.customer || '').trim().toUpperCase();
+            const pa = custOrder[ca] ?? 999;
+            const pb = custOrder[cb] ?? 999;
+            if (pa !== pb) return pa - pb;
+            return routeDisplay(a.route).localeCompare(routeDisplay(b.route), 'th');
+          });
+        };
+
+        // Build a single sheet from cases.
+        // mode='all'    (statusFilter=null): include trips matching userFilterSet (UI toggles).
+        //                                    All status badges visible per row.
+        // mode='filter' (statusFilter set):  keep trips that have THIS status; show ONLY this
+        //                                    status in the badge column (lens semantics).
+        // userFilterSet is ignored when statusFilter is set (per-status sheets always export
+        // the requested tag regardless of UI toggle, by design).
+        const buildSingleSheet = (cases, sheetTitle, statusFilter, userFilterSet) => {
+          const wsData = [];
+          const titleMap = {
+            'รายเส้นทางที่เปรียบเทียบ': 'รายงานการเปรียบเทียบข้อมูลรายเส้นทาง',
+            'ขาดทุน': 'รายการเส้นทางที่มีผลประกอบการขาดทุน',
+            'สำรองน้ำมัน > 50%': 'รายการเส้นทางที่มีการสำรองน้ำมันเกินเกณฑ์ >50%',
+            'ราคารับผิดปกติ': 'รายการเส้นทางที่มีความผิดปกติของรายรับ',
+            'ราคาจ่ายสูงผิดปกติ': 'รายการเส้นทางที่มีความผิดปกติของค่าใช้จ่าย'
+          };
+          const displayTitle = titleMap[sheetTitle] || sheetTitle;
+          wsData.push([cCell(displayTitle, { bold: true, sz: 12, color: '111827' })]);
+          const labels = qaStatusLabels();
+          let statusInfo;
+          if (statusFilter) {
+            statusInfo = 'สถานะที่กรอง: ' + (labels[statusFilter] || statusFilter);
+          } else if (userFilterSet) {
+            const arr = Array.from(userFilterSet);
+            statusInfo = 'สถานะที่เลือก: ' + (arr.length ? arr.map(k => labels[k] || k).join(', ') : '-');
+          } else {
+            statusInfo = 'สถานะที่เลือก: ทั้งหมด';
+          }
+          wsData.push([]);
+          const headers = [
+            'ลูกค้า', 'ชื่อเส้นทาง', 'วันที่', 'พขร.',
+            'ประเภทรถ', 'ทะเบียน', 'ราคาน้ำมัน', 'สำรองน้ำมัน',
+            'ราคารับ', 'ราคาจ่าย', 'ส่วนต่าง', 'ความผิดปกติ', 'หมายเหตุ'
+          ];
+          const headerRow = wsData.length;
+          wsData.push(headers.map(t => hCell(t)));
+          let rowIdx = headerRow + 1;
+          const groupHeaderRows = [];
+
+          const cleanStatuses = ss => {
+            const arr = ss && ss.length ? ss : ['normal'];
+            return arr.some(s => s !== 'normal') ? arr.filter(s => s !== 'normal') : arr;
+          };
+
+          let maxRouteLen = 10;
+          let maxOilLen = 10;     // 'ราคาน้ำมัน' (min 10)
+          let maxReserveLen = 11; // 'สำรองน้ำมัน' (min 11)
+          let maxRecvLen = 10;    // 'ราคารับ' (min 10)
+          let maxPayLen = 10;     // 'ราคาจ่าย' (min 10)
+          let maxMarginLen = 10;  // 'ส่วนต่าง' (min 10)
+
+          cases.forEach(item => {
+            let visibleRows;
+            if (statusFilter) {
+              visibleRows = item.rows.filter(r => (r.statuses || []).includes(statusFilter));
+            } else if (userFilterSet) {
+              visibleRows = item.rows.filter(r => {
+                const ss = cleanStatuses(r.statuses || []);
+                return ss.some(s => userFilterSet.has(s));
+              });
+            } else {
+              visibleRows = item.rows;
+            }
+            if (visibleRows.length === 0) return;
+
+            const rDisp = routeDisplay(item.route);
+            if (rDisp && rDisp.length > maxRouteLen) maxRouteLen = rDisp.length;
+
+            visibleRows.forEach(entry => {
+              const r = entry.ra || {};
+              const raDisp = routeDisplay(r);
+              if (raDisp && raDisp.length > maxRouteLen) maxRouteLen = raDisp.length;
+
+              const oilPrice = getOilPriceByDate(r.date);
+              const oilStr = hasNum(oilPrice) ? fmtMoney(oilPrice) : '-';
+              if (oilStr.length > maxOilLen) maxOilLen = oilStr.length;
+
+              const reserveStr = fmtMoney(r.oil);
+              if (reserveStr.length > maxReserveLen) maxReserveLen = reserveStr.length;
+
+              const recvStr = fmtMoney(r.recv);
+              if (recvStr.length > maxRecvLen) maxRecvLen = recvStr.length;
+
+              const payStr = fmtMoney(r.pay);
+              if (payStr.length > maxPayLen) maxPayLen = payStr.length;
+
+              const mar = (r.margin == null || isNaN(r.margin)) ? ((r.recv || 0) - (r.pay || 0) - (r.oil || 0)) : r.margin;
+              const marginStr = fmtMoney(mar);
+              if (marginStr.length > maxMarginLen) maxMarginLen = marginStr.length;
+            });
+
+            (item.refTripsForRoute || []).forEach(refTrip => {
+              const refDisp = routeDisplay(refTrip);
+              if (refDisp && refDisp.length > maxRouteLen) maxRouteLen = refDisp.length;
+
+              const oilPrice = getOilPriceByDate(refTrip.date);
+              const oilStr = hasNum(oilPrice) ? fmtMoney(oilPrice) : '-';
+              if (oilStr.length > maxOilLen) maxOilLen = oilStr.length;
+
+              const reserveStr = fmtMoney(refTrip.oil);
+              if (reserveStr.length > maxReserveLen) maxReserveLen = reserveStr.length;
+
+              const recvStr = fmtMoney(refTrip.recv);
+              if (recvStr.length > maxRecvLen) maxRecvLen = recvStr.length;
+
+              const payStr = fmtMoney(refTrip.pay);
+              if (payStr.length > maxPayLen) maxPayLen = payStr.length;
+
+              const mar = (refTrip.margin == null || isNaN(refTrip.margin)) ? ((refTrip.recv || 0) - (refTrip.pay || 0) - (refTrip.oil || 0)) : refTrip.margin;
+              const marginStr = fmtMoney(mar);
+              if (marginStr.length > maxMarginLen) maxMarginLen = marginStr.length;
+            });
+          });
+
+          cases.forEach(item => {
+            // Trip filtering rules:
+            //   statusFilter set        → keep trips whose statuses include this key (lens)
+            //   userFilterSet provided  → keep trips whose statuses match user's UI toggles
+            //                             (mirrors Lens Filter behaviour for the ALL sheet)
+            //   neither                 → keep every trip
+            // cleanStatuses: if any non-normal status present, drop 'normal' (so filtering by
+            // 'normal' only picks pure-normal trips, matching renderSingleTable semantics).
+            let visibleRows;
+            if (statusFilter) {
+              visibleRows = item.rows.filter(r => (r.statuses || []).includes(statusFilter));
+            } else if (userFilterSet) {
+              visibleRows = item.rows.filter(r => {
+                const ss = cleanStatuses(r.statuses || []);
+                return ss.some(s => userFilterSet.has(s));
+              });
+            } else {
+              visibleRows = item.rows;
+            }
+            if (visibleRows.length === 0) return; // skip cards with no matching trips
+
+            // Group header row: A=customer, B=route, C+D='ประเภทรถ: <vtype>', E+F='ต้องตรวจสอบ N เที่ยว'
+            const anomCount = visibleRows.filter(r => !(r.statuses || []).includes('normal')).length;
+            const summaryText = anomCount > 0
+              ? 'ต้องตรวจสอบ ' + anomCount + ' เที่ยว'
+              : 'รวม ' + visibleRows.length + ' เที่ยว';
+            const top = [
+              cCell(item.route.customer || '-', { bold: true, fill: 'DBEAFE' }),
+              cCell(routeDisplay(item.route), { bold: true, fill: 'DBEAFE' }),
+              cCell('ประเภทรถ: ' + (item.route.vtype || '-'), { bold: true, fill: 'DBEAFE' }),
+              cCell('', { fill: 'DBEAFE' }),    // D — merged with C
+              cCell(summaryText, { bold: true, fill: 'DBEAFE' }),
+              cCell('', { fill: 'DBEAFE' })     // F — merged with E
+            ];
+            while (top.length < headers.length) top.push(cCell('', { fill: 'DBEAFE' }));
+            groupHeaderRows.push(wsData.length);
+            wsData.push(top);
+            rowIdx++;
+
+            // A-day trips
+            visibleRows.forEach(entry => {
+              const r = entry.ra || {};
+              const mar = (r.margin == null || isNaN(r.margin)) ? ((r.recv || 0) - (r.pay || 0) - (r.oil || 0)) : r.margin;
+              const oilPrice = getOilPriceByDate(r.date);
+              // Display statuses:
+              //   statusFilter (per-status sheet) → show ONLY that one tag
+              //   userFilterSet (ALL sheet)       → show only tags the user has selected
+              //   neither                         → show all tags
+              let displayStatuses;
+              if (statusFilter) {
+                displayStatuses = [statusFilter];
+              } else if (userFilterSet) {
+                const ss = cleanStatuses(entry.statuses || ['normal']);
+                const filtered = ss.filter(s => userFilterSet.has(s));
+                displayStatuses = filtered.length ? filtered : ss;
+              } else {
+                displayStatuses = entry.statuses || ['normal'];
+              }
+              const zf = (rowIdx % 2 === 0) ? 'F9FAFB' : null;
+              const row = [
+                cCell(r.customer || '-', { fill: zf }),
+                cCell(routeDisplay(r), { fill: zf }),
+                cCell(r.date || '-', { fill: zf }),
+                cCell(r.driver || '-', { fill: zf }),
+                cCell(r.vtype || '-', { fill: zf }),
+                cCell(r.plate || '-', { fill: zf }),
+                hasNum(oilPrice) ? cCell(fmtMoney(oilPrice), { align: 'right', fill: zf }) : cCell('-', { align: 'right', fill: zf }),
+                cCell(fmtMoney(r.oil), { align: 'right', fill: zf }),
+                cCell(fmtMoney(r.recv), { align: 'right', fill: zf }),
+                cCell(fmtMoney(r.pay), { align: 'right', fill: zf }),
+                mar < 0 ? rCell(fmtMoney(mar), { align: 'right', fill: zf }) : gCell(fmtMoney(mar), { align: 'right', fill: zf }),
+                statusRichCell(displayStatuses, { fill: zf, align: 'left', wrap: true, valign: 'top' }),
+                cCell('', { fill: zf })
+              ];
+              wsData.push(row);
+              rowIdx++;
+            });
+
+            // Reference-day trips for this route (always shown for context, light tint).
+            // In lens mode we still show full ref trips since user may want to compare.
+            (item.refTripsForRoute || []).forEach(refTrip => {
+              const mar = (refTrip.margin == null || isNaN(refTrip.margin)) ? ((refTrip.recv || 0) - (refTrip.pay || 0) - (refTrip.oil || 0)) : refTrip.margin;
+              const oilPrice = getOilPriceByDate(refTrip.date);
+              const refFill = 'EFF6FF'; // light blue tint to distinguish ref rows
+              const row = [
+                cCell(refTrip.customer || '-', { fill: refFill }),
+                cCell(routeDisplay(refTrip), { fill: refFill }),
+                cCell(refTrip.date || '-', { fill: refFill }),
+                cCell(refTrip.driver || '-', { fill: refFill }),
+                cCell(refTrip.vtype || '-', { fill: refFill }),
+                cCell(refTrip.plate || '-', { fill: refFill }),
+                hasNum(oilPrice) ? cCell(fmtMoney(oilPrice), { align: 'right', fill: refFill }) : cCell('-', { align: 'right', fill: refFill }),
+                cCell(fmtMoney(refTrip.oil), { align: 'right', fill: refFill }),
+                cCell(fmtMoney(refTrip.recv), { align: 'right', fill: refFill }),
+                cCell(fmtMoney(refTrip.pay), { align: 'right', fill: refFill }),
+                mar < 0 ? rCell(fmtMoney(mar), { align: 'right', fill: refFill }) : gCell(fmtMoney(mar), { align: 'right', fill: refFill }),
+                cCell('', { fill: refFill }),
+                cCell('', { fill: refFill })
+              ];
+              wsData.push(row);
+              rowIdx++;
+            });
+          });
+
+          if (rowIdx === headerRow + 1) {
+            // No data for this filter
+            const noData = [mCell('ไม่พบข้อมูลที่ตรงกับสถานะ "' + (labels[statusFilter] || statusFilter || '-') + '"', { align: 'center', bold: true })];
+            for (let i = 1; i < headers.length; i++) noData.push(cCell(''));
+            wsData.push(noData);
+          }
+
+          // Add the bottom Notes section (ย้ายไปด้านล่างสุด)
+          const bottomStartIdx = wsData.length;
+          wsData.push([]);
+          wsData.push([cCell('หมายเหตุ', { bold: true, sz: 10, color: '111827' })]);
+          wsData.push([cCell(filterSummaryText() + ' | หน้าที่ส่งออก: ' + sheetTitle, { color: '6B7280', sz: 9 })]);
+          wsData.push([cCell(statusInfo + ' | ส่งออกเฉพาะข้อมูลที่ผ่านตัวกรองบนหน้าจอ', { color: '374151', sz: 9 })]);
+          
+          const refLabelsList = refDayMaps.map(d => d.dateLabel).join(', ') || '-';
+          wsData.push([cCell('ช่วงข้อมูลหลัก: ' + periodALabel + ' | ช่วงข้อมูลเปรียบเทียบ (ย้อนหลัง 3 วัน): ' + refLabelsList, { color: '374151', sz: 9 })]);
+
+          const ws = XLSX.utils.aoa_to_sheet(wsData);
+          ws['!cols'] = [
+            { wch: 12 }, { wch: maxRouteLen }, { wch: 12 }, { wch: 18 },
+            { wch: 13 }, { wch: 18 }, { wch: maxOilLen }, { wch: maxReserveLen },
+            { wch: maxRecvLen }, { wch: maxPayLen }, { wch: maxMarginLen }, { wch: 24 }, { wch: 16 }
+          ];
+
+          // Row heights: header rows = default; group header = 20pt; data row proportional to status lines.
+          const groupHeaderSet = new Set(groupHeaderRows);
+          ws['!rows'] = wsData.map((rowData, idx) => {
+            if (idx <= headerRow) return {};
+            if (idx >= bottomStartIdx) return {}; // notes rows use default height
+            if (groupHeaderSet.has(idx)) return { hpt: 20 };
+            const statusCell = rowData[11]; // col L (ความผิดปกติ)
+            const statusLines = statusCell && statusCell.v
+              ? String(statusCell.v).split('\n').length : 1;
+            return { hpt: Math.max(statusLines * 14 + 6, 20) };
+          });
+
+          // Build merges: title row (Row 0), group headers, and all bottom notes rows
+          const merges = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
+            ...groupHeaderRows.flatMap(r => [
+              { s: { r, c: 2 }, e: { r, c: 3 } },
+              { s: { r, c: 4 }, e: { r, c: 5 } }
+            ])
+          ];
+          const bottomEndIdx = wsData.length - 1;
+          for (let r = bottomStartIdx + 1; r <= bottomEndIdx; r++) {
+            merges.push({ s: { r, c: 0 }, e: { r, c: headers.length - 1 } });
+          }
+          ws['!merges'] = merges;
+
+          // Autofilter starts at index 2 (Excel Row 3, which is the column header)
+          ws['!autofilter'] = { ref: 'A3:' + XLSX.utils.encode_cell({ c: headers.length - 1, r: 2 }) };
+          // Freeze top 3 rows (Row 1 Title, Row 2 Blank, Row 3 Column Header)
+          ws['!freeze'] = { xSplit: 0, ySplit: 3, topLeftCell: 'A4', activePane: 'bottomLeft', state: 'frozen' };
+          return ws;
+        };
+
+        const singleCases = buildSingleCases();
+        // Sheet 2: รายเส้นทางที่เปรียบเทียบ — applies the user's UI status toggles (Lens Filter).
+        // If user unchecks 'ปกติ', normal trips are excluded from this sheet (matches on-screen).
+        const wsAll = buildSingleSheet(singleCases, 'รายเส้นทางที่เปรียบเทียบ', null, normalSelectedSet);
+        XLSX.utils.book_append_sheet(wb, wsAll, 'รายเส้นทางที่เปรียบเทียบ');
+        // Sheets 3-6: per-status filtered sheets (lens semantics — show only the picked tag).
+        // Order matches the on-screen status filter panel: ขาดทุน → สำรองน้ำมัน > 50% → ราคาจ่ายสูงผิดปกติ → ราคารับผิดปกติ
+        // These sheets always export the requested tag regardless of UI toggle (by design).
+        const statusSheets = [
+          { key: 'loss',     name: 'ขาดทุน' },
+          { key: 'oil50',    name: 'สำรองน้ำมัน > 50%' },
+          { key: 'payHigh',  name: 'ราคาจ่ายสูงผิดปกติ' },
+          { key: 'recvLow',  name: 'ราคารับผิดปกติ' }
+        ];
+        statusSheets.forEach(s => {
+          const ws = buildSingleSheet(singleCases, s.name, s.key, null);
+          XLSX.utils.book_append_sheet(wb, ws, s.name);
+        });
+      }
 
       const safeFilePart = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_');
       const fileName = 'วิเคราะห์ผลการดำเนินงาน_' + safeFilePart(periodALabel) + (_isSingleMode ? '' : '_vs_' + safeFilePart(periodBLabel)) + '_' + new Date().toISOString().slice(0, 10) + '.xlsx';

@@ -5711,6 +5711,7 @@ body.sidebar-animating .chart-card {
 .dc-qa-case .dc-qa-table:not(.dc-qa-pair-table) th:nth-child(8),
 .dc-qa-case .dc-qa-table:not(.dc-qa-pair-table) td:nth-child(8) {
   width: 28% !important;
+  padding-left: 36px !important;
 }
 
 /* Unified Column Widths for Comparison Pair QA Tables (9 columns) - 100% Proportional */
@@ -5749,6 +5750,7 @@ body.sidebar-animating .chart-card {
 .dc-qa-case .dc-qa-pair-table th:nth-child(9),
 .dc-qa-case .dc-qa-pair-table td:nth-child(9) {
   width: 28% !important;
+  padding-left: 36px !important;
 }
 
 

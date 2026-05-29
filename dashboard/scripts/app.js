@@ -390,6 +390,24 @@ function routeDisplay(row) {
     '-';
 }
 
+function routeGroupHeaderDisplay(row) {
+  if (typeof row === 'string' || typeof row === 'number') return routeDisplay(row);
+  const identity = getRouteIdentity(row || {});
+  const identityRouteCode = cleanRouteDisplayText(identity.displayRoute);
+  const fallbackRouteCode = identityRouteCode ||
+    cleanRouteDisplayText(row?.routeGroup) ||
+    cleanRouteDisplayText(row?.displayRoute) ||
+    cleanRouteDisplayText(row?.routeCore) ||
+    cleanRouteDisplayText(row?.route);
+  const routeKeyText = String(row?.routeKey || '');
+  const isFlashRouteLike = identity.isFlashRoute ||
+    row?.isFlashRoute ||
+    /(^|\|)(FD|LH|CPU|SHOP)-/.test(routeKeyText) ||
+    /^(FD|LH|CPU|SHOP)-[^-]+-/.test(fallbackRouteCode || '');
+  if (isFlashRouteLike && fallbackRouteCode) return fallbackRouteCode;
+  return routeDisplay(row);
+}
+
 function deriveCustomerProfitFromTrips(trips) {
   const groups = {};
   trips.forEach(rawTrip => {
@@ -5696,7 +5714,7 @@ function buildDailyCompare(data) {
             const routeFill = item.anomCount > 0 ? 'FEF2F2' : 'ECFDF5';
             const routeRow = [
               cCell(route.customer || '-', { fill: routeFill, bold: true }),
-              cCell(routeDisplay(route), { fill: routeFill, bold: true }),
+              cCell(routeGroupHeaderDisplay(route), { fill: routeFill, bold: true }),
               cCell('รวม ' + (item.rows || []).length + ' เที่ยว', { fill: routeFill }),
               cCell('', { fill: routeFill }),
               cCell(route.vtype || '-', { fill: routeFill, bold: true }),
@@ -5791,7 +5809,7 @@ function buildDailyCompare(data) {
             : 'รวม ' + (card.rows || []).length + ' เที่ยว';
           const top = [
             cCell(card.ga.customer || '-', { bold: true, fill: 'DBEAFE' }),
-            cCell(routeDisplay(card.ga), { bold: true, fill: 'DBEAFE' }),
+            cCell(routeGroupHeaderDisplay(card.ga), { bold: true, fill: 'DBEAFE' }),
             cCell('ประเภทรถ: ' + (card.ga.vtype || '-'), { bold: true, fill: 'DBEAFE', wrap: false }),
             cCell('', { fill: 'DBEAFE' }),   // D — merged with C
             cCell(summaryText, { bold: true, fill: 'DBEAFE' }),
@@ -6119,7 +6137,7 @@ function buildDailyCompare(data) {
             : 'รวม ' + (card.rows || []).length + ' คู่เปรียบเทียบ';
           const top = [
             cCell(card.ga.customer || '-', { bold: true, fill: 'DBEAFE' }),
-            cCell(routeDisplay(card.ga), { bold: true, fill: 'DBEAFE' }),
+            cCell(routeGroupHeaderDisplay(card.ga), { bold: true, fill: 'DBEAFE' }),
             cCell('ประเภทรถ: ' + (card.ga.vtype || '-'), { bold: true, fill: 'DBEAFE' }),
             cCell('', { fill: 'DBEAFE' }),                                    // D — merged with C
             cCell(summaryText, { bold: true, fill: 'DBEAFE' }),
@@ -6354,7 +6372,7 @@ function buildDailyCompare(data) {
             }
             if (visibleRows.length === 0) return;
 
-            const rDisp = routeDisplay(item.route);
+            const rDisp = routeGroupHeaderDisplay(item.route);
             if (rDisp && rDisp.length > maxRouteLen) maxRouteLen = rDisp.length;
 
             visibleRows.forEach(entry => {
@@ -6431,7 +6449,7 @@ function buildDailyCompare(data) {
               : 'รวม ' + visibleRows.length + ' เที่ยว';
             const top = [
               cCell(item.route.customer || '-', { bold: true, fill: 'DBEAFE' }),
-              cCell(routeDisplay(item.route), { bold: true, fill: 'DBEAFE' }),
+              cCell(routeGroupHeaderDisplay(item.route), { bold: true, fill: 'DBEAFE' }),
               cCell('ประเภทรถ: ' + (item.route.vtype || '-'), { bold: true, fill: 'DBEAFE' }),
               cCell('', { fill: 'DBEAFE' }),    // D — merged with C
               cCell(summaryText, { bold: true, fill: 'DBEAFE' }),
@@ -7150,7 +7168,7 @@ function buildDailyCompare(data) {
           <header class="dc-qa-case-head">
             <div class="dc-qa-title-block">
               <div class="dc-qa-identity"><span class="dc-qa-customer">${esc(route.customer || '-')}</span><span class="dc-qa-vtype">${esc(route.vtype || '-')}</span></div>
-              <h3 title="${esc(routeDisplay(route))}">${esc(routeDisplay(route))}</h3>
+              <h3 title="${esc(routeGroupHeaderDisplay(route))}">${esc(routeGroupHeaderDisplay(route))}</h3>
             </div>
             <div class="dc-qa-head-actions"></div>
           </header>
@@ -7211,7 +7229,7 @@ function buildDailyCompare(data) {
           <header class="dc-qa-case-head">
             <div class="dc-qa-title-block">
               <div class="dc-qa-identity"><span class="dc-qa-customer">${esc(card.ga.customer || '-')}</span><span class="dc-qa-vtype">${esc(card.ga.vtype || '-')}</span></div>
-              <h3 title="${esc(routeDisplay(card.ga))}">${esc(routeDisplay(card.ga))}</h3>
+              <h3 title="${esc(routeGroupHeaderDisplay(card.ga))}">${esc(routeGroupHeaderDisplay(card.ga))}</h3>
             </div>
             <div class="dc-qa-head-actions"></div>
           </header>
@@ -7256,7 +7274,7 @@ function buildDailyCompare(data) {
           <header class="dc-qa-case-head">
             <div class="dc-qa-title-block">
               <div class="dc-qa-identity"><span class="dc-qa-customer">${esc(card.ga.customer || '-')}</span><span class="dc-qa-vtype">${esc(card.ga.vtype || '-')}</span></div>
-              <h3 title="${esc(routeDisplay(card.ga))}">${esc(routeDisplay(card.ga))}</h3>
+              <h3 title="${esc(routeGroupHeaderDisplay(card.ga))}">${esc(routeGroupHeaderDisplay(card.ga))}</h3>
             </div>
             <div class="dc-qa-head-actions"></div>
           </header>
@@ -7320,7 +7338,7 @@ function buildDailyCompare(data) {
       const card = window._anomalyCardsData?.[idx];
       if (!card) return;
       const body = `<div class="dc-qa-table-wrap is-modal"><table class="dc-qa-table dc-qa-pair-table"><thead><tr><th>วันที่หลัก</th><th>วันที่เปรียบเทียบ</th><th>พขร.</th><th>ประเภทรถ</th><th>ทะเบียน</th><th>ราคาน้ำมัน</th><th>สำรองน้ำมัน</th><th>ราคารับ</th><th>ราคาจ่าย</th><th class="dc-qa-th-diff">ส่วนต่าง</th><th class="dc-qa-th-flag">ความผิดปกติ</th></tr></thead><tbody>${card.anomRows.map(row => dcQaPairRow(row, true)).join('')}</tbody></table></div>`;
-      dcQaModalShell('dc_anom_modal', 'dc_anom_capture', `รายละเอียดการเปรียบเทียบ: ${esc(routeDisplay(card.ga))}`, `${esc(card.ga.customer || '-')} · ${esc(card.ga.vtype || '-')} · ${esc(_labelA)} / ${esc(_labelB)}`, encodeURIComponent(`anomaly_${card.ga.route || 'route'}`), body);
+      dcQaModalShell('dc_anom_modal', 'dc_anom_capture', `รายละเอียดการเปรียบเทียบ: ${esc(routeGroupHeaderDisplay(card.ga))}`, `${esc(card.ga.customer || '-')} · ${esc(card.ga.vtype || '-')} · ${esc(_labelA)} / ${esc(_labelB)}`, encodeURIComponent(`anomaly_${card.ga.route || 'route'}`), body);
     };
 
     window.dcOpenUnmatchedModal = function (idx, side) {
@@ -7329,7 +7347,7 @@ function buildDailyCompare(data) {
       const isA = side === 'a';
       const myLabel = isA ? _labelA : _labelB;
       const body = `<div class="dc-qa-table-wrap is-modal"><table class="dc-qa-table"><thead><tr><th>วันที่</th><th>พขร.</th><th>ประเภทรถ</th><th>ทะเบียน</th><th class="is-right">ราคาน้ำมัน</th><th class="is-right">สำรองน้ำมัน</th><th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">ส่วนต่าง</th><th>ความผิดปกติ</th></tr></thead><tbody>${card.unRows.map(row => dcQaSingleTripRow(row.ra, row.statuses, true)).join('')}</tbody></table></div>`;
-      dcQaModalShell('dc_unm_modal', 'dc_unm_capture', `รายละเอียดเที่ยวที่ไม่มีคู่: ${esc(routeDisplay(card.ga))}`, `${esc(card.ga.customer || '-')} · ${esc(card.ga.vtype || '-')} · ${esc(myLabel)}`, encodeURIComponent(`unmatched_${card.ga.route || 'route'}`), body);
+      dcQaModalShell('dc_unm_modal', 'dc_unm_capture', `รายละเอียดเที่ยวที่ไม่มีคู่: ${esc(routeGroupHeaderDisplay(card.ga))}`, `${esc(card.ga.customer || '-')} · ${esc(card.ga.vtype || '-')} · ${esc(myLabel)}`, encodeURIComponent(`unmatched_${card.ga.route || 'route'}`), body);
     };
 
     document.getElementById('dc_compare_btn')?.addEventListener('click', dcRunCompare);

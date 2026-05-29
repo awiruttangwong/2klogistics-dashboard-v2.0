@@ -5198,6 +5198,9 @@ function buildDailyCompare(data) {
       function hCell(v) {
         return { v: v, s: { font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 }, fill: { fgColor: { rgb: '1F2937' }, patternType: 'solid' }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: allBorders } };
       }
+      function tCell(v) {
+        return { v: v, s: { font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 13 }, fill: { fgColor: { rgb: '1F2937' }, patternType: 'solid' }, alignment: { horizontal: 'center', vertical: 'center' } } };
+      }
       function cCell(v, opts) {
         opts = opts || {};
         if (opts.numFmt === nTHB) v = fmtMoney(v);
@@ -5553,15 +5556,17 @@ function buildDailyCompare(data) {
 
       function buildUnmatchedSheet(cards, sheetTitle, myPeriodLabel, otherPeriodLabel, statusSelectedRaw) {
         const wsData = [];
-        wsData.push([cCell(sheetTitle, { bold: true, sz: 12, color: '111827' })]);
-        wsData.push([cCell(filterSummaryText() + ' | หน้าที่ส่งออก: ' + sheetTitle, { color: '6B7280', sz: 9 })]);
-        wsData.push([cCell('สถานะที่เลือก: ' + formatStatusLabels(statusSelectedRaw || []) + ' | ส่งออกเฉพาะข้อมูลที่ผ่านตัวกรองบนหน้าจอ', { color: '374151', sz: 9 })]);
-        wsData.push([cCell('ช่วงข้อมูลหลัก: ' + myPeriodLabel + ' | ช่วงข้อมูลเปรียบเทียบ: ' + otherPeriodLabel + ' | (เที่ยวที่ไม่มีคู่เปรียบเทียบในอีกช่วง)', { color: '374151', sz: 9 })]);
-        wsData.push([]);
         const headers = [
           'ลูกค้า', 'ชื่อเส้นทาง', 'วันที่', 'พขร.', 'ประเภทรถ', 'ทะเบียน',
           'ราคาน้ำมัน', 'สำรองน้ำมัน', 'ราคารับ', 'ราคาจ่าย', 'ส่วนต่าง', 'ความผิดปกติ', 'หมายเหตุ'
         ];
+        const titleRowUnm = [tCell(sheetTitle)];
+        for (let i = 1; i < headers.length; i++) titleRowUnm.push(tCell(''));
+        wsData.push(titleRowUnm);
+        wsData.push([cCell(filterSummaryText() + ' | หน้าที่ส่งออก: ' + sheetTitle, { color: '6B7280', sz: 9 })]);
+        wsData.push([cCell('สถานะที่เลือก: ' + formatStatusLabels(statusSelectedRaw || []) + ' | ส่งออกเฉพาะข้อมูลที่ผ่านตัวกรองบนหน้าจอ', { color: '374151', sz: 9 })]);
+        wsData.push([cCell('ช่วงข้อมูลหลัก: ' + myPeriodLabel + ' | ช่วงข้อมูลเปรียบเทียบ: ' + otherPeriodLabel + ' | (เที่ยวที่ไม่มีคู่เปรียบเทียบในอีกช่วง)', { color: '374151', sz: 9 })]);
+        wsData.push([]);
         const headerRow = wsData.length;
         wsData.push(headers.map(t => hCell(t)));
         let rowIdx = headerRow + 1;
@@ -5629,6 +5634,7 @@ function buildDailyCompare(data) {
         // Row heights: group headers = 20pt, data rows = proportional to status line count.
         const unmGroupHeaderSet = new Set(unmGroupHeaderRows);
         ws['!rows'] = wsData.map((rowData, idx) => {
+          if (idx === 0) return { hpt: 32 };
           if (idx <= headerRow) return {};
           if (unmGroupHeaderSet.has(idx)) return { hpt: 20 };
           // Status cell is at col index 11 (col L).
@@ -5708,7 +5714,7 @@ function buildDailyCompare(data) {
 
       // ─── Sheet 1: สรุปผลดำเนินงาน (template-driven) ─────────────────────────────
       const ws1Data = [];
-      ws1Data.push([cCell('รายงานวิเคราะห์และเปรียบเทียบผลการดำเนินงาน', { bold: true, color: '111827', sz: 14 }), cCell(''), cCell(''), cCell('')]);
+      ws1Data.push([tCell('รายงานวิเคราะห์และเปรียบเทียบผลการดำเนินงาน'), tCell(''), tCell(''), tCell('')]);
       ws1Data.push([]);
 
       if (_isSingleMode) {
@@ -5852,6 +5858,10 @@ function buildDailyCompare(data) {
 
       const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
       ws1['!cols'] = [{ wch: 46 }, { wch: 30 }, { wch: 30 }, { wch: 38 }];
+      ws1['!rows'] = ws1Data.map((_, idx) => {
+        if (idx === 0) return { hpt: 32 };
+        return {};
+      });
       
       const ws1ColHeaderRow = 2;
       const ws1Merges = [
@@ -5871,16 +5881,18 @@ function buildDailyCompare(data) {
       let ws4 = null, ws5 = null, ws6 = null;
       if (!_isSingleMode && _stB) {
         const ws4Data = [];
-        ws4Data.push([cCell('รายเส้นทางที่ถูกเปรียบเทียบ', { bold: true, sz: 12, color: '111827' })]);
-        ws4Data.push([cCell(filterSummaryText() + ' | หน้าที่ส่งออก: รายเส้นทางที่ถูกเปรียบเทียบ', { color: '6B7280', sz: 9 })]);
-        ws4Data.push([cCell('สถานะที่เลือก: ' + formatStatusLabels(anomalySelectedRaw) + ' | ส่งออกเฉพาะข้อมูลที่ผ่านตัวกรองบนหน้าจอ', { color: '374151', sz: 9 })]);
-        ws4Data.push([cCell('ช่วงข้อมูลหลัก: ' + periodALabel + ' | ช่วงข้อมูลเปรียบเทียบ: ' + periodBLabel + ' | Δ = ' + periodALabel + ' - ' + periodBLabel, { color: '374151', sz: 9 })]);
-        ws4Data.push([]);
         const h4 = [
           'ลูกค้า', 'ชื่อเส้นทาง', 'วันที่หลัก', 'วันที่เปรียบเทียบ', 'พขร.',
           'ประเภทรถ', 'ทะเบียน', 'ราคาน้ำมัน', 'สำรองน้ำมัน',
           'ราคารับ', 'ราคาจ่าย', 'ส่วนต่าง', 'ความผิดปกติ', 'หมายเหตุ'
         ];
+        const titleRow4 = [tCell('รายงานการเปรียบเทียบข้อมูลรายเส้นทาง')];
+        for (let i = 1; i < h4.length; i++) titleRow4.push(tCell(''));
+        ws4Data.push(titleRow4);
+        ws4Data.push([cCell(filterSummaryText() + ' | หน้าที่ส่งออก: รายเส้นทางที่ถูกเปรียบเทียบ', { color: '6B7280', sz: 9 })]);
+        ws4Data.push([cCell('สถานะที่เลือก: ' + formatStatusLabels(anomalySelectedRaw) + ' | ส่งออกเฉพาะข้อมูลที่ผ่านตัวกรองบนหน้าจอ', { color: '374151', sz: 9 })]);
+        ws4Data.push([cCell('ช่วงข้อมูลหลัก: ' + periodALabel + ' | ช่วงข้อมูลเปรียบเทียบ: ' + periodBLabel + ' | Δ = ' + periodALabel + ' - ' + periodBLabel, { color: '374151', sz: 9 })]);
+        ws4Data.push([]);
         const headerRow4 = ws4Data.length;
         ws4Data.push(h4.map(t => hCell(t)));
         let rowIdx4 = headerRow4 + 1;
@@ -5951,6 +5963,7 @@ function buildDailyCompare(data) {
         // Add 6pt padding. Formula: lines × 14 + 6, min 20pt.
         const ws4GroupHeaderSet = new Set(ws4GroupHeaderRows);
         const ws4RowHeights = ws4Data.map((rowData, idx) => {
+          if (idx === 0) return { hpt: 32 };
           if (idx <= headerRow4) return {};
           if (ws4GroupHeaderSet.has(idx)) return { hpt: 20 };
           // Count lines in all bullet columns H(7) I(8) J(9) K(10) L(11) and status M(12).
@@ -6079,7 +6092,15 @@ function buildDailyCompare(data) {
             'ราคาจ่ายสูงผิดปกติ': 'รายการเส้นทางที่มีความผิดปกติของค่าใช้จ่าย'
           };
           const displayTitle = titleMap[sheetTitle] || sheetTitle;
-          wsData.push([cCell(displayTitle, { bold: true, sz: 12, color: '111827' })]);
+          const headers = [
+            'ลูกค้า', 'ชื่อเส้นทาง', 'วันที่', 'พขร.',
+            'ประเภทรถ', 'ทะเบียน', 'ราคาน้ำมัน', 'สำรองน้ำมัน',
+            'ราคารับ', 'ราคาจ่าย', 'ส่วนต่าง', 'ความผิดปกติ', 'หมายเหตุ'
+          ];
+          const titleRow = [tCell(displayTitle)];
+          for (let i = 1; i < headers.length; i++) titleRow.push(tCell(''));
+          wsData.push(titleRow);
+
           const labels = qaStatusLabels();
           let statusInfo;
           if (statusFilter) {
@@ -6091,11 +6112,6 @@ function buildDailyCompare(data) {
             statusInfo = 'สถานะที่เลือก: ทั้งหมด';
           }
           wsData.push([]);
-          const headers = [
-            'ลูกค้า', 'ชื่อเส้นทาง', 'วันที่', 'พขร.',
-            'ประเภทรถ', 'ทะเบียน', 'ราคาน้ำมัน', 'สำรองน้ำมัน',
-            'ราคารับ', 'ราคาจ่าย', 'ส่วนต่าง', 'ความผิดปกติ', 'หมายเหตุ'
-          ];
           const headerRow = wsData.length;
           wsData.push(headers.map(t => hCell(t)));
           let rowIdx = headerRow + 1;
@@ -6307,6 +6323,7 @@ function buildDailyCompare(data) {
           // Row heights: header rows = default; group header = 20pt; data row proportional to status lines.
           const groupHeaderSet = new Set(groupHeaderRows);
           ws['!rows'] = wsData.map((rowData, idx) => {
+            if (idx === 0) return { hpt: 32 };
             if (idx <= headerRow) return {};
             if (idx >= bottomStartIdx) return {}; // notes rows use default height
             if (groupHeaderSet.has(idx)) return { hpt: 20 };

@@ -3895,8 +3895,23 @@ function buildDailyCompare(data) {
     next.setDate(next.getDate() + days);
     return formatIsoDateLocal(next);
   };
+  const getTodayIsoBangkok = () => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Bangkok',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(new Date());
+    const get = type => parts.find(part => part.type === type)?.value || '';
+    return `${get('year')}-${get('month')}-${get('day')}`;
+  };
+  const getDefaultAnalysisDate = () => {
+    const yesterday = addDaysToIso(getTodayIsoBangkok(), -1);
+    return [...allDates].reverse().find(date => date <= yesterday) || allDates[allDates.length - 1] || '';
+  };
+  const defaultAnalysisDate = getDefaultAnalysisDate();
   const getRollingSevenPreset = anchorIso => {
-    const latest = anchorIso || allDates[allDates.length - 1] || '';
+    const latest = anchorIso || defaultAnalysisDate || allDates[allDates.length - 1] || '';
     const aEnd = latest;
     const aStart = addDaysToIso(aEnd, -6);
     const bEnd = addDaysToIso(aStart, -1);
@@ -4032,8 +4047,8 @@ function buildDailyCompare(data) {
   window.dcOpenRouteModal = function () { /* overridden by ACTIVE QA RENDER OVERRIDES */ };
 
   // defaults
-  const d1def = allDates[allDates.length - 1] || '';
-  const d2def = allDates[allDates.length - 2] || allDates[0] || '';
+  const d1def = defaultAnalysisDate;
+  const d2def = findRefDate(d1def, 3) || [...allDates].reverse().find(date => date < d1def) || allDates[0] || '';
 
   function fmtDate(d) { if (!d) return ''; return d.split('-').reverse().join('/'); }
   function fmtRange(s, e) { return s === e ? fmtDate(s) : `${fmtDate(s)} – ${fmtDate(e)}`; }
@@ -4436,7 +4451,7 @@ function buildDailyCompare(data) {
       const [a1, a2] = getRangeDates('dc_rangeA', d1def, d1def);
       const [b1, b2] = getRangeDates('dc_rangeB', d2def, d2def);
       _rollingPresetBackup = { a1, a2, b1, b2, isSingleMode: _isSingleMode };
-      const preset = getRollingSevenPreset(allDates[allDates.length - 1] || '');
+      const preset = getRollingSevenPreset(defaultAnalysisDate || '');
       applyCompareRanges(
         { start: preset.aStart, end: preset.aEnd },
         { start: preset.bStart, end: preset.bEnd },

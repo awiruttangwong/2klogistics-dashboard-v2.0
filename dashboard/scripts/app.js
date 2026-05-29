@@ -6317,8 +6317,8 @@ function buildDailyCompare(data) {
             'รายเส้นทางที่เปรียบเทียบ': 'รายงานการเปรียบเทียบข้อมูลรายเส้นทาง',
             'ขาดทุน': 'รายการเส้นทางที่มีผลประกอบการขาดทุน',
             'สำรองน้ำมัน > 50%': 'รายการเส้นทางที่มีการสำรองน้ำมันเกินเกณฑ์ >50%',
-            'ราคารับผิดปกติ': 'รายการเส้นทางที่มีความผิดปกติของรายรับ',
-            'ราคาจ่ายสูงผิดปกติ': 'รายการเส้นทางที่มีความผิดปกติของค่าใช้จ่าย'
+            'ราคารับผิดปกติ': 'รายการเส้นทางที่มีความผิดปกติของราคารับ',
+            'ราคาจ่ายสูงผิดปกติ': 'รายการเส้นทางที่มีความผิดปกติของราคาจ่าย'
           };
           const displayTitle = titleMap[sheetTitle] || sheetTitle;
           const headers = [
@@ -6541,7 +6541,7 @@ function buildDailyCompare(data) {
                 const refTrip = part.trip || {};
                 const mar = (refTrip.margin == null || isNaN(refTrip.margin)) ? ((refTrip.recv || 0) - (refTrip.pay || 0) - (refTrip.oil || 0)) : refTrip.margin;
                 const oilPrice = getOilPriceByDate(refTrip.date);
-                const refFill = 'F3F4F6'; // light gray tint to distinguish reference-day rows
+                const refFill = 'E5E7EB'; // slightly darker gray tint to distinguish reference-day rows
                 const row = [
                   cCell(refTrip.customer || '-', { fill: refFill }),
                   cCell(routeDisplay(refTrip), { fill: refFill }),
@@ -6578,7 +6578,15 @@ function buildDailyCompare(data) {
           wsData.push([cCell(statusInfo + ' | ส่งออกเฉพาะข้อมูลที่ผ่านตัวกรองบนหน้าจอ', { color: '374151', sz: 9 })]);
           
           const refLabelsList = refDayMaps.map(d => d.dateLabel).join(', ') || '-';
-          wsData.push([cCell('ช่วงข้อมูลหลัก: ' + periodALabel + ' | ช่วงข้อมูลเปรียบเทียบ (ย้อนหลัง 3 วัน): ' + refLabelsList, { color: '374151', sz: 9 })]);
+          const [refY, refM, refD] = _stA.dateStart.split('-').map(Number);
+          const refSearchDay = (offset) => {
+            const dt = new Date(refY, refM - 1, refD - offset);
+            return dt.getDate();
+          };
+          const refSearchText = refLabelsList !== '-'
+            ? ` (เปรียบเทียบเที่ยววิ่งอดีต: เริ่มหาจากวันที่ ${refSearchDay(1)} -> ไม่มีข้อมูล -> หาที่วันที่ ${refSearchDay(2)} -> ไม่มีข้อมูล -> หาที่วันที่ ${refSearchDay(3)})`
+            : '';
+          wsData.push([cCell('ช่วงข้อมูลหลัก: ' + periodALabel + ' | ช่วงข้อมูลเปรียบเทียบ (ย้อนหลัง 3 วัน) ' + refLabelsList + refSearchText, { color: '374151', sz: 9 })]);
 
           const ws = XLSX.utils.aoa_to_sheet(wsData);
           ws['!cols'] = [

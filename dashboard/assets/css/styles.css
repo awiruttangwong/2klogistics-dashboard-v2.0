@@ -5603,6 +5603,16 @@ body.sidebar-animating .chart-card {
   white-space: nowrap;
 }
 
+.dc-qa-case-strip span.dc-qa-ref-arrow {
+  background: none;
+  border: none;
+  padding: 0;
+  min-height: auto;
+  color: #8a97b0;
+  margin: 0 2px;
+  font-size: 12px;
+}
+
 /* First span = period label — slightly highlighted */
 .dc-qa-case-strip span:first-child {
   color: #a8b8d0;

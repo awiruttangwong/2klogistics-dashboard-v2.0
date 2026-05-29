@@ -6918,7 +6918,7 @@ function buildDailyCompare(data) {
         let stripRefLabel = '';
         if (hasRef) {
           if (routeHasRefTrips && cardRefLabel) {
-            stripRefLabel = `<span class="dc-qa-ref-strip-label">⇄ ${esc(cardRefLabel)} (${refTripsForCard.length} เที่ยว)</span>`;
+            stripRefLabel = `<span class="dc-qa-ref-arrow">⇄</span><span class="dc-qa-ref-strip-label">${esc(cardRefLabel)} (${refTripsForCard.length} เที่ยว)</span>`;
           } else {
             // No ref data found for this route in any of the 3 candidate days.
             const nearestLabel = labelRef || (refDayMaps.length > 0 ? refDayMaps[0].dateLabel : '');

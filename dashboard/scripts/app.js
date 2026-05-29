@@ -5944,7 +5944,7 @@ function buildDailyCompare(data) {
               bulletPairCell(ra.recv, rb.recv, bOptsNeutral(zf), false),   // col J — dark
               bulletPairCell(ra.pay, rb.pay, bOptsNeutral(zf), true),      // col K — dark
               bulletPairCell(mA, mB, bOpts(zf), false),                    // col L — colored
-              statusRichCell(entry.statuses || ['normal'], { fill: zf }),
+              statusRichCell(entry.statuses || ['normal'], { fill: zf, align: 'left', wrap: true, valign: 'top' }),
               cCell('', { fill: zf })
             ];
             ws4Data.push(row);

@@ -5595,10 +5595,11 @@ body.sidebar-animating .chart-card {
   min-height: 20px;
   padding: 2px 9px;
   border-radius: 4px;
-  background: rgba(148, 163, 184, .07);
-  border: 1px solid rgba(148, 163, 184, .12);
-  font-size: 10.5px;
-  font-weight: 500;
+  background: rgba(89, 133, 225, .05);
+  border: 1px solid rgba(89, 133, 225, .10);
+  color: #a8b8d0;
+  font-size: 10px;
+  font-weight: 400;
   letter-spacing: .1px;
   white-space: nowrap;
 }
@@ -5610,31 +5611,7 @@ body.sidebar-animating .chart-card {
   min-height: auto;
   color: #8a97b0;
   margin: 0 2px;
-  font-size: 12px;
-}
-
-.dc-qa-case-strip span.dc-qa-anom-badge {
-  color: #f87171 !important;
-  background: rgba(239, 68, 68, 0.10) !important;
-  border-color: rgba(239, 68, 68, 0.20) !important;
-}
-
-.dc-qa-case-strip span.dc-qa-normal-badge {
-  color: #34d399 !important;
-  background: rgba(16, 185, 129, 0.10) !important;
-  border-color: rgba(16, 185, 129, 0.20) !important;
-}
-
-/* First span = period label — slightly highlighted */
-.dc-qa-case-strip span:first-child {
-  color: #a8b8d0;
-  background: rgba(89, 133, 225, .10);
-  border-color: rgba(89, 133, 225, .20);
-}
-
-/* Last span = anomaly count — red tint if has anomalies */
-.dc-qa-case-strip span:last-child:not(:first-child) {
-  color: #94a3b8;
+  font-size: 11px;
 }
 
 .dc-qa-table-wrap {

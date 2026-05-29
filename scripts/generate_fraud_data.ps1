@@ -1,20 +1,75 @@
+param(
+    [string]$csvPath = (Join-Path (Split-Path -Parent $PSScriptRoot) "data\merged\merged_all_months.csv"),
+    [string]$outputPath = (Join-Path (Split-Path -Parent $PSScriptRoot) "Dashboard\data\fraud_data.js")
+)
+
 $ErrorActionPreference = "Stop"
-$csvPath = "C:\Users\ADMIN\Desktop\Data sum Daily express 4 month V2.2\data\merged\merged_all_months.csv"
-$outputPath = "C:\Users\ADMIN\Desktop\Data sum Daily express 4 month V2.2\dashboard\fraud_data.js"
 
 Write-Host "Reading CSV file..."
 $rawData = Get-Content $csvPath | Select-Object -Skip 2 | ConvertFrom-Csv
+
+function Normalize-CustomerName {
+    param([string]$Customer)
+    if ([string]::IsNullOrWhiteSpace($Customer)) { return "-" }
+    $normalized = $Customer.Trim().ToUpperInvariant()
+    if ($normalized -eq "FASH" -or $normalized.StartsWith("FLASH")) { return "FLASH" }
+    return $Customer.Trim()
+}
+
+function Get-RouteIdentity {
+    param(
+        [string]$Customer,
+        [string]$VehicleType,
+        [string]$Route
+    )
+
+    $customerName = Normalize-CustomerName $Customer
+    $vtype = if ([string]::IsNullOrWhiteSpace($VehicleType)) { "-" } else { $VehicleType.Trim() }
+    $routeName = if ([string]::IsNullOrWhiteSpace($Route)) { "-" } else { $Route.Trim() }
+    $isFlash = $customerName -eq "FASH" -or $customerName.ToUpperInvariant().StartsWith("FLASH")
+    $parts = $routeName -split '-' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+    $timeIndex = -1
+
+    for ($i = 0; $i -lt $parts.Count; $i++) {
+        if ($parts[$i] -match '^\d{1,2}:\d{2}$') {
+            $timeIndex = $i
+            break
+        }
+    }
+
+    if (($isFlash -or $customerName -eq "-") -and $parts.Count -ge 3 -and $timeIndex -gt 2) {
+        $routePrefix = "$($parts[0])-$($parts[1])"
+        $routeCore = ($parts[2..($timeIndex - 1)] -join '-')
+        $displayRoute = ($parts[0..($timeIndex - 1)] -join '-')
+        return @{
+            key = "$customerName|$vtype|$routePrefix|$routeCore"
+            routeCore = $routeCore
+            routeVehicle = $parts[1]
+            routePrefix = $routePrefix
+            routeGroup = $displayRoute
+            isFlashRoute = $true
+        }
+    }
+
+    return @{
+        key = "$customerName|$vtype|$routeName"
+        routeCore = $routeName
+        routeVehicle = $vtype
+        routePrefix = ""
+        routeGroup = $routeName
+        isFlashRoute = $false
+    }
+}
 
 Write-Host "Calculating Route Benchmarks..."
 $routeStats = @{}
 
 foreach ($row in $rawData) {
-    if ($row.customer -match "FLASH") {
-        $row.customer = "FASH"
-    }
+    $row.customer = Normalize-CustomerName $row.customer
     
-    # We group by route_name and month
-    $key = "$($row.route_name)_$($row.month)"
+    # Group by route identity, not route description or full timed round.
+    $identity = Get-RouteIdentity $row.customer $row.vehicle_type $row.route_name
+    $key = "$($identity.key)_$($row.month)"
     
     if (-not $routeStats.ContainsKey($key)) {
         $routeStats[$key] = @{
@@ -55,11 +110,10 @@ $fraudRecords = @()
 Write-Host "Detecting Anomalies in $($rawData.Count) records..."
 
 foreach ($row in $rawData) {
-    if ($row.customer -match "FLASH") {
-        $row.customer = "FASH"
-    }
+    $row.customer = Normalize-CustomerName $row.customer
 
-    $key = "$($row.route_name)_$($row.month)"
+    $identity = Get-RouteIdentity $row.customer $row.vehicle_type $row.route_name
+    $key = "$($identity.key)_$($row.month)"
     $s = $routeStats[$key]
 
     $recv = 0; $pay = 0; $oil = 0; $margin = 0; $pct = 0
@@ -116,6 +170,12 @@ foreach ($row in $rawData) {
             customer = $row.customer
             vtype = $row.vehicle_type
             route = $row.route_name
+            routeKey = $identity.key
+            routeCore = $identity.routeCore
+            routeVehicle = $identity.routeVehicle
+            routePrefix = $identity.routePrefix
+            routeGroup = $identity.routeGroup
+            isFlashRoute = $identity.isFlashRoute
             routeDesc = $row.route_description
             driver = $row.driver_name
             plate = $row.plate_number

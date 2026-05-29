@@ -1496,6 +1496,12 @@ function rebuildCaches() {
       date: trip.date,
       payee: trip.payee,
       route: trip.route,
+      routeKey: trip.routeKey,
+      routeCore: trip.routeCore,
+      routeVehicle: trip.routeVehicle,
+      routePrefix: trip.routePrefix,
+      routeGroup: trip.routeGroup,
+      isFlashRoute: trip.isFlashRoute,
       anomalies: anomalies
     });
   }
@@ -1542,12 +1548,20 @@ function parseTripRow(row) {
   // Skip if essential fields are missing
   if (!date || !route || recv === null || pay === null) return null;
 
+  var routeIdentity = getRouteIdentity_(customer, vtype, route);
+
   return {
     date: date,
     customer: customer,
     vtype: vtype,
     routeDesc: routeDesc,
     route: route,
+    routeKey: routeIdentity.key,
+    routeCore: routeIdentity.routeCore,
+    routeVehicle: routeIdentity.routeVehicle,
+    routePrefix: routeIdentity.routePrefix,
+    routeGroup: routeIdentity.displayRoute,
+    isFlashRoute: routeIdentity.isFlashRoute,
     driver: driver,
     plate: plate,
     oil: oil,
@@ -1557,6 +1571,83 @@ function parseTripRow(row) {
     margin: margin !== null ? margin : ((recv || 0) - (pay || 0) - (oil || 0)),
     pct: pct
   };
+}
+
+function isFlashCustomer_(customer) {
+  var text = String(customer || '').trim().toUpperCase();
+  return text === 'FASH' || text.indexOf('FLASH') === 0;
+}
+
+function parseTimedRouteParts_(route) {
+  var rawRoute = String(route || '').trim();
+  if (!rawRoute) return null;
+  var pieces = rawRoute.split('-');
+  var parts = [];
+  for (var i = 0; i < pieces.length; i++) {
+    var part = String(pieces[i] || '').trim();
+    if (part) parts.push(part);
+  }
+  var timeIndex = -1;
+  for (var j = 0; j < parts.length; j++) {
+    if (/^\d{1,2}:\d{2}$/.test(parts[j])) {
+      timeIndex = j;
+      break;
+    }
+  }
+  if (parts.length < 3 || timeIndex <= 2) return null;
+  return {
+    rawRoute: rawRoute,
+    service: parts[0],
+    vehicle: parts[1],
+    core: parts.slice(2, timeIndex).join('-'),
+    routeBeforeTime: parts.slice(0, timeIndex).join('-'),
+    suffix: parts.slice(timeIndex).join('-')
+  };
+}
+
+function getRouteIdentity_(customer, vtype, route) {
+  var c = mapCustomer(String(customer || '').trim() || '-');
+  var v = String(vtype || '').trim() || '-';
+  var r = String(route || '').trim() || '-';
+  var parsed = parseTimedRouteParts_(r);
+  var useFlashCore = !!(parsed && (isFlashCustomer_(c) || c === '-'));
+  if (!useFlashCore) {
+    return {
+      key: c + '|' + v + '|' + r,
+      customer: c,
+      vtype: v,
+      route: r,
+      routeCore: r,
+      routeVehicle: v,
+      routePrefix: '',
+      displayRoute: r,
+      isFlashRoute: false
+    };
+  }
+  var routePrefix = parsed.service + '-' + parsed.vehicle;
+  return {
+    key: c + '|' + v + '|' + routePrefix + '|' + parsed.core,
+    customer: c,
+    vtype: v,
+    route: r,
+    routeCore: parsed.core,
+    routeVehicle: parsed.vehicle,
+    routePrefix: routePrefix,
+    displayRoute: parsed.routeBeforeTime,
+    isFlashRoute: true
+  };
+}
+
+function getTripRouteKey_(trip) {
+  if (trip && trip.routeKey) return trip.routeKey;
+  var identity = getRouteIdentity_(trip && trip.customer, trip && trip.vtype, trip && trip.route);
+  return identity.key;
+}
+
+function getTripRouteDisplay_(trip) {
+  if (trip && trip.routeGroup) return trip.routeGroup;
+  var identity = getRouteIdentity_(trip && trip.customer, trip && trip.vtype, trip && trip.route);
+  return identity.displayRoute;
 }
 
 function parseDate(str) {
@@ -1671,9 +1762,9 @@ function buildAnomalyGroupStats(trips) {
   // Single pass O(n): build groups + track trip indices for each group
   for (var i = 0; i < trips.length; i++) {
     var t = trips[i];
-    var key = t.route + '|' + t.customer + '|' + t.vtype;
+    var key = getTripRouteKey_(t);
     if (!groups[key]) {
-      groups[key] = { route: t.route, customer: t.customer, vtype: t.vtype, count: 0, paySum: 0, oilSum: 0, recvSum: 0, tripIndices: [] };
+      groups[key] = { route: getTripRouteDisplay_(t), routeKey: key, routeDesc: t.routeDesc, customer: t.customer, vtype: t.vtype, count: 0, paySum: 0, oilSum: 0, recvSum: 0, tripIndices: [] };
     }
     var g = groups[key];
     g.count++;
@@ -1772,13 +1863,14 @@ function calculateSummary(trips) {
   var routeMargins = {};
   for (var i = 0; i < trips.length; i++) {
     var t = trips[i];
-    if (!routeMargins[t.route]) routeMargins[t.route] = { margin: 0, trips: 0 };
-    routeMargins[t.route].margin += (t.margin || 0);
-    routeMargins[t.route].trips++;
+    var routeKey = getTripRouteKey_(t);
+    if (!routeMargins[routeKey]) routeMargins[routeKey] = { route: getTripRouteDisplay_(t), routeKey: routeKey, margin: 0, trips: 0 };
+    routeMargins[routeKey].margin += (t.margin || 0);
+    routeMargins[routeKey].trips++;
   }
 
   var routeList = Object.keys(routeMargins).map(function(r) {
-    return { route: r, margin: routeMargins[r].margin, trips: routeMargins[r].trips };
+    return { route: routeMargins[r].route, routeKey: routeMargins[r].routeKey, margin: routeMargins[r].margin, trips: routeMargins[r].trips };
   });
   routeList.sort(function(a, b) { return b.margin - a.margin; });
 
@@ -1800,17 +1892,18 @@ function calculateRouteTrend(trips) {
   var routeData = {};
   for (var i = 0; i < trips.length; i++) {
     var t = trips[i];
-    if (!routeData[t.route]) {
-      routeData[t.route] = { customer: t.customer, vtype: t.vtype, desc: t.routeDesc, months: {} };
+    var routeKey = getTripRouteKey_(t);
+    if (!routeData[routeKey]) {
+      routeData[routeKey] = { route: getTripRouteDisplay_(t), routeKey: routeKey, customer: t.customer, vtype: t.vtype, desc: t.routeDesc, months: {} };
     }
     var month = getMonthFromDate(t.date);
-    if (!routeData[t.route].months[month]) {
-      routeData[t.route].months[month] = { trips: 0, margin: 0, loss: 0, recv: 0 };
+    if (!routeData[routeKey].months[month]) {
+      routeData[routeKey].months[month] = { trips: 0, margin: 0, loss: 0, recv: 0 };
     }
-    routeData[t.route].months[month].trips++;
-    routeData[t.route].months[month].margin += (t.margin || 0);
-    routeData[t.route].months[month].recv += (t.recv || 0);
-    if ((t.margin || 0) < 0) routeData[t.route].months[month].loss++;
+    routeData[routeKey].months[month].trips++;
+    routeData[routeKey].months[month].margin += (t.margin || 0);
+    routeData[routeKey].months[month].recv += (t.recv || 0);
+    if ((t.margin || 0) < 0) routeData[routeKey].months[month].loss++;
   }
 
   var result = [];
@@ -1830,7 +1923,8 @@ function calculateRouteTrend(trips) {
       }
     }
     result.push({
-      route: routes[i],
+      route: rd.route || routes[i],
+      routeKey: rd.routeKey || routes[i],
       customer: rd.customer || '-',
       vtype: rd.vtype || '-',
       desc: rd.desc || '-',
@@ -1850,12 +1944,13 @@ function calculateRouteRanking(trips) {
   var routeData = {};
   for (var i = 0; i < trips.length; i++) {
     var t = trips[i];
-    var route = String(t.route || '').trim();
+    var route = getTripRouteDisplay_(t);
+    var routeKeyValue = getTripRouteKey_(t);
     var customer = String(t.customer || '').trim();
     var vtype = String(t.vtype || '').trim();
-    var key = customer + '|' + route + '|' + vtype;
+    var key = routeKeyValue;
     if (!routeData[key]) {
-      routeData[key] = { route: route, customer: customer, vtype: vtype, desc: t.routeDesc, margin: 0, trips: 0, recv: 0, loss: 0 };
+      routeData[key] = { route: route, routeKey: routeKeyValue, customer: customer, vtype: vtype, desc: t.routeDesc, margin: 0, trips: 0, recv: 0, loss: 0 };
     }
     routeData[key].margin += (t.margin || 0);
     routeData[key].trips++;
@@ -1908,15 +2003,19 @@ function calculateDriverPerf(trips) {
 
     // Find main route
     var routeCounts = {};
+    var routeLabels = {};
     for (var j = 0; j < trips.length; j++) {
       if (trips[j].driver === d.name) {
-        routeCounts[trips[j].route] = (routeCounts[trips[j].route] || 0) + 1;
+        var routeKey = getTripRouteKey_(trips[j]);
+        routeCounts[routeKey] = (routeCounts[routeKey] || 0) + 1;
+        routeLabels[routeKey] = routeLabels[routeKey] || getTripRouteDisplay_(trips[j]);
       }
     }
-    var mainRoute = Object.keys(routeCounts).sort(function(a, b) {
+    var mainRouteKey = Object.keys(routeCounts).sort(function(a, b) {
       return routeCounts[b] - routeCounts[a];
     })[0] || '';
-    d.mainRoute = mainRoute;
+    d.mainRoute = routeLabels[mainRouteKey] || mainRouteKey;
+    d.mainRouteKey = mainRouteKey;
 
     result.push(d);
   }
@@ -1977,22 +2076,24 @@ function calculateOwnVsOutsource(trips) {
       company.recv += (t.recv || 0);
       company.pay += (t.pay || 0);
       company.oil += (t.oil || 0);
-      if (!companyRoutes[t.route]) companyRoutes[t.route] = { route: t.route, routeDesc: t.routeDesc, trips: 0, margin: 0, recv: 0 };
-      else if (!companyRoutes[t.route].routeDesc && t.routeDesc) companyRoutes[t.route].routeDesc = t.routeDesc;
-      companyRoutes[t.route].trips++;
-      companyRoutes[t.route].margin += (t.margin || 0);
-      companyRoutes[t.route].recv += (t.recv || 0);
+      var companyRouteKey = getTripRouteKey_(t);
+      if (!companyRoutes[companyRouteKey]) companyRoutes[companyRouteKey] = { route: getTripRouteDisplay_(t), routeKey: companyRouteKey, routeDesc: t.routeDesc, trips: 0, margin: 0, recv: 0 };
+      else if (!companyRoutes[companyRouteKey].routeDesc && t.routeDesc) companyRoutes[companyRouteKey].routeDesc = t.routeDesc;
+      companyRoutes[companyRouteKey].trips++;
+      companyRoutes[companyRouteKey].margin += (t.margin || 0);
+      companyRoutes[companyRouteKey].recv += (t.recv || 0);
     } else {
       outsource.margin += (t.margin || 0);
       outsource.trips++;
       outsource.recv += (t.recv || 0);
       outsource.pay += (t.pay || 0);
       outsource.oil += (t.oil || 0);
-      if (!outsourceRoutes[t.route]) outsourceRoutes[t.route] = { route: t.route, routeDesc: t.routeDesc, trips: 0, margin: 0, recv: 0 };
-      else if (!outsourceRoutes[t.route].routeDesc && t.routeDesc) outsourceRoutes[t.route].routeDesc = t.routeDesc;
-      outsourceRoutes[t.route].trips++;
-      outsourceRoutes[t.route].margin += (t.margin || 0);
-      outsourceRoutes[t.route].recv += (t.recv || 0);
+      var outsourceRouteKey = getTripRouteKey_(t);
+      if (!outsourceRoutes[outsourceRouteKey]) outsourceRoutes[outsourceRouteKey] = { route: getTripRouteDisplay_(t), routeKey: outsourceRouteKey, routeDesc: t.routeDesc, trips: 0, margin: 0, recv: 0 };
+      else if (!outsourceRoutes[outsourceRouteKey].routeDesc && t.routeDesc) outsourceRoutes[outsourceRouteKey].routeDesc = t.routeDesc;
+      outsourceRoutes[outsourceRouteKey].trips++;
+      outsourceRoutes[outsourceRouteKey].margin += (t.margin || 0);
+      outsourceRoutes[outsourceRouteKey].recv += (t.recv || 0);
     }
   }
 
@@ -2053,10 +2154,11 @@ function calculateLossTrip(trips) {
     byMonth[month].count++;
     byMonth[month].loss += (t.margin || 0);
 
-    if (!byRoute[t.route]) byRoute[t.route] = { name: t.route, route: t.route, routeDesc: t.routeDesc, count: 0, loss: 0 };
-    else if (!byRoute[t.route].routeDesc && t.routeDesc) byRoute[t.route].routeDesc = t.routeDesc;
-    byRoute[t.route].count++;
-    byRoute[t.route].loss += (t.margin || 0);
+    var routeKey = getTripRouteKey_(t);
+    if (!byRoute[routeKey]) byRoute[routeKey] = { name: getTripRouteDisplay_(t), route: getTripRouteDisplay_(t), routeKey: routeKey, routeDesc: t.routeDesc, count: 0, loss: 0 };
+    else if (!byRoute[routeKey].routeDesc && t.routeDesc) byRoute[routeKey].routeDesc = t.routeDesc;
+    byRoute[routeKey].count++;
+    byRoute[routeKey].loss += (t.margin || 0);
 
     var cust = mapCustomer(t.customer || '-');
     if (!byCustomer[cust]) byCustomer[cust] = { name: cust, count: 0, loss: 0 };
@@ -2403,7 +2505,7 @@ function filterTrips_(trips, start, end, route) {
   return trips.filter(function(t) {
     if (start && t.date < start) return false;
     if (end && t.date > end) return false;
-    if (route && t.route !== route) return false;
+    if (route && t.route !== route && getTripRouteKey_(t) !== route && getTripRouteDisplay_(t) !== route) return false;
     return true;
   });
 }
@@ -2554,15 +2656,19 @@ function getRoutesList() {
     var routeDesc = String(values[i][3] || ''); // ชื่อเส้นทาง
     var route = String(values[i][4] || ''); // Route column (index 4 = เส้นทาง)
     var customer = mapCustomer(String(values[i][1] || ''));
+    var vtype = String(values[i][2] || '');
     if (route) {
-      routes[route] = routes[route] || { route: route, routeDesc: routeDesc, customers: {} };
-      if (!routes[route].routeDesc && routeDesc) routes[route].routeDesc = routeDesc;
-      routes[route].customers[customer] = true;
+      var identity = getRouteIdentity_(customer, vtype, route);
+      var key = identity.key;
+      routes[key] = routes[key] || { route: identity.displayRoute, routeKey: key, routeCore: identity.routeCore, routeVehicle: identity.routeVehicle, routePrefix: identity.routePrefix, routeDesc: routeDesc, customers: {}, variants: {} };
+      if (!routes[key].routeDesc && routeDesc) routes[key].routeDesc = routeDesc;
+      routes[key].customers[customer] = true;
+      routes[key].variants[route] = true;
     }
   }
 
   var result = Object.values(routes).map(function(r) {
-    return { route: r.route, routeDesc: r.routeDesc, customers: Object.keys(r.customers) };
+    return { route: r.route, routeKey: r.routeKey, routeCore: r.routeCore, routeVehicle: r.routeVehicle, routePrefix: r.routePrefix, routeDesc: r.routeDesc, customers: Object.keys(r.customers), variants: Object.keys(r.variants || {}) };
   });
   result.sort(function(a, b) { return String(a.routeDesc || a.route).localeCompare(String(b.routeDesc || b.route)); });
 

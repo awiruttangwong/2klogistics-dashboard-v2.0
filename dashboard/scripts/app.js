@@ -40,6 +40,55 @@ function normalizeText(value, fallback = '-') {
   return text || fallback;
 }
 
+function isFlashCustomerName(value) {
+  const text = String(value || '').trim().toUpperCase();
+  return text === 'FASH' || text.startsWith('FLASH');
+}
+
+function parseTimedRouteParts(route) {
+  const rawRoute = normalizeText(route, '');
+  if (!rawRoute) return null;
+  const parts = rawRoute.split('-').map(part => part.trim()).filter(Boolean);
+  const timeIndex = parts.findIndex(part => /^\d{1,2}:\d{2}$/.test(part));
+  if (parts.length < 3 || timeIndex <= 2) return null;
+  return {
+    rawRoute,
+    service: parts[0],
+    vehicle: parts[1],
+    core: parts.slice(2, timeIndex).join('-'),
+    routeBeforeTime: parts.slice(0, timeIndex).join('-'),
+    suffix: parts.slice(timeIndex).join('-')
+  };
+}
+
+function getRouteIdentity(row) {
+  const customer = mapCustomer(normalizeText(row?.customer, '-'));
+  const route = normalizeText(row?.route, '-');
+  const vtype = normalizeText(row?.vtype, '-');
+  const parsed = parseTimedRouteParts(route);
+  const useFlashCore = parsed && (isFlashCustomerName(customer) || customer === '-');
+  const routeCore = useFlashCore ? parsed.core : route;
+  const routeVehicle = useFlashCore ? parsed.vehicle : vtype;
+  const routePrefix = useFlashCore ? `${parsed.service}-${parsed.vehicle}` : '';
+  const displayRoute = useFlashCore ? parsed.routeBeforeTime : route;
+  return {
+    key: useFlashCore ? `${customer}|${vtype}|${routePrefix}|${routeCore}` : `${customer}|${vtype}|${route}`,
+    customer,
+    vtype,
+    route,
+    routeCore,
+    routeVehicle,
+    routePrefix,
+    displayRoute,
+    isFlashRoute: !!useFlashCore
+  };
+}
+
+function routeIdentityKey(row) {
+  if (row && row.routeKey) return String(row.routeKey);
+  return getRouteIdentity(row).key;
+}
+
 function normalizeIsoDate(value) {
   if (value == null) return '';
   if (value instanceof Date && !isNaN(value.getTime())) {
@@ -261,7 +310,7 @@ function canonicalizeTripRow(row) {
   const pay = toFiniteNumber(row?.pay);
   const oil = toFiniteNumber(row?.oil);
   const marginRaw = Number(row?.margin);
-  return {
+  const base = {
     ...row,
     date: normalizeIsoDate(row?.date),
     dateTime: normalizeIsoDateTime(row?.date),
@@ -277,6 +326,15 @@ function canonicalizeTripRow(row) {
     oil,
     margin: Number.isFinite(marginRaw) ? marginRaw : (recv - pay - oil)
   };
+  const identity = getRouteIdentity(base);
+  return {
+    ...base,
+    routeKey: identity.key,
+    routeCore: identity.routeCore,
+    routeVehicle: identity.routeVehicle,
+    routeGroup: identity.displayRoute,
+    isFlashRoute: identity.isFlashRoute
+  };
 }
 
 function cleanRouteDisplayText(value) {
@@ -288,11 +346,22 @@ function routeDisplay(row) {
   if (typeof row === 'string' || typeof row === 'number') {
     return cleanRouteDisplayText(row) || '-';
   }
-  return cleanRouteDisplayText(row?.routeDesc) ||
-    cleanRouteDisplayText(row?.desc) ||
+  const desc = cleanRouteDisplayText(row?.routeDesc) || cleanRouteDisplayText(row?.desc);
+  const identity = getRouteIdentity(row || {});
+  const routeCode = cleanRouteDisplayText(row?.routeGroup) ||
+    cleanRouteDisplayText(identity.displayRoute) ||
+    cleanRouteDisplayText(row?.displayRoute) ||
+    cleanRouteDisplayText(row?.route);
+  const routeKeyText = String(row?.routeKey || '');
+  const isFlashRouteLike = identity.isFlashRoute ||
+    row?.isFlashRoute ||
+    /(^|\|)(FD|LH|CPU|SHOP)-/.test(routeKeyText) ||
+    /^(FD|LH|CPU|SHOP)-[^-]+-/.test(routeCode || '');
+  if (isFlashRouteLike && desc && routeCode) return `${desc} (${routeCode})`;
+  return desc ||
     cleanRouteDisplayText(row?.displayName) ||
     cleanRouteDisplayText(row?.routeName) ||
-    cleanRouteDisplayText(row?.route) ||
+    routeCode ||
     cleanRouteDisplayText(row?.name) ||
     '-';
 }
@@ -395,14 +464,15 @@ function deriveOwnVsOutsourceFromTrips(trips) {
     target.recv += trip.recv;
     target.pay += trip.pay;
     target.oil += trip.oil;
-    if (!routeMap[trip.route]) {
-      routeMap[trip.route] = { route: trip.route, routeDesc: trip.routeDesc, trips: 0, margin: 0, recv: 0 };
-    } else if (!cleanRouteDisplayText(routeMap[trip.route].routeDesc) && cleanRouteDisplayText(trip.routeDesc)) {
-      routeMap[trip.route].routeDesc = trip.routeDesc;
+    const routeKey = routeIdentityKey(trip);
+    if (!routeMap[routeKey]) {
+      routeMap[routeKey] = { route: trip.routeGroup || trip.route, routeKey, routeDesc: trip.routeDesc, vtype: trip.vtype, trips: 0, margin: 0, recv: 0 };
+    } else if (!cleanRouteDisplayText(routeMap[routeKey].routeDesc) && cleanRouteDisplayText(trip.routeDesc)) {
+      routeMap[routeKey].routeDesc = trip.routeDesc;
     }
-    routeMap[trip.route].trips += 1;
-    routeMap[trip.route].margin += trip.margin;
-    routeMap[trip.route].recv += trip.recv;
+    routeMap[routeKey].trips += 1;
+    routeMap[routeKey].margin += trip.margin;
+    routeMap[routeKey].recv += trip.recv;
   });
 
   [company, outsource].forEach((side, index) => {
@@ -437,13 +507,15 @@ function deriveLossTripFromTrips(trips) {
       byMonth[month].count += 1;
       byMonth[month].loss += trip.margin;
     }
-    if (!byRoute[trip.route]) {
-      byRoute[trip.route] = { name: trip.route, route: trip.route, routeDesc: trip.routeDesc, count: 0, loss: 0 };
-    } else if (!cleanRouteDisplayText(byRoute[trip.route].routeDesc) && cleanRouteDisplayText(trip.routeDesc)) {
-      byRoute[trip.route].routeDesc = trip.routeDesc;
+    const routeKey = routeIdentityKey(trip);
+    const displayRoute = trip.routeGroup || trip.route;
+    if (!byRoute[routeKey]) {
+      byRoute[routeKey] = { name: displayRoute, route: displayRoute, routeKey, routeDesc: trip.routeDesc, count: 0, loss: 0 };
+    } else if (!cleanRouteDisplayText(byRoute[routeKey].routeDesc) && cleanRouteDisplayText(trip.routeDesc)) {
+      byRoute[routeKey].routeDesc = trip.routeDesc;
     }
-    byRoute[trip.route].count += 1;
-    byRoute[trip.route].loss += trip.margin;
+    byRoute[routeKey].count += 1;
+    byRoute[routeKey].loss += trip.margin;
 
     if (!byCustomer[trip.customer]) byCustomer[trip.customer] = { name: trip.customer, count: 0, loss: 0 };
     byCustomer[trip.customer].count += 1;
@@ -542,16 +614,104 @@ function regroupLossByCustomer(lossTrip) {
   return Object.values(groups).sort((a, b) => a.loss - b.loss);
 }
 
+function regroupRouteRows(rows, sortFn) {
+  const groups = {};
+  (rows || []).forEach(row => {
+    const normalized = {
+      ...row,
+      customer: mapCustomer(row?.customer || '-'),
+      vtype: normalizeText(row?.vtype, '-')
+    };
+    const identity = getRouteIdentity(normalized);
+    const key = identity.key;
+    if (!groups[key]) {
+      groups[key] = {
+        ...normalized,
+        route: identity.displayRoute || normalized.route || '-',
+        routeKey: key,
+        routeCore: identity.routeCore,
+        routeVehicle: identity.routeVehicle,
+        routePrefix: identity.routePrefix,
+        desc: normalized.desc || normalized.routeDesc || '-',
+        routeDesc: normalized.routeDesc || normalized.desc || '-',
+        trips: 0,
+        count: 0,
+        margin: 0,
+        recv: 0,
+        pay: 0,
+        oil: 0,
+        loss: 0,
+        months: {}
+      };
+    }
+    const target = groups[key];
+    if (!cleanRouteDisplayText(target.routeDesc) && cleanRouteDisplayText(normalized.routeDesc || normalized.desc)) {
+      target.routeDesc = normalized.routeDesc || normalized.desc;
+      target.desc = normalized.desc || normalized.routeDesc;
+    }
+    target.trips += toFiniteNumber(normalized.trips);
+    target.count += toFiniteNumber(normalized.count);
+    target.margin += toFiniteNumber(normalized.margin);
+    target.recv += toFiniteNumber(normalized.recv);
+    target.pay += toFiniteNumber(normalized.pay);
+    target.oil += toFiniteNumber(normalized.oil);
+    target.loss += toFiniteNumber(normalized.loss);
+    mergeMonthStats(target.months, normalized.months || {});
+  });
+  const result = Object.values(groups).map(row => ({
+    ...row,
+    avgMargin: row.trips > 0 ? row.margin / row.trips : 0,
+    pct: row.recv > 0 ? row.margin / row.recv * 100 : toFiniteNumber(row.pct)
+  }));
+  return sortFn ? result.sort(sortFn) : result;
+}
+
+function regroupRouteRanking(ranking) {
+  if (!ranking || typeof ranking !== 'object') return ranking;
+  const seenRows = new Map();
+  [...(ranking.top || []), ...(ranking.bottom || []), ...(ranking.zero || [])].forEach(row => {
+    const exactKey = [
+      row?.customer || '',
+      row?.vtype || '',
+      row?.route || '',
+      row?.desc || row?.routeDesc || '',
+      row?.trips ?? '',
+      row?.margin ?? '',
+      row?.loss ?? ''
+    ].join('|');
+    if (!seenRows.has(exactKey)) seenRows.set(exactKey, row);
+  });
+  const merged = regroupRouteRows([...seenRows.values()]);
+  return {
+    ...ranking,
+    top: merged.filter(row => row.margin > 0).sort((a, b) => b.margin - a.margin),
+    bottom: merged.filter(row => row.margin < 0).sort((a, b) => a.margin - b.margin),
+    zero: merged.filter(row => row.margin === 0).sort((a, b) => routeDisplay(a).localeCompare(routeDisplay(b), 'th'))
+  };
+}
+
+function regroupLossRoutes(lossTrip) {
+  const rows = Array.isArray(lossTrip?.byRoute)
+    ? lossTrip.byRoute
+    : Object.entries(lossTrip?.byRoute || {}).map(([name, info]) => ({
+      name,
+      route: info?.route || name,
+      routeKey: info?.routeKey,
+      routeDesc: info?.routeDesc || info?.desc,
+      count: info?.count,
+      loss: info?.loss
+    }));
+  return regroupRouteRows(rows, (a, b) => a.loss - b.loss);
+}
+
 function normalizeSummaryData(data) {
   if (!data || typeof data !== 'object') return data;
   if (Array.isArray(data.routeTrend)) {
     data.routeTrend.forEach(row => { row.customer = mapCustomer(row.customer); });
+    data.routeTrend = regroupRouteRows(data.routeTrend, (a, b) => b.margin - a.margin);
   }
-  if (Array.isArray(data.routeRanking?.top)) {
-    data.routeRanking.top.forEach(row => { row.customer = mapCustomer(row.customer); });
-  }
-  if (Array.isArray(data.routeRanking?.bottom)) {
-    data.routeRanking.bottom.forEach(row => { row.customer = mapCustomer(row.customer); });
+  if (data.routeRanking) {
+    data.routeRanking = regroupRouteRanking(data.routeRanking);
   }
   if (Array.isArray(data.customerProfit)) {
     data.customerProfit = regroupCustomerProfit(data.customerProfit);
@@ -561,6 +721,15 @@ function normalizeSummaryData(data) {
   }
   if (data.lossTrip) {
     data.lossTrip.byCustomer = regroupLossByCustomer(data.lossTrip);
+    data.lossTrip.byRoute = regroupLossRoutes(data.lossTrip);
+    data.lossTrip.worstRoutes = data.lossTrip.byRoute.slice(0, 10);
+  }
+  if (data.ownVsOutsource) {
+    ['company', 'outsource'].forEach(side => {
+      if (Array.isArray(data.ownVsOutsource?.[side]?.topRoutes)) {
+        data.ownVsOutsource[side].topRoutes = regroupRouteRows(data.ownVsOutsource[side].topRoutes, (a, b) => b.trips - a.trips).slice(0, 10);
+      }
+    });
   }
   if (Array.isArray(data.daily)) {
     data.daily.forEach(day => {
@@ -785,14 +954,15 @@ function buildLossAuditTableRowsFromTrips(trips) {
     byCustomer[customer].count += 1;
     byCustomer[customer].loss += Number(trip.margin) || 0;
 
-    const route = normalizeText(trip.route, '-');
-    if (!byRoute[route]) {
-      byRoute[route] = { name: route, route, routeDesc: trip.routeDesc, count: 0, loss: 0 };
-    } else if (!cleanRouteDisplayText(byRoute[route].routeDesc) && cleanRouteDisplayText(trip.routeDesc)) {
-      byRoute[route].routeDesc = trip.routeDesc;
+    const routeKey = routeIdentityKey(trip);
+    const route = normalizeText(trip.routeGroup || trip.route, '-');
+    if (!byRoute[routeKey]) {
+      byRoute[routeKey] = { name: route, route, routeKey, routeDesc: trip.routeDesc, count: 0, loss: 0 };
+    } else if (!cleanRouteDisplayText(byRoute[routeKey].routeDesc) && cleanRouteDisplayText(trip.routeDesc)) {
+      byRoute[routeKey].routeDesc = trip.routeDesc;
     }
-    byRoute[route].count += 1;
-    byRoute[route].loss += Number(trip.margin) || 0;
+    byRoute[routeKey].count += 1;
+    byRoute[routeKey].loss += Number(trip.margin) || 0;
   });
   const monthlyRows = MONTHS
     .filter(month => byMonth[month] && ((byMonth[month].count || 0) > 0 || Number(byMonth[month].loss) !== 0))
@@ -1092,7 +1262,7 @@ function lossDrillNorm(value) {
 function makeLossDrillKey(kind, row) {
   if (kind === 'monthly') return `monthly:${row?.monthKey || row?.month || ''}`;
   if (kind === 'customer') return `customer:${mapCustomer(row?.name || '-')}`;
-  if (kind === 'route') return `route:${lossDrillNorm(row?.name || '-')}`;
+  if (kind === 'route') return `route:${lossDrillNorm(row?.routeKey || row?.name || '-')}`;
   return `${kind}:${lossDrillNorm(JSON.stringify(row || {}))}`;
 }
 
@@ -1161,7 +1331,7 @@ function buildLossDrillFilterMeta(rows) {
   const customerOptions = Array.from(new Set(rows.map(row => row.customer).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'th'));
   const routeOptionMap = {};
   rows.forEach(row => {
-    const value = String(row.route || '').trim();
+    const value = String(row.routeKey || routeIdentityKey(row)).trim();
     if (!value) return;
     if (!routeOptionMap[value]) routeOptionMap[value] = { value, label: routeDisplay(row) };
   });
@@ -1197,7 +1367,7 @@ function applyLossDrillFilters(rows, filters) {
 
   return rows.filter(row => {
     if (filterCustomer && row.customer !== filterCustomer) return false;
-    if (filterRoute && row.route !== filterRoute) return false;
+    if (filterRoute && (row.routeKey || routeIdentityKey(row)) !== filterRoute) return false;
 
     const isoDate = normalizeIsoDate(row.date);
     if (hasMonth) {
@@ -1291,8 +1461,8 @@ function buildLossDrillPayload(kind, row, trips) {
     title = `ขาดทุนแยกตามลูกค้า: ${customer}`;
     subtitle = 'รายการเที่ยวที่มีส่วนต่างขาดทุนของลูกค้ารายนี้';
   } else if (kind === 'route') {
-    const routeKey = lossDrillNorm(row?.name || '-');
-    matched = lossTrips.filter(t => lossDrillNorm(t.route || '-') === routeKey);
+    const routeKey = lossDrillNorm(row?.routeKey || row?.name || '-');
+    matched = lossTrips.filter(t => lossDrillNorm(t.routeKey || routeIdentityKey(t)) === routeKey);
     title = `ขาดทุนแยกตามเส้นทาง: ${routeDisplay(row)}`;
     subtitle = 'รายการเที่ยวที่มีส่วนต่างขาดทุนของเส้นทางนี้';
   }
@@ -1313,7 +1483,8 @@ function buildLossDrillPayload(kind, row, trips) {
       idx: idx + 1,
       date: t.date || '-',
       customer: t.customer || '-',
-      route: t.route || '-',
+      route: t.routeGroup || t.route || '-',
+      routeKey: t.routeKey || routeIdentityKey(t),
       routeDesc: t.routeDesc || '-',
       vtype: t.vtype || '-',
       driver: t.driver || '-',
@@ -2226,7 +2397,7 @@ function buildFullTrend(d) {
 
 function buildFullRanking(d) {
   const rk = d.routeRanking;
-  const routeKey = r => `${r?.customer || '-'}|${r?.route || '-'}|${r?.vtype || '-'}`;
+  const routeKey = r => routeIdentityKey(r);
   const allRoutes = [...rk.top, ...rk.bottom].sort((a, b) => b.margin - a.margin);
   const top10 = rk.top.slice(0, 10);
   const bot10 = rk.bottom.slice(0, 10);
@@ -3773,7 +3944,7 @@ function buildDailyCompare(data) {
     const rows = validFd.filter(r => {
       if (r.date < dateStart || r.date > dateEnd) return false;
       if (Array.isArray(custF) && custF.length > 0 && !custF.includes(r.customer || '-')) return false;
-      if (Array.isArray(routeF) && routeF.length > 0 && !routeF.includes(r.route || '-')) return false;
+      if (Array.isArray(routeF) && routeF.length > 0 && !routeF.includes(r.routeKey || routeIdentityKey(r))) return false;
       if (Array.isArray(vtypeF) && vtypeF.length > 0 && !vtypeF.includes(r.vtype || '-')) return false;
       return true;
     });
@@ -3789,8 +3960,9 @@ function buildDailyCompare(data) {
     // route breakdown
     const routeMap = {};
     rows.forEach(r => {
-      const k = `${r.customer || '-'}|${r.route || '-'}|${r.vtype || '-'}`;
-      if (!routeMap[k]) routeMap[k] = { customer: r.customer || '-', route: r.route || '-', routeDesc: r.routeDesc || '-', vtype: r.vtype || '-', recv: 0, pay: 0, oil: 0, margin: 0, trips: 0 };
+      const identity = getRouteIdentity(r);
+      const k = identity.key;
+      if (!routeMap[k]) routeMap[k] = { customer: r.customer || '-', route: identity.displayRoute || r.route || '-', routeKey: k, routeCore: identity.routeCore, routeVehicle: identity.routeVehicle, routeDesc: r.routeDesc || '-', vtype: r.vtype || '-', recv: 0, pay: 0, oil: 0, margin: 0, trips: 0 };
       else if (!cleanRouteDisplayText(routeMap[k].routeDesc) && cleanRouteDisplayText(r.routeDesc)) routeMap[k].routeDesc = r.routeDesc;
       routeMap[k].recv += r.recv || 0; routeMap[k].pay += r.pay || 0; routeMap[k].oil += r.oil || 0; routeMap[k].margin += r.margin || 0; routeMap[k].trips++;
     });
@@ -4432,15 +4604,15 @@ function buildDailyCompare(data) {
       if (!routePanelOpen) {
         const routeOptionMap = {};
         allRows.forEach(r => {
-          const value = r.route || '-';
-          if (!routeOptionMap[value]) routeOptionMap[value] = { value, label: routeDisplay(r), search: `${routeDisplay(r)} ${value}` };
+          const value = r.routeKey || routeIdentityKey(r);
+          if (!routeOptionMap[value]) routeOptionMap[value] = { value, label: routeDisplay(r), search: `${routeDisplay(r)} ${r.route || ''} ${value}` };
         });
         const routeOptions = Object.values(routeOptionMap).sort((a, b) => String(a.label).localeCompare(String(b.label), 'th'));
         buildMsOptions('route', routeOptions, routeF);
       }
 
       if (!vtypePanelOpen) {
-        const vtypeOptions = [...new Set(allRows.filter(r => routeF.length === 0 || routeF.includes(r.route || '-')).map(r => r.vtype || '-'))].sort();
+        const vtypeOptions = [...new Set(allRows.filter(r => routeF.length === 0 || routeF.includes(r.routeKey || routeIdentityKey(r))).map(r => r.vtype || '-'))].sort();
         buildMsOptions('vtype', vtypeOptions, vtypeF);
       }
 
@@ -5146,7 +5318,7 @@ function buildDailyCompare(data) {
       const { custF, routeF, vtypeF } = getFilters();
       const routeLabelMap = {};
       validFd.forEach(row => {
-        const value = row.route || '-';
+        const value = row.routeKey || routeIdentityKey(row);
         if (!routeLabelMap[value]) routeLabelMap[value] = routeDisplay(row);
       });
       const routeFilterLabels = routeF.map(route => routeLabelMap[route] || route);
@@ -5405,7 +5577,7 @@ function buildDailyCompare(data) {
       const metricPairCell = bulletPairCell;
       function rowPeerRows(sourceRows, row) {
         return (sourceRows || []).filter(r =>
-          r.customer === row.customer && r.route === row.route && r.vtype === row.vtype
+          r.customer === row.customer && (r.routeKey || routeIdentityKey(r)) === (row.routeKey || routeIdentityKey(row)) && r.vtype === row.vtype
         );
       }
 
@@ -5420,7 +5592,7 @@ function buildDailyCompare(data) {
         let rowIdx = wsData.length;
 
         const routeCases = (st?.routes || []).map(route => {
-          const trips = (st?.rows || []).filter(r => r.customer === route.customer && r.route === route.route && r.vtype === route.vtype)
+          const trips = (st?.rows || []).filter(r => r.customer === route.customer && (r.routeKey || routeIdentityKey(r)) === (route.routeKey || routeIdentityKey(route)) && r.vtype === route.vtype)
             .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
           const rows = trips.map(ra => ({ ra, statuses: dcQaTripStatuses(ra, trips) }))
             .sort((a, b) => {
@@ -5745,7 +5917,7 @@ function buildDailyCompare(data) {
         let totalAnomCount = 0;
         let routesWithRefCount = 0;
         (_stA.routes || []).forEach(route => {
-          const trips = (_stA.rows || []).filter(r => r.customer === route.customer && r.route === route.route && r.vtype === route.vtype);
+          const trips = (_stA.rows || []).filter(r => r.customer === route.customer && (r.routeKey || routeIdentityKey(r)) === (route.routeKey || routeIdentityKey(route)) && r.vtype === route.vtype);
           if (trips.length === 0) return;
           const routeKey = dcQaRouteKey(trips[0]);
           const refTripsForRoute = getRefForRouteSummary(routeKey);
@@ -6051,7 +6223,7 @@ function buildDailyCompare(data) {
         // Build cases (route + per-trip statuses + ref trips), identical to renderSingleTable.
         const buildSingleCases = () => {
           return (_stA.routes || []).map(route => {
-            const trips = (_stA.rows || []).filter(r => r.customer === route.customer && r.route === route.route && r.vtype === route.vtype)
+            const trips = (_stA.rows || []).filter(r => r.customer === route.customer && (r.routeKey || routeIdentityKey(r)) === (route.routeKey || routeIdentityKey(route)) && r.vtype === route.vtype)
               .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
             const routeKey = trips.length > 0 ? dcQaRouteKey(trips[0]) : null;
             const refResult = routeKey ? getRefForRoute(routeKey) : null;
@@ -6445,7 +6617,7 @@ function buildDailyCompare(data) {
     }
 
     function dcQaRouteKey(r) {
-      return `${r?.customer || '-'}|${r?.route || '-'}|${r?.vtype || '-'}`;
+      return routeIdentityKey(r);
     }
 
     function dcQaValidDriver(driver) {
@@ -6701,13 +6873,15 @@ function buildDailyCompare(data) {
       const groupA = {}, groupB = {};
       (stA.rows || []).filter(r => dcQaValidDriver(r.driver)).forEach(r => {
         const k = dcQaRouteKey(r);
-        if (!groupA[k]) groupA[k] = { key: k, customer: r.customer || '-', route: r.route || '-', routeDesc: r.routeDesc || '-', vtype: r.vtype || '-', trips: [] };
+        const identity = getRouteIdentity(r);
+        if (!groupA[k]) groupA[k] = { key: k, customer: r.customer || '-', route: identity.displayRoute || r.route || '-', routeKey: k, routeCore: identity.routeCore, routeVehicle: identity.routeVehicle, routeDesc: r.routeDesc || '-', vtype: r.vtype || '-', trips: [] };
         else if (!cleanRouteDisplayText(groupA[k].routeDesc) && cleanRouteDisplayText(r.routeDesc)) groupA[k].routeDesc = r.routeDesc;
         groupA[k].trips.push(r);
       });
       (stB.rows || []).filter(r => dcQaValidDriver(r.driver)).forEach(r => {
         const k = dcQaRouteKey(r);
-        if (!groupB[k]) groupB[k] = { key: k, customer: r.customer || '-', route: r.route || '-', routeDesc: r.routeDesc || '-', vtype: r.vtype || '-', trips: [] };
+        const identity = getRouteIdentity(r);
+        if (!groupB[k]) groupB[k] = { key: k, customer: r.customer || '-', route: identity.displayRoute || r.route || '-', routeKey: k, routeCore: identity.routeCore, routeVehicle: identity.routeVehicle, routeDesc: r.routeDesc || '-', vtype: r.vtype || '-', trips: [] };
         else if (!cleanRouteDisplayText(groupB[k].routeDesc) && cleanRouteDisplayText(r.routeDesc)) groupB[k].routeDesc = r.routeDesc;
         groupB[k].trips.push(r);
       });
@@ -6756,7 +6930,8 @@ function buildDailyCompare(data) {
       const myGroup = {}, opGroup = {};
       (mySt.rows || []).filter(r => dcQaValidDriver(r.driver)).forEach(r => {
         const k = dcQaRouteKey(r);
-        if (!myGroup[k]) myGroup[k] = { key: k, customer: r.customer || '-', route: r.route || '-', routeDesc: r.routeDesc || '-', vtype: r.vtype || '-', trips: [] };
+        const identity = getRouteIdentity(r);
+        if (!myGroup[k]) myGroup[k] = { key: k, customer: r.customer || '-', route: identity.displayRoute || r.route || '-', routeKey: k, routeCore: identity.routeCore, routeVehicle: identity.routeVehicle, routeDesc: r.routeDesc || '-', vtype: r.vtype || '-', trips: [] };
         else if (!cleanRouteDisplayText(myGroup[k].routeDesc) && cleanRouteDisplayText(r.routeDesc)) myGroup[k].routeDesc = r.routeDesc;
         myGroup[k].trips.push(r);
       });
@@ -6854,7 +7029,7 @@ function buildDailyCompare(data) {
       };
 
       const cases = stA.routes.map(route => {
-        const trips = (stA.rows || []).filter(r => r.customer === route.customer && r.route === route.route && r.vtype === route.vtype)
+        const trips = (stA.rows || []).filter(r => r.customer === route.customer && (r.routeKey || routeIdentityKey(r)) === (route.routeKey || routeIdentityKey(route)) && r.vtype === route.vtype)
           .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
 
         // Per-route: find nearest ref day that has data for this route+vtype.
@@ -6932,7 +7107,7 @@ function buildDailyCompare(data) {
         const aRowsHtml = previewRows.map(row => dcQaSingleTripRow(row.ra, row.statuses, false)).join('');
         const refRowsHtml = routeHasRefTrips ? refTripsForCard.map(renderRefRow).join('') : '';
 
-        return `<article class="dc-qa-case dc-qa-clickable dc-status-card dc-status-card-normal" data-severity="${item.severity}" data-status-keys="${esc(statuses.join(','))}" data-anom-count="${anomCount}" data-trip-count="${rows.length}" data-recv="${route.recv || 0}" data-pay="${route.pay || 0}" data-oil="${route.oil || 0}" data-margin="${route.margin || 0}" style="${displayStyle}" onclick="dcOpenRouteModal('${stA.dateStart}','${stA.dateEnd}','${esc(route.route)}','${esc(route.customer)}','${esc(route.vtype)}')">
+        return `<article class="dc-qa-case dc-qa-clickable dc-status-card dc-status-card-normal" data-severity="${item.severity}" data-status-keys="${esc(statuses.join(','))}" data-anom-count="${anomCount}" data-trip-count="${rows.length}" data-recv="${route.recv || 0}" data-pay="${route.pay || 0}" data-oil="${route.oil || 0}" data-margin="${route.margin || 0}" style="${displayStyle}" onclick="dcOpenRouteModal('${stA.dateStart}','${stA.dateEnd}','${esc(route.routeKey || routeIdentityKey(route))}','${esc(route.customer)}','${esc(route.vtype)}')">
           <header class="dc-qa-case-head">
             <div class="dc-qa-title-block">
               <div class="dc-qa-identity"><span class="dc-qa-customer">${esc(route.customer || '-')}</span><span class="dc-qa-vtype">${esc(route.vtype || '-')}</span></div>
@@ -7086,7 +7261,7 @@ function buildDailyCompare(data) {
 
     window.dcOpenRouteModal = function (dateStart, dateEnd, routeStr, specificCust, specificVtype) {
       const rows = validFd.filter(r =>
-        r.date >= dateStart && r.date <= dateEnd && r.route === routeStr &&
+        r.date >= dateStart && r.date <= dateEnd && (r.routeKey || routeIdentityKey(r)) === routeStr &&
         (!specificCust || r.customer === specificCust) &&
         (!specificVtype || r.vtype === specificVtype)
       ).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
@@ -7766,7 +7941,7 @@ async function loadTripsSource() {
   if (API_CACHE.trips) return deepClone(API_CACHE.trips);
   if (isApiEnabled()) {
     try {
-      const fields = 'date,customer,route,routeDesc,vtype,driver,plate,payee,recv,pay,oil,margin';
+      const fields = 'date,customer,route,routeKey,routeCore,routeVehicle,routePrefix,routeGroup,isFlashRoute,routeDesc,vtype,driver,plate,payee,recv,pay,oil,margin';
       const pageSize = 5000;
       const maxPages = 100;
       let page = 0;

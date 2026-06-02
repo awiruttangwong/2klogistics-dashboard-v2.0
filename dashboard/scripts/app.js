@@ -5580,12 +5580,20 @@ function buildDailyCompare(data) {
         const text = statusText(values);
         const base = { valign: 'top', wrap: true, ...(opts || {}) };
         const color = statusColor(values);
-        if (color === 'loss') return rCell(text, base);
-        if (color === 'oil50') return oCell(text, base);
-        if (color === 'payHigh') return pCell(text, base);
-        if (color === 'recvLow') return bCell(text, base);
-        if (color === 'normal') return gCell(text, base);
-        return mCell(text, base);
+        let cell;
+        if (color === 'loss') cell = rCell(text, base);
+        else if (color === 'oil50') cell = oCell(text, base);
+        else if (color === 'payHigh') cell = pCell(text, base);
+        else if (color === 'recvLow') cell = bCell(text, base);
+        else if (color === 'normal') cell = gCell(text, base);
+        else cell = mCell(text, base);
+
+        if (!cell.s) cell.s = {};
+        if (!cell.s.alignment) cell.s.alignment = {};
+        cell.s.alignment.vertical = base.valign || 'top';
+        cell.s.alignment.horizontal = base.align || 'left';
+        cell.s.alignment.wrapText = true;
+        return cell;
       }
       function signedMoney(n) {
         if (!hasNum(n)) return '-';

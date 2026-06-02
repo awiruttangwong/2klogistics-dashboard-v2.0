@@ -5113,7 +5113,7 @@ function buildDailyCompare(data) {
       return {
         loss: 'ขาดทุน',
         oil50: 'สำรองน้ำมัน>50%',
-        payHigh: 'ราคาจ่ายแพงกว่าเดิม',
+        payHigh: 'ราคาจ่ายผิดปกติ',
         recvLow: 'ราคารับผิดปกติ',
         normal: 'ปกติ'
       };
@@ -5536,7 +5536,7 @@ function buildDailyCompare(data) {
       const addPeriod = (title, periodLabel) => `${title} (${periodLabel || '-'})`;
       const qaStatusLabels = () => (typeof getCompareStatusLabelMap === 'function')
         ? getCompareStatusLabelMap()
-        : { loss: 'ขาดทุน', oil50: 'สำรองน้ำมัน>50%', payHigh: 'ราคาจ่ายสูงผิดปกติ', recvLow: 'ราคารับผิดปกติ', normal: 'ปกติ' };
+        : { loss: 'ขาดทุน', oil50: 'สำรองน้ำมัน>50%', payHigh: 'ราคาจ่ายผิดปกติ', recvLow: 'ราคารับผิดปกติ', normal: 'ปกติ' };
       const cleanStatuses = statuses => {
         const values = [...new Set((statuses && statuses.length ? statuses : ['normal']).map(s => s === 'oilHigh' ? 'payHigh' : s))];
         return values.some(s => s !== 'normal') ? values.filter(s => s !== 'normal') : values;
@@ -6042,7 +6042,7 @@ function buildDailyCompare(data) {
         const breakdown = [
           ['ขาดทุน', statusCount.loss, 'loss'],
           ['สำรองน้ำมัน > 50%', statusCount.oil50, 'oil50'],
-          ['ราคาจ่ายสูงผิดปกติ', statusCount.payHigh, 'payHigh'],
+          ['ราคาจ่ายผิดปกติ', statusCount.payHigh, 'payHigh'],
           ['ราคารับผิดปกติ', statusCount.recvLow, 'recvLow'],
           ['ปกติ', statusCount.normal, 'normal']
         ];
@@ -6326,7 +6326,7 @@ function buildDailyCompare(data) {
             'ขาดทุน': 'รายการเส้นทางที่มีผลประกอบการขาดทุน',
             'สำรองน้ำมัน > 50%': 'รายการเส้นทางที่มีการสำรองน้ำมันเกินเกณฑ์ >50%',
             'ราคารับผิดปกติ': 'รายการเส้นทางที่มีความผิดปกติของราคารับ',
-            'ราคาจ่ายสูงผิดปกติ': 'รายการเส้นทางที่มีความผิดปกติของราคาจ่าย'
+            'ราคาจ่ายผิดปกติ': 'รายการเส้นทางที่มีความผิดปกติของราคาจ่าย'
           };
           const displayTitle = titleMap[sheetTitle] || sheetTitle;
           const headers = [
@@ -6366,7 +6366,7 @@ function buildDailyCompare(data) {
           let maxPayLen = 10;     // 'ราคาจ่าย' (min 10)
           let maxMarginLen = 10;  // 'ส่วนต่าง' (min 10)
 
-          const isTargetSheet = ['ขาดทุน', 'สำรองน้ำมัน > 50%', 'ราคาจ่ายสูงผิดปกติ', 'ราคารับผิดปกติ'].includes(sheetTitle);
+          const isTargetSheet = ['ขาดทุน', 'สำรองน้ำมัน > 50%', 'ราคาจ่ายผิดปกติ', 'ราคารับผิดปกติ'].includes(sheetTitle);
           let maxStatusLen = 14;
           cases.forEach(item => {
             let visibleRows;
@@ -6550,7 +6550,7 @@ function buildDailyCompare(data) {
                   displayStatuses = entry.statuses || ['normal'];
                 }
                 const zf = (rowIdx % 2 === 0) ? 'F9FAFB' : null;
-                const isTargetSheet = ['ขาดทุน', 'สำรองน้ำมัน > 50%', 'ราคาจ่ายสูงผิดปกติ', 'ราคารับผิดปกติ'].includes(sheetTitle);
+                const isTargetSheet = ['ขาดทุน', 'สำรองน้ำมัน > 50%', 'ราคาจ่ายผิดปกติ', 'ราคารับผิดปกติ'].includes(sheetTitle);
                 const colLValign = isTargetSheet ? 'center' : 'top';
                 const row = [
                   cCell(r.customer || '-', { fill: zf }),
@@ -6693,12 +6693,12 @@ function buildDailyCompare(data) {
         const wsAll = buildSingleSheet(singleCases, 'รายเส้นทางที่เปรียบเทียบ', null, normalSelectedSet);
         XLSX.utils.book_append_sheet(wb, wsAll, 'รายเส้นทางที่เปรียบเทียบ');
         // Sheets 3-6: per-status filtered sheets (lens semantics — show only the picked tag).
-        // Order matches the on-screen status filter panel: ขาดทุน → สำรองน้ำมัน > 50% → ราคาจ่ายสูงผิดปกติ → ราคารับผิดปกติ
+        // Order matches the on-screen status filter panel: ขาดทุน → สำรองน้ำมัน > 50% → ราคาจ่ายผิดปกติ → ราคารับผิดปกติ
         // These sheets always export the requested tag regardless of UI toggle (by design).
         const statusSheets = [
           { key: 'loss', name: 'ขาดทุน' },
           { key: 'oil50', name: 'สำรองน้ำมัน > 50%' },
-          { key: 'payHigh', name: 'ราคาจ่ายสูงผิดปกติ' },
+          { key: 'payHigh', name: 'ราคาจ่ายผิดปกติ' },
           { key: 'recvLow', name: 'ราคารับผิดปกติ' }
         ];
         statusSheets.forEach(s => {
@@ -6734,7 +6734,7 @@ function buildDailyCompare(data) {
       return {
         loss: 'ขาดทุน',
         oil50: 'สำรองน้ำมัน>50%',
-        payHigh: 'ราคาจ่ายสูงผิดปกติ',
+        payHigh: 'ราคาจ่ายผิดปกติ',
         recvLow: 'ราคารับผิดปกติ',
         normal: 'ปกติ'
       };
@@ -6789,7 +6789,7 @@ function buildDailyCompare(data) {
     // Status logic for single-trip mode (Normal view + Unmatched cards):
     // - loss: margin < 0
     // - oil50: oil > pay * 0.5
-    // - payHigh: trip.pay > pay ของแถวอื่นอย่างน้อย 1 แถวใน peer (card เดียวกัน)
+    // - payHigh: trip.pay ต่างจาก pay ของแถวอื่นอย่างน้อย 1 แถวใน peer (card เดียวกัน)
     // - recvLow: มีแถวอื่นใน peer ที่ราคาน้ำมันเท่ากัน แต่ recv ต่างกัน
     // - normal: ไม่เข้าเงื่อนไขใดเลย
     // กรณีพิเศษ: ถ้า peer มีแค่ 1 แถว (รวมตัวเอง) จะไม่ติด payHigh / recvLow
@@ -6805,7 +6805,8 @@ function buildDailyCompare(data) {
 
         for (const peer of peers) {
           if (peer === trip) continue;
-          if (tripPay > 0 && (peer.pay || 0) > 0 && tripPay > (peer.pay || 0)) statuses.add('payHigh');
+          const peerPay = peer.pay || 0;
+          if (hasNum(tripPay) && hasNum(peerPay) && (tripPay > peerPay || tripPay < peerPay)) statuses.add('payHigh');
           if (hasNum(tripOilPrice)) {
             const peerOilPrice = getOilPriceByDate(peer?.date);
             if (hasNum(peerOilPrice) && Math.abs((tripOilPrice || 0) - (peerOilPrice || 0)) < 0.0001 &&
@@ -6824,7 +6825,7 @@ function buildDailyCompare(data) {
     // อิงคู่ A/B ของแถวเดียวกันตรงๆ
     // - loss: margin ของ A หรือ B ติดลบ
     // - oil50: A หรือ B มี oil > pay * 0.5
-    // - payHigh: A.pay > B.pay
+    // - payHigh: A.pay และ B.pay ต่างกัน
     // - recvLow: ราคาน้ำมันของ A/B เท่ากัน และ recv ของ A/B ต่างกัน
     // - normal: ไม่เข้าเงื่อนไขใดเลย
     function dcQaCompareStatuses(ra, rb) {
@@ -6833,7 +6834,9 @@ function buildDailyCompare(data) {
       if (((ra.oil || 0) > (ra.pay || 0) * 0.5 && (ra.pay || 0) > 0) ||
         ((rb.oil || 0) > (rb.pay || 0) * 0.5 && (rb.pay || 0) > 0)) statuses.add('oil50');
 
-      if ((ra.pay || 0) > (rb.pay || 0)) statuses.add('payHigh');
+      const payA = ra.pay || 0;
+      const payB = rb.pay || 0;
+      if (hasNum(payA) && hasNum(payB) && (payA > payB || payA < payB)) statuses.add('payHigh');
 
       const oilPriceA = getOilPriceByDate(ra?.date);
       const oilPriceB = getOilPriceByDate(rb?.date);
@@ -6848,7 +6851,7 @@ function buildDailyCompare(data) {
       const labels = [];
       if (statuses.includes('loss')) labels.push('ตรวจส่วนต่าง');
       if (statuses.includes('oil50')) labels.push('ตรวจสำรองน้ำมัน');
-      if (statuses.includes('payHigh')) labels.push(`จ่าย A สูงกว่า B ${fmt((ra.pay || 0) - (rb.pay || 0))}`);
+      if (statuses.includes('payHigh')) labels.push(`ราคาจ่าย A/B ต่างกัน ${fmt(Math.abs((ra.pay || 0) - (rb.pay || 0)))}`);
       if ((ra.oil || 0) > (rb.oil || 0)) labels.push(`น้ำมัน A สูงกว่า B ${fmt((ra.oil || 0) - (rb.oil || 0))}`);
       if (statuses.includes('recvLow')) labels.push(`ราคารับ A/B ไม่เท่ากัน ${fmt(Math.abs((ra.recv || 0) - (rb.recv || 0)))}`);
       return labels.length ? labels.join(', ') : 'ไม่มีสัญญาณเพิ่ม';

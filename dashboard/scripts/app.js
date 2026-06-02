@@ -6790,7 +6790,6 @@ function buildDailyCompare(data) {
     // - loss: margin < 0
     // - oil50: oil > pay * 0.5
     // - payHigh: trip.pay > pay ของแถวอื่นอย่างน้อย 1 แถวใน peer (card เดียวกัน)
-    // - payHigh: trip.pay/trip.oil สูงกว่าแถวอื่นอย่างน้อย 1 แถวใน peer
     // - recvLow: มีแถวอื่นใน peer ที่ราคาน้ำมันเท่ากัน แต่ recv ต่างกัน
     // - normal: ไม่เข้าเงื่อนไขใดเลย
     // กรณีพิเศษ: ถ้า peer มีแค่ 1 แถว (รวมตัวเอง) จะไม่ติด payHigh / recvLow
@@ -6801,14 +6800,12 @@ function buildDailyCompare(data) {
 
       if (peers.length > 1) {
         const tripPay = trip.pay || 0;
-        const tripOil = trip.oil || 0;
         const tripRecv = trip.recv || 0;
         const tripOilPrice = getOilPriceByDate(trip?.date);
 
         for (const peer of peers) {
           if (peer === trip) continue;
           if (tripPay > 0 && (peer.pay || 0) > 0 && tripPay > (peer.pay || 0)) statuses.add('payHigh');
-          if (tripOil > 0 && (peer.oil || 0) > 0 && tripOil > (peer.oil || 0)) statuses.add('payHigh');
           if (hasNum(tripOilPrice)) {
             const peerOilPrice = getOilPriceByDate(peer?.date);
             if (hasNum(peerOilPrice) && Math.abs((tripOilPrice || 0) - (peerOilPrice || 0)) < 0.0001 &&
@@ -6828,7 +6825,6 @@ function buildDailyCompare(data) {
     // - loss: margin ของ A หรือ B ติดลบ
     // - oil50: A หรือ B มี oil > pay * 0.5
     // - payHigh: A.pay > B.pay
-    // - payHigh: A.pay หรือ A.oil > B
     // - recvLow: ราคาน้ำมันของ A/B เท่ากัน และ recv ของ A/B ต่างกัน
     // - normal: ไม่เข้าเงื่อนไขใดเลย
     function dcQaCompareStatuses(ra, rb) {
@@ -6838,7 +6834,6 @@ function buildDailyCompare(data) {
         ((rb.oil || 0) > (rb.pay || 0) * 0.5 && (rb.pay || 0) > 0)) statuses.add('oil50');
 
       if ((ra.pay || 0) > (rb.pay || 0)) statuses.add('payHigh');
-      if ((ra.oil || 0) > (rb.oil || 0)) statuses.add('payHigh');
 
       const oilPriceA = getOilPriceByDate(ra?.date);
       const oilPriceB = getOilPriceByDate(rb?.date);

@@ -1,0 +1,280 @@
+# Dashboard Optimization Audit - No Code Changes
+
+วันที่ตรวจ: 2026-06-03  
+ขอบเขต: วิเคราะห์ `Dashboard` และโฟลเดอร์ `skills` เพื่อหาแนวทาง optimize ระบบให้ลื่นขึ้น โดยไม่แก้ logic การดึงข้อมูลหรือการประมวลผลในรอบนี้
+
+## สถานะสำคัญ
+
+เอกสารนี้เป็นรายงานตรวจสอบเท่านั้น ยังไม่แก้ไฟล์ runtime, config, data, API หรือสูตรคำนวณใด ๆ
+
+Baseline ที่ตรวจแล้ว:
+
+- `node --check Dashboard\scripts\app.js` ผ่าน ไม่มี syntax error
+- ก่อนสร้างรายงาน `git status --short` ไม่มีรายการเปลี่ยนแปลง
+- ไฟล์หลักมีขนาดใหญ่และมีผลต่อ startup/render cost:
+- `Dashboard/scripts/app.js` ประมาณ 450 KB, 8,443 บรรทัด
+- `Dashboard/assets/css/styles.css` ประมาณ 197 KB, 9,088 บรรทัด
+- `Dashboard/API/Code.gs` ประมาณ 126 KB, 3,593 บรรทัด
+- static fallback `Dashboard/data/fraud_data.js` ประมาณ 2.88 MB
+- static fallback `Dashboard/data/data.js` ประมาณ 625 KB
+
+## Skills ที่ตรวจและนำมาใช้เป็นกรอบคิด
+
+ไฟล์ใน `skills` ที่เกี่ยวข้อง:
+
+- `skills/engineering/scrutinize/SKILL.md`: ใช้แนวคิด trace end-to-end จาก entry point ไปถึง side effect จริง ไม่ดูเฉพาะจุดที่เหมือนช้า
+- `skills/engineering/debug-mantra/SKILL.md`: ใช้แนวคิดต้องมี baseline/repro/measurement ก่อนแก้ เพื่อไม่ optimize จากสมมติฐาน
+- `skills/engineering/post-mortem/SKILL.md`: ใช้โครง root cause -> mechanism -> validation -> follow-up เพื่อจัดกลุ่มสาเหตุ
+- `skills/productivity/management-talk/SKILL.md`: ใช้ช่วยจัดสรุปให้แยก impact, owner/action, risk และ next step อ่านง่าย
+- `skills/misc/README.md`: ไม่มี skill เพิ่มเติม
+
+ข้อสรุปจาก skills: ควรเริ่มจากวัดผลและ trace path จริงก่อนแก้ เพราะระบบนี้มี logic ด้าน route identity, anomaly status, export, และ fallback data ที่เปลี่ยนผิดจุดแล้วผลลัพธ์ธุรกิจอาจเพี้ยนได้
+
+## สาเหตุหลัก 1: Startup payload และ dependency โหลดหนักเกินจำเป็น
+
+### อาการที่คาดว่าจะเห็น
+
+- เปิดหน้าแรกช้า โดยเฉพาะครั้งแรกหรือ network ช้า
+- UI แสดง loading นาน เพราะโหลด summary, trips, oil แล้วจึง build dashboard
+- ถ้า API ช้า ระบบ fallback ไป static data ซึ่งมี payload ใหญ่มาก
+- Browser ต้อง parse JS/CSS/third-party libs จำนวนมากก่อน interactive เต็มที่
+
+### หลักฐานจากโค้ด
+
+- `Dashboard/index.html:12` โหลด CSS หลักทั้งก้อนทันที
+- `Dashboard/index.html:55-56` โหลด `flatpickr` และ locale ตั้งแต่เริ่ม แม้ใช้งานหลักในหน้า date range
+- `Dashboard/index.html:59` โหลด `xlsx-js-style` ตั้งแต่เริ่ม ทั้งที่ใช้เมื่อ export เท่านั้น
+- `Dashboard/index.html:60-61` โหลด `api-config.js` และ `app.js` แบบ script ปกติ
+- `Dashboard/scripts/app.js:184-199` ใช้ `fetch(..., cache: 'no-store')` ทำให้ browser cache ไม่ช่วย endpoint API
+- `Dashboard/scripts/app.js:8215-8253` โหลด trips แบบ pagination จนครบทุกหน้า แล้วค่อย cache ใน memory
+- `Dashboard/scripts/app.js:8390-8442` startup path โหลด summary, trips, oil, align data แล้วจึง init nav และ show page
+- `Dashboard/scripts/app.js:855-870` static fallback ยังโหลด `data/data.js`, `data/fraud_data.js`, `data/oil-price-data.js`
+
+### กลไกที่ทำให้ระบบไม่ลื่น
+
+หน้าแรกไม่ได้ต้องใช้ทุก dependency พร้อมกัน แต่ตอนนี้ browser ต้องโหลดและ parse หลายส่วนที่ใช้เฉพาะบาง action เช่น export XLSX หรือ date picker หน้า compare. เมื่อรวมกับ `app.js` และ CSS ขนาดใหญ่ ทำให้ main thread ใช้เวลากับ parse/execute/style calculation ก่อนผู้ใช้เริ่มโต้ตอบได้
+
+ฝั่ง data path โหลด trips ทั้งหมดตั้งแต่ init เพื่อความเสถียรของหน้า compare ตาม checklist เดิม แต่ต้นทุนคือ startup ต้องรอข้อมูลก้อนใหญ่ก่อน. ถ้า API ช้าหรือ timeout ระบบ fallback ไป static data ขนาด 2.88 MB ซึ่งยิ่งเพิ่ม parse cost
+
+### แนวทาง optimize แบบไม่กระทบ logic
+
+- Lazy-load `xlsx-js-style` เฉพาะตอนกด export โดยคง function export เดิมไว้ และแสดง loading/disable button ระหว่างโหลด library
+- Lazy-load `flatpickr` เฉพาะเมื่อเปิดหน้า Daily Compare หรือเมื่อ element date range ถูก mount
+- แยก bundle ตามหน้าในระยะถัดไป เช่น master, daily compare, oil price โดยให้ shared helpers อยู่กลาง แต่ยังคง function output เดิม
+- เปลี่ยน startup เป็น summary-first แล้ว background-load trips โดยต้องมี guard ว่าหน้า compare จะรอ `ensureTripsReady()` ก่อน render
+- เก็บ API payload ใน `sessionStorage` หรือ `IndexedDB` ด้วย cache key จาก `meta/version/lastUpdated` เพื่อหลีกเลี่ยงโหลด trips ซ้ำทุก refresh
+- หลีกเลี่ยงการเปลี่ยน schema ของ trips, summary, oil ในเฟสนี้ ให้ cache เก็บ payload เดิมแบบ read-only
+
+### สิ่งที่ห้ามแก้ทันทีถ้ายังไม่มี regression guard
+
+- ห้ามตัดการโหลด trips ตอน startup แบบทันทีโดยไม่แก้ flow หน้า compare เพราะเอกสาร release checklist ระบุว่า eager-load trips เป็น stable behavior
+- ห้ามลบ static fallback เพราะยังเป็น safety net เมื่อ API ล่ม
+- ห้ามเปลี่ยน `fields` ของ trips API โดยไม่ตรวจว่า export/modal/filter ยังใช้ field ครบ
+
+## สาเหตุหลัก 2: Daily Compare มี repeated computation และ DOM rebuild หนัก
+
+### อาการที่คาดว่าจะเห็น
+
+- เข้า/สลับหน้า Daily Compare แล้วกระตุก
+- กด filter/date แล้วหน่วง
+- เปิด route card หรือ modal ที่มีหลายแถวแล้ว scroll ไม่ลื่น
+- CPU สูงจาก loop ซ้ำและ string HTML ขนาดใหญ่
+
+### หลักฐานจากโค้ด
+
+- `Dashboard/scripts/app.js:3898-3909` `buildDailyCompare()` ยัง `.map(canonicalizeTripRow)` ทุกครั้งที่ build หน้า แม้ init path canonicalize แล้วที่ `Dashboard/scripts/app.js:8267-8271`
+- `Dashboard/scripts/app.js:4021-4051` `rangeStats()` filter rows แล้ว reduce หลายรอบ และสร้าง routeMap ใหม่ทุก run
+- `Dashboard/scripts/app.js:4061-4066` `findRefDate()` ใช้ `allDates.includes()` ใน loop ซึ่งเป็น linear lookup
+- `Dashboard/scripts/app.js:4071-4080` `getOilPriceByDate()` sort `op.prices` ทุกครั้งที่เรียก
+- `Dashboard/scripts/app.js:4622-4658` `buildMsOptions()` rebuild `innerHTML` ของ filter options ทั้ง panel
+- `Dashboard/scripts/app.js:4666-4698` `dcUpdateFilters()` filter all rows และ rebuild route/vtype options เมื่อ filter เปลี่ยน
+- `Dashboard/scripts/app.js:7213-7280` `renderSingleTable()` loop routes แล้ว filter `stA.rows` ต่อ route ทำให้เกิดรูปแบบ O(routes * rows)
+- `Dashboard/scripts/app.js:7241-7243` filter rows ต่อ route ด้วย `routeIdentityKey()` ซ้ำ
+- `Dashboard/scripts/app.js:7300-7358` สร้าง HTML row-by-row สำหรับ ref และ current rows
+- `Dashboard/scripts/app.js:7380-7429` render card และ table HTML ทั้งหมดลง string ก่อน `innerHTML`
+- `Dashboard/scripts/app.js:7106-7112` และ `Dashboard/scripts/app.js:7161-7164` ใช้ `findIndex()` เพื่อจับคู่ driver ซึ่งกลายเป็น O(n^2) ในกลุ่มที่มี trips มาก
+- `Dashboard/scripts/app.js:7204-7208` มี memo เทียบ HTML แล้ว แต่ถ้า state เปลี่ยนจริงยัง replace `innerHTML` ทั้ง `dc_result`
+- `Dashboard/scripts/app.js:8115-8150` `showPage()` rebuild content ทั้งหน้าเมื่อเปลี่ยนหน้า
+
+### กลไกที่ทำให้ระบบไม่ลื่น
+
+หน้า Daily Compare ทำงานหลายชั้นใน main thread: filter data, group route, match trips, calculate statuses, generate HTML string, replace DOM, แล้ว browser ต้อง style/layout/paint ใหม่. จุดที่หนักที่สุดไม่ใช่สูตรคำนวณเดี่ยว ๆ แต่เป็นการทำซ้ำบนข้อมูลชุดเดียวกันหลายรอบ
+
+ตัวอย่างที่ชัดคือ `renderSingleTable()` มี `stA.routes.map(...)` แล้วข้างใน filter `stA.rows` ทุก route. ถ้ามี 300 routes และ 2,000 rows จะตรวจ row ประมาณ 600,000 ครั้งต่อ render ก่อนรวมงาน sort/status/HTML. อีกจุดคือ `getOilPriceByDate()` sort oil price ทุก call ทั้งที่ราคาน้ำมันเป็นข้อมูล reference ที่ควร sort/index ครั้งเดียว
+
+### แนวทาง optimize แบบไม่กระทบ logic
+
+- สร้าง derived index หลัง `validFd` พร้อมแล้ว เช่น:
+- `rowsByDate`
+- `rowsByDateRange` แบบ cache ตาม range key
+- `rowsByRouteKey`
+- `rowsByRouteKeyAndVtype`
+- `rowsByDriverInRoute`
+- `allDatesSet` สำหรับ lookup O(1)
+- สร้าง `oilPriceIndex` หรือ sorted oil list ครั้งเดียว แล้วให้ `getOilPriceByDate()` ใช้ binary search/cache แทน sort ทุก call
+- แยก `rangeStats()` เป็นสองชั้น: ชั้นแรก filter rows ตาม range/filter key, ชั้นสอง aggregate route summary จาก rows ที่ได้
+- Memoize `rangeStats(a1,a2,custF,routeF,vtypeF)` ด้วย stable key แล้ว clear เมื่อ trips source เปลี่ยน
+- เปลี่ยน driver matching จาก `findIndex()` เป็น bucket map ตาม normalized driver เช่น `Map<driver, queue>`
+- ใน `renderSingleTable()` ใช้ `rowsByRoute` จาก `stA.rows` ครั้งเดียว แทน filter rows ซ้ำต่อ route
+- ใช้ event delegation แทน inline `onclick`/`onchange` ใน HTML ที่ rebuild บ่อย เพื่อไม่สร้าง handler string ซ้ำ
+- สำหรับ card/table ที่มีหลายแถวมาก ให้ใช้ preview limit + modal full list หรือ virtualization เฉพาะ DOM display โดยห้ามตัดข้อมูลที่ใช้ export/modal
+- ใช้ `content-visibility: auto` กับ card section ที่อยู่ไกล viewport ถ้าทดสอบแล้วไม่กระทบ sticky/header/table layout
+
+### สิ่งที่ห้ามแก้ทันทีถ้ายังไม่มี regression guard
+
+- ห้ามเปลี่ยน logic ของ `dcQaTripStatuses()`, `dcQaCompareStatuses()`, `dcQaPairNotes()` หรือ label ความผิดปกติ
+- ห้ามเปลี่ยน route identity key โดยไม่เทียบผล route grouping เดิม
+- ห้าม limit แถวจริงใน export หรือ modal ถ้าใช้ virtualization ต้องเป็นแค่ presentation layer
+- ห้ามเปลี่ยนลำดับ fallback ref day 3 วันย้อนหลัง เพราะมีผลกับการตีความหน้า single mode
+
+## สาเหตุหลัก 3: Backend/API cache ยังทำงานหนักต่อ request และยังไม่มี performance contract ชัด
+
+### อาการที่คาดว่าจะเห็น
+
+- API `trips` หรือ `summary` ช้าขึ้นเมื่อ TRIPS_CACHE โต
+- Refresh หน้าหรือเปิดหลาย client พร้อมกันทำให้ Apps Script ต้อง parse JSON จาก Sheet ซ้ำ
+- Response time แปรผันตามขนาด cache และจำนวน request
+- Frontend ต้องมี timeout/retry/fallback เพราะ API latency ยังไม่นิ่ง
+
+### หลักฐานจากโค้ด
+
+- `Dashboard/API/Code.gs:2412-2490` `doGet()` dispatch ทุก action ใน Apps Script runtime
+- `Dashboard/API/Code.gs:2514-2522` `getSummaryCache()` อ่าน JSON string จาก Sheet แล้ว `JSON.parse()` ต่อ request
+- `Dashboard/API/Code.gs:2525-2534` `getTripsArrayFromCache_()` อ่าน `TRIPS_CACHE` แล้ว `JSON.parse()` ต่อ request
+- `Dashboard/API/Code.gs:2537-2545` `filterTrips_()` filter array ต่อ request
+- `Dashboard/API/Code.gs:2547-2561` `projectTripFields_()` map field projection ต่อ request
+- `Dashboard/API/Code.gs:2564-2598` `getTripsCache()` filter, slice, apply route identity, project fields แล้ว return payload
+- `Dashboard/API/Code.gs:2601-2624` `getCompareData()` parse trips แล้ว filter A/B และ calculate summary ต่อ request
+- `Dashboard/API/config.gs:139-148` `jsonOut()` ตั้ง CORS แต่ยังไม่มี explicit cache headers/version headers
+- `Dashboard/scripts/app.js:188` frontend ใช้ `cache: 'no-store'` ทำให้ทุก reload ต้องยิง API ใหม่
+
+### กลไกที่ทำให้ระบบไม่ลื่น
+
+แม้มี `SUMMARY_CACHE` และ `TRIPS_CACHE` ใน Google Sheets แล้ว แต่ endpoint ยังต้องอ่าน string ขนาดใหญ่จาก Sheet และ parse เป็น object ทุก request. การ parse JSON ก้อนใหญ่ใน Apps Script เป็นงาน CPU/memory ที่แพง และมี latency สูงกว่า serving cache จาก memory/CDN/browser
+
+Frontend เองก็ไม่ใช้ browser cache เพราะกำหนด `no-store`. ดังนั้นการ refresh หน้าหรือเปิดซ้ำจะทำงานเหมือน cold fetch เกือบทุกครั้ง เว้นแต่ memory cache ใน session เดิมยังอยู่
+
+### แนวทาง optimize แบบไม่กระทบ logic
+
+- เพิ่ม `cacheVersion` หรือ `lastBuiltAt` ใน API `meta/summary/trips` เพื่อให้ frontend รู้ว่า payload เปลี่ยนหรือยัง
+- ใช้ `CacheService` สำหรับ JSON string ของ `SUMMARY_CACHE`, `TRIPS_CACHE`, `oil` ใน Apps Script โดย cache เป็น string ไม่ใช่ object เพื่อเลี่ยง shape drift
+- เพิ่ม endpoint metadata เบา ๆ เช่น `?action=meta` ให้ระบุจำนวน trips, last build, cache version, source status
+- ให้ frontend ใช้ `sessionStorage`/`IndexedDB` เก็บ trips ตาม `cacheVersion` แล้ว revalidate เบา ๆ ผ่าน `meta`
+- Precompute route identity ใน `TRIPS_CACHE` ให้ครบตั้งแต่ `rebuildCaches()` เพื่อลด `ensureTripRouteIdentity_()` ตอน request
+- ถ้าต้อง optimize API trips เพิ่ม ให้ทำ server-side pagination ต่อไป แต่ frontend ไม่ควรโหลดทุก page ถ้า current page ยังไม่ต้องใช้ทั้งหมด
+- เพิ่ม timing telemetry ใน response หรือ console เช่น `summaryMs`, `tripsMs`, `renderMs`, `compareMs` เพื่อวัดก่อน/หลัง
+
+### สิ่งที่ห้ามแก้ทันทีถ้ายังไม่มี regression guard
+
+- ห้ามเปลี่ยน `TRIPS_CACHE` schema โดยไม่ version และไม่รองรับ frontend เก่า
+- ห้ามเปลี่ยนสูตร `calculateSummary()` หรือ anomaly calculation เพื่อความเร็ว
+- ห้าม cache response โดยไม่มี invalidation จาก `dailyBatchJob` เพราะข้อมูลรายวันอาจ stale
+- ห้ามเปิด domain restriction หรือ CORS change ระหว่าง optimize performance ถ้ายังไม่ได้ทดสอบ deploy URL
+
+## จุดบอดเพิ่มเติมที่ควรจัดการ
+
+1. เอกสาร optimization เดิมมีข้อเสนอหลายจุด แต่บางข้อถูก implement ไปแล้วบางส่วน เช่น `loadLegacyTripsData()` return `FRAUD_DATA` ตรง และ modal builder ถูก lazy แล้ว จึงไม่ควร copy patch เดิมซ้ำโดยไม่ trace โค้ดปัจจุบัน
+
+2. `Dashboard/docs/optimizations.md` และ `Dashboard/docs/qa_status_spec.md` แสดงผลใน terminal เป็น mojibake บางส่วน น่าจะเป็น encoding/display mismatch. ไม่ได้แปลว่าไฟล์เสียแน่นอน แต่ควรตรวจ encoding ก่อนแก้เอกสารภาษาไทย
+
+3. CSS มี `backdrop-filter`, box-shadow, animation และ transition จำนวนมาก โดยเฉพาะ modal/table/card section. สิ่งนี้ทำให้ UI ดูดี แต่ต้องควบคุมเฉพาะช่วงที่จำเป็น ไม่ควร animate ทุก card ที่มี table ยาว
+
+4. มี inline style/inline event จำนวนมากใน HTML string. ระยะสั้นยังใช้ได้ แต่ระยะยาวทำให้ cache/reuse DOM ยาก และเสี่ยง regression เมื่อ refactor
+
+5. ไม่มี performance budget ชัด เช่น target startup, compare render, export generation, API response. ถ้าไม่มี budget จะไม่รู้ว่า optimize สำเร็จหรือแค่ย้าย bottleneck
+
+## แผน optimize ที่ปลอดภัย
+
+### Phase 0: วัดผลก่อนแก้
+
+ทำก่อนทุกอย่าง เพราะไม่กระทบ logic:
+
+- เพิ่ม checklist วัด `DOMContentLoaded`, `init total`, `loadSummarySource`, `loadTripsSource`, `alignDashboardData`, `showPage(0)`, `showPage(1)`, `dcRunCompare`, `renderAll`
+- เก็บตัวเลขก่อน/หลังทุก PR
+- ใช้ dataset เดิมและ filter/date เดิมเพื่อเทียบผล
+- เก็บจำนวน rows/routes/cards ที่ render เพื่ออธิบาย performance
+
+Acceptance:
+
+- มี baseline ตัวเลขอย่างน้อย 3 run
+- `node --check Dashboard\scripts\app.js` ผ่าน
+- export XLSX ยังทำงาน
+- ค่า KPI และจำนวน anomaly เท่าเดิม
+
+### Phase 1: ลดของที่โหลดก่อนจำเป็น
+
+ความเสี่ยงต่ำถ้าทำเป็น lazy load library:
+
+- Lazy-load XLSX เมื่อกด export
+- Lazy-load flatpickr เมื่อเปิดหน้า Daily Compare
+- คง fallback static data ไว้
+- คง `ensureTripsReady()` ก่อนใช้ compare
+- ไม่เปลี่ยน data schema
+
+Acceptance:
+
+- หน้า master เปิดได้โดยไม่ต้องโหลด XLSX
+- กด export ครั้งแรกโหลด library แล้ว export สำเร็จ
+- เปิด Daily Compare แล้ว date picker ใช้ได้
+
+### Phase 2: Index และ memoization ใน Daily Compare
+
+ความเสี่ยงกลาง ต้องมี regression test/manual compare:
+
+- สร้าง route/date/driver indexes จาก `validFd`
+- Memoize `rangeStats()`
+- Cache `oilPriceByDate`
+- เปลี่ยน driver matching เป็น bucket map
+- ลด `innerHTML` rebuild ของ filter panel เมื่อ option set ไม่เปลี่ยน
+
+Acceptance:
+
+- จำนวน routes, trips, anomaly, unmatched A/B เท่าเดิมกับ baseline
+- ลำดับ display หลักไม่เปลี่ยน ยกเว้นกำหนดไว้ชัด
+- Modal และ export ใช้ข้อมูลครบเหมือนเดิม
+
+### Phase 3: API/browser cache
+
+ความเสี่ยงกลางถึงสูง เพราะเกี่ยวกับ stale data:
+
+- เพิ่ม `cacheVersion/lastBuiltAt`
+- Cache payload ใน browser ตาม version
+- ใช้ Apps Script `CacheService` สำหรับ JSON string
+- Invalidate cache หลัง `dailyBatchJob`
+
+Acceptance:
+
+- หลัง daily batch ใหม่ frontend เห็นข้อมูล version ใหม่
+- ถ้า API ล่ม fallback ยังทำงาน
+- ไม่มีข้อมูลเก่าค้างหลัง refresh เมื่อ version เปลี่ยน
+
+### Phase 4: UI/UX polish ที่ไม่แตะข้อมูล
+
+ทำหลัง performance path หลักนิ่ง:
+
+- ลด animation/shadow ใน table/card จำนวนมาก
+- เพิ่ม `prefers-reduced-motion`
+- ใช้ `content-visibility` เฉพาะ section ที่ทดสอบแล้วไม่พัง
+- ทำ modal/table ให้ scroll นิ่งขึ้น โดยไม่ตัดข้อมูล
+- แยก CSS critical/non-critical ในระยะยาว
+
+## Guardrails เพื่อไม่ให้ระบบเสีย
+
+- ห้ามเปลี่ยนสูตรคำนวณ margin, pct, oil ratio, anomaly status
+- ห้ามเปลี่ยน route identity โดยไม่มี snapshot compare
+- ห้ามเปลี่ยน column/export labels โดยไม่ตรวจ checklist
+- ห้ามลบ fallback data ใน PR performance แรก
+- ห้ามรวม refactor ใหญ่กับ visual polish ใน PR เดียว
+- ทุก optimization ต้องมี before/after metric และ rollback ง่าย
+
+## ลำดับความสำคัญ
+
+1. ทำ measurement baseline ก่อน เพราะตอนนี้ยังไม่มีตัวเลขยืนยัน bottleneck
+2. Lazy-load XLSX และ flatpickr เพราะลด startup cost โดยแทบไม่แตะ data logic
+3. ทำ index/memo ใน Daily Compare เพราะเป็น hot path ที่มี repeated computation ชัดที่สุด
+4. เพิ่ม cache version + browser cache เพื่อแก้ reload/API latency
+5. ค่อย polish CSS animation/paint หลัง loop และ payload ดีขึ้นแล้ว
+
+## สรุปสั้น
+
+ระบบไม่ได้ช้าเพราะสูตรคำนวณใดสูตรหนึ่ง แต่ช้าจาก 3 สาเหตุรวมกัน: โหลดของหนักตั้งแต่เริ่ม, หน้า Daily Compare คำนวณและ rebuild DOM ซ้ำหลายรอบ, และ API/cache ยัง parse/filter payload ใหญ่ต่อ request. แนวทางที่ปลอดภัยที่สุดคือวัดผลก่อน แล้วลดงานที่ไม่จำเป็นโดยไม่เปลี่ยน shape ของข้อมูลหรือ business logic จากนั้นค่อยทำ index/cache พร้อม regression guard.

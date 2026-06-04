@@ -5490,15 +5490,6 @@ body.sidebar-hover-transitioning .content.page-daily .dc-normal-summary {
   box-shadow: 0 6px 22px rgba(0, 0, 0, .28), 0 1px 4px rgba(0, 0, 0, .16);
 }
 
-.dc-qa-clickable {
-  cursor: pointer;
-  transition: transform .18s ease, box-shadow .18s ease;
-}
-
-.dc-qa-clickable:hover {
-  box-shadow: 0 14px 34px rgba(0, 0, 0, .24);
-}
-
 .dc-qa-case-head {
   display: flex;
   align-items: center;
@@ -8677,16 +8668,6 @@ body.sidebar-hover-transitioning .content.page-daily .dc-normal-summary {
   background: #1e2235 !important;
   border-color: rgba(58, 63, 85, 0.9) !important;
   box-shadow: 0 32px 96px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04) !important;
-}
-
-/* Route detail modal (dc_route_capture) */
-#dc_route_capture {
-  background: #1e2235 !important;
-  border-color: rgba(58, 63, 85, 0.9) !important;
-}
-#dc_route_capture > div:first-child {
-  background: rgba(34, 38, 58, 0.95) !important;
-  border-bottom-color: rgba(58, 63, 85, 0.8) !important;
 }
 
 /* Anomaly modal (dc_anom_capture) */

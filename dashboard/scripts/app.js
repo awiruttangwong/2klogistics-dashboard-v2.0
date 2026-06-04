@@ -4067,7 +4067,7 @@ function buildDailyCompare(data) {
     return null;
   }
 
-  // ── dcOpenRouteModal — แสดง Modal รายเที่ยวในเส้นทาง ────────────────
+  // ── Oil price helper ───────────────────────────────────────────────
   function getOilPriceByDate(dateStr) {
     const op = (typeof OIL_PRICE_DATA !== 'undefined') ? OIL_PRICE_DATA : null;
     if (!op || !op.prices || !dateStr) return null;
@@ -4079,12 +4079,6 @@ function buildDailyCompare(data) {
     }
     return match ? match.price : null;
   }
-
-  // CLEANUP: Legacy dcOpenRouteModal removed.
-  // Active implementation lives inside the "ACTIVE QA RENDER OVERRIDES" block
-  // near the bottom of buildDailyCompare() and uses dcQaTripStatuses() with
-  // the new per-row peer logic (no avg, no * 1.05).
-  window.dcOpenRouteModal = function () { /* overridden by ACTIVE QA RENDER OVERRIDES */ };
 
   // defaults
   const d1def = defaultAnalysisDate;
@@ -5386,7 +5380,7 @@ function buildDailyCompare(data) {
       }
     };
 
-    window.dcExportXls = function () {
+    window.dcExportXls = async function () {
       if (typeof XLSX === 'undefined') { alert('ไม่พบไลบรารี XLSX กรุณารีเฟรชหน้า'); return; }
       if (!_stA) { alert('ยังไม่มีข้อมูล กรุณากด "ตรวจสอบ" ก่อน Export'); return; }
       if (!_isSingleMode && !_stB) {
@@ -5432,6 +5426,124 @@ function buildDailyCompare(data) {
         const v = Math.round(Number(n));
         const isNeg = v < 0;
         return (isNeg ? '-' : '') + addCommas(String(Math.abs(v)));
+      }
+      function xlsxQuoteSheetName(name) {
+        return "'" + String(name || '').replace(/'/g, "''") + "'";
+      }
+      function xlsxAbsCell(rowIdx, colIdx) {
+        return '$' + XLSX.utils.encode_col(colIdx) + '$' + (rowIdx + 1);
+      }
+      function xlsxUsedRangeRef(sheetName, ws) {
+        if (!ws || !ws['!ref']) return null;
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        return xlsxQuoteSheetName(sheetName) + '!' + xlsxAbsCell(range.s.r, range.s.c) + ':' + xlsxAbsCell(range.e.r, range.e.c);
+      }
+      function xlsxTitleRowsRef(sheetName, printTitlesRow) {
+        const match = String(printTitlesRow || '1:3').match(/^\s*(\d+)\s*:\s*(\d+)\s*$/);
+        if (!match) return null;
+        return xlsxQuoteSheetName(sheetName) + '!$' + match[1] + ':$' + match[2];
+      }
+      function applySheetPrintLayout(ws) {
+        if (!ws) return;
+        ws['!margins'] = { left: 0.25, right: 0.25, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
+        ws['!pageSetup'] = {
+          paperSize: 9,
+          orientation: 'landscape',
+          fitToPage: true,
+          fitToWidth: 1,
+          fitToHeight: 0
+        };
+      }
+      function patchWorksheetPrintXml(xml, opts = {}) {
+        if (!xml) return xml;
+        const paperSize = opts.paperSize || 9;
+        const orientation = opts.orientation || 'landscape';
+        const fitToWidth = opts.fitToWidth ?? 1;
+        const fitToHeight = opts.fitToHeight ?? 0;
+        const pageSetupXml = `<pageSetup paperSize="${paperSize}" orientation="${orientation}" fitToWidth="${fitToWidth}" fitToHeight="${fitToHeight}"/>`;
+        const fitPropXml = '<pageSetUpPr fitToPage="1"/>';
+        let out = xml;
+
+        if (/<sheetPr\b[^>]*\/>/.test(out)) {
+          out = out.replace(/<sheetPr\b([^>]*)\/>/, `<sheetPr$1>${fitPropXml}</sheetPr>`);
+        } else if (/<sheetPr\b[^>]*>/.test(out)) {
+          out = /<pageSetUpPr\b/.test(out)
+            ? out.replace(/<pageSetUpPr\b[^>]*\/>/, fitPropXml)
+            : out.replace(/<\/sheetPr>/, `${fitPropXml}</sheetPr>`);
+        } else {
+          out = out.replace(/(<worksheet\b[^>]*>)/, match => `${match}<sheetPr>${fitPropXml}</sheetPr>`);
+        }
+
+        if (/<pageSetup\b[^>]*\/>/.test(out)) {
+          out = out.replace(/<pageSetup\b[^>]*\/>/, pageSetupXml);
+        } else if (/<pageMargins\b[^>]*\/>/.test(out)) {
+          out = out.replace(/(<pageMargins\b[^>]*\/>)/, match => `${match}${pageSetupXml}`);
+        } else {
+          out = out.replace(/<\/worksheet>/, `${pageSetupXml}</worksheet>`);
+        }
+        return out;
+      }
+      function downloadBlob(blob, fileName) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+      }
+      function applyWorkbookPrintSettings(wb, sheetPrintOptions = {}) {
+        if (!wb || !Array.isArray(wb.SheetNames)) return;
+        if (!wb.Workbook) wb.Workbook = {};
+        if (!Array.isArray(wb.Workbook.Names)) wb.Workbook.Names = [];
+
+        const configuredSheets = new Set();
+        const printNames = [];
+        wb.SheetNames.forEach((sheetName, idx) => {
+          const ws = wb.Sheets?.[sheetName];
+          if (!ws) return;
+          const opts = sheetPrintOptions[sheetName] || {};
+          applySheetPrintLayout(ws);
+          configuredSheets.add(idx);
+
+          const titlesRef = xlsxTitleRowsRef(sheetName, opts.printTitlesRow || '1:3');
+          const areaRef = xlsxUsedRangeRef(sheetName, ws);
+          if (titlesRef) printNames.push({ Name: '_xlnm.Print_Titles', Sheet: idx, Ref: titlesRef });
+          if (areaRef) printNames.push({ Name: '_xlnm.Print_Area', Sheet: idx, Ref: areaRef });
+        });
+
+        wb.Workbook.Names = wb.Workbook.Names.filter(name => {
+          if (!name || !configuredSheets.has(name.Sheet)) return true;
+          if (name.Name !== '_xlnm.Print_Titles' && name.Name !== '_xlnm.Print_Area') return true;
+          return false;
+        });
+        wb.Workbook.Names.push(...printNames);
+      }
+      async function writeWorkbookWithPrintSettings(wb, fileName, sheetPrintOptions = {}) {
+        applyWorkbookPrintSettings(wb, sheetPrintOptions);
+        if (typeof JSZip === 'undefined') {
+          XLSX.writeFile(wb, fileName, { bookType: 'xlsx', cellStyles: true });
+          alert('ส่งออกสำเร็จ แต่ไม่พบ JSZip จึงไม่ได้ฝังค่า Page Setup สำหรับการพิมพ์');
+          return;
+        }
+
+        const workbookData = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
+        const zip = await JSZip.loadAsync(workbookData);
+        await Promise.all((wb.SheetNames || []).map(async (sheetName, idx) => {
+          const entryName = `xl/worksheets/sheet${idx + 1}.xml`;
+          const entry = zip.file(entryName);
+          if (!entry) return;
+          const xml = await entry.async('string');
+          const opts = sheetPrintOptions[sheetName] || {};
+          zip.file(entryName, patchWorksheetPrintXml(xml, opts));
+        }));
+
+        const blob = await zip.generateAsync({
+          type: 'blob',
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+        downloadBlob(blob, fileName);
       }
       function filterSummaryText() {
         return 'ลูกค้า: ' + (custF.length ? custF.join(', ') : 'ทั้งหมด') +
@@ -6744,9 +6856,26 @@ function buildDailyCompare(data) {
         });
       }
 
+      const printSettingsBySheet = {
+        'สรุปผลดำเนินงาน': { printTitlesRow: '1:3' },
+        'รายเส้นทางที่ถูกเปรียบเทียบ': { printTitlesRow: '1:6' },
+        'ไม่ถูกเปรียบเทียบช่วงแรก': { printTitlesRow: '1:6' },
+        'ไม่ถูกเปรียบเทียบช่วงหลัง': { printTitlesRow: '1:6' },
+        'รายเส้นทางที่เปรียบเทียบ': { printTitlesRow: '1:3' },
+        'ขาดทุน': { printTitlesRow: '1:3' },
+        'สำรองน้ำมัน > 50%': { printTitlesRow: '1:3' },
+        'ราคาจ่ายผิดปกติ': { printTitlesRow: '1:3' },
+        'ราคารับผิดปกติ': { printTitlesRow: '1:3' }
+      };
+
       const safeFilePart = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_');
       const fileName = 'วิเคราะห์ผลการดำเนินงาน_' + safeFilePart(periodALabel) + (_isSingleMode ? '' : '_vs_' + safeFilePart(periodBLabel)) + '_' + new Date().toISOString().slice(0, 10) + '.xlsx';
-      XLSX.writeFile(wb, fileName, { bookType: 'xlsx', cellStyles: true });
+      try {
+        await writeWorkbookWithPrintSettings(wb, fileName, printSettingsBySheet);
+      } catch (err) {
+        console.error(err);
+        alert(err?.message || 'Export XLSX ไม่สำเร็จ');
+      }
     };
 
     // ACTIVE QA RENDER OVERRIDES (Daily Compare):
@@ -6756,7 +6885,7 @@ function buildDailyCompare(data) {
     // - unmatched A/B trip review
     // They intentionally override the legacy functions above before dcRunCompare()
     // runs. Keep export capture ids stable:
-    // dc_route_capture, dc_anom_capture, dc_unm_capture.
+    // dc_anom_capture, dc_unm_capture.
     //
     // Cleanup plan after the QA layout is finalized:
     // 1. Keep this block and shared helpers it still calls, such as rangeStats(),
@@ -7377,7 +7506,7 @@ function buildDailyCompare(data) {
           ? buildZigzagRowsHtml(previewRows, refTripsForCard)
           : previewRows.map(row => dcQaSingleTripRow(row.ra, row.statuses, false)).join('');
 
-        return `<article class="dc-qa-case dc-qa-clickable dc-status-card dc-status-card-normal" data-severity="${item.severity}" data-status-keys="${esc(statuses.join(','))}" data-anom-count="${anomCount}" data-trip-count="${rows.length}" data-recv="${route.recv || 0}" data-pay="${route.pay || 0}" data-oil="${route.oil || 0}" data-margin="${route.margin || 0}" style="${displayStyle}" onclick="dcOpenRouteModal('${stA.dateStart}','${stA.dateEnd}','${esc(routeIdentityKey(route))}','${esc(route.customer)}','${esc(route.vtype)}')">
+        return `<article class="dc-qa-case dc-status-card dc-status-card-normal" data-severity="${item.severity}" data-status-keys="${esc(statuses.join(','))}" data-anom-count="${anomCount}" data-trip-count="${rows.length}" data-recv="${route.recv || 0}" data-pay="${route.pay || 0}" data-oil="${route.oil || 0}" data-margin="${route.margin || 0}" style="${displayStyle}">
           <header class="dc-qa-case-head">
             <div class="dc-qa-title-block">
               <div class="dc-qa-identity"><span class="dc-qa-customer">${esc(route.customer || '-')}</span><span class="dc-qa-vtype">${esc(route.vtype || '-')}</span></div>
@@ -7535,24 +7664,6 @@ function buildDailyCompare(data) {
         ${cardsHtml}
       </section>`;
     }
-
-    window.dcOpenRouteModal = function (dateStart, dateEnd, routeStr, specificCust, specificVtype) {
-      const rows = validFd.filter(r =>
-        r.date >= dateStart && r.date <= dateEnd && routeIdentityKey(r) === routeStr &&
-        (!specificCust || r.customer === specificCust) &&
-        (!specificVtype || r.vtype === specificVtype)
-      ).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
-      if (!rows.length) return;
-      const modalRows = rows.map(ra => ({ ra, statuses: dcQaTripStatuses(ra, rows) }))
-        .sort((a, b) => {
-          const rankA = dcQaStatusRank(a.statuses);
-          const rankB = dcQaStatusRank(b.statuses);
-          if (rankB !== rankA) return rankB - rankA;
-          return String(a.ra.date || '').localeCompare(String(b.ra.date || ''));
-        });
-      const body = `<div class="dc-qa-table-wrap is-modal"><table class="dc-qa-table"><thead><tr><th>วันที่</th><th>พขร.</th><th>ประเภทรถ</th><th>ทะเบียน</th><th class="is-right">ราคาน้ำมัน</th><th class="is-right">สำรองน้ำมัน</th><th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">ส่วนต่าง</th><th>ความผิดปกติ</th></tr></thead><tbody>${modalRows.map(row => dcQaSingleTripRow(row.ra, row.statuses, true)).join('')}</tbody></table></div>`;
-      dcQaModalShell('dc_route_modal', 'dc_route_capture', esc(routeDisplay(rows[0] || { route: routeStr })), `${esc(specificCust || '-')} · ${esc(specificVtype || '-')} · ${esc(fmtRange(dateStart, dateEnd))}`, encodeURIComponent(`route_${routeStr || 'route'}`), body);
-    };
 
     window.dcOpenAnomalyModal = function (idx) {
       const card = window._anomalyCardsData?.[idx];

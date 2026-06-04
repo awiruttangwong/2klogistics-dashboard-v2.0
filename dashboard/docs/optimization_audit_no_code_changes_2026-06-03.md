@@ -5,7 +5,7 @@
 
 ## สถานะสำคัญ
 
-เอกสารนี้เป็นรายงานตรวจสอบเท่านั้น ยังไม่แก้ไฟล์ runtime, config, data, API หรือสูตรคำนวณใด ๆ
+เอกสารนี้เริ่มต้นเป็นรายงานตรวจสอบเท่านั้น โดยไม่ได้แก้ไฟล์ runtime, config, data, API หรือสูตรคำนวณใด ๆ ในวันที่จัดทำรายงานเดิม ส่วนสถานะด้านล่างใช้ติดตามงานที่นำไปทำต่อหลังรายงานนี้
 
 Baseline ที่ตรวจแล้ว:
 
@@ -17,6 +17,65 @@ Baseline ที่ตรวจแล้ว:
 - `Dashboard/API/Code.gs` ประมาณ 126 KB, 3,593 บรรทัด
 - static fallback `Dashboard/data/fraud_data.js` ประมาณ 2.88 MB
 - static fallback `Dashboard/data/data.js` ประมาณ 625 KB
+
+## สถานะการดำเนินงานล่าสุด (2026-06-04)
+
+### ทำแล้ว
+
+- [x] แก้ export XLSX ของมุมมองเปรียบเทียบเฉพาะส่วน compare: เพิ่มชีท `ขาดทุน`, `สำรองน้ำมัน > 50%`, `ราคาจ่ายผิดปกติ`, `ราคารับผิดปกติ` โดยยังใช้รูปแบบคอลัมน์ของมุมมองเปรียบเทียบเอง
+- [x] ปรับ logic tag/status ของมุมมองเปรียบเทียบให้ reuse logic เดียวกับมุมมองปกติผ่าน `dcQaTripStatuses()` เพื่อลดโอกาสผลลัพธ์เพี้ยนระหว่าง 2 มุมมอง
+- [x] ปรับกรอบข้อความ, alignment คอลัมน์ M, สีคอลัมน์ L, สีเทาอ่อนของค่าไม่เปลี่ยนแปลงใน H-I-J-K-L และความกว้างคอลัมน์ M เฉพาะ XLSX มุมมองเปรียบเทียบ
+- [x] เพิ่ม timeout/retry/fallback guard สำหรับ summary API และข้อความ fallback ที่อ่านง่ายขึ้น เช่น `summary API timeout หลังรอ ... วินาที`
+- [x] เพิ่ม performance telemetry แบบไม่เปลี่ยน business logic ใน `Dashboard/scripts/app.js`: เก็บเวลาโหลด `summary/trips/oil`, `alignDashboardData`, `showPage`, และ `dcRunCompare` ใน `window.DASHBOARD_PERF_MARKS`
+- [x] เพิ่ม cache ให้ `getOilPriceByDate()` ใน Daily Compare เพื่อลด repeated sort ของ `OIL_PRICE_DATA.prices` โดยยังใช้ sort key และเงื่อนไขเลือกราคาเดิม
+- [x] Phase 0 baseline 3 รอบด้วย Playwright/Chromium ผ่านแล้ว: static trips 7,919 rows, compare export 6 sheets, XLSX 327,844 bytes, ไม่มี page/console error
+- [x] Phase 1 lazy-load `xlsx-js-style` สำเร็จ: หน้า startup ไม่โหลด XLSX, export โหลด XLSX 1 ครั้งเมื่อกดใช้งาน และ compare workbook อ่านกลับได้ 6 sheets ครบ
+- [x] Phase 1 lazy-load `flatpickr` สำเร็จ: หน้า startup ไม่โหลด flatpickr, เปิด Daily Compare แล้วโหลด main/locale/CSS ตามต้องการ, date inputs ถูกผูก `_flatpickr`, และ export compare ยังผ่านครบ
+
+### ยังไม่ทำในรอบนี้
+
+- [ ] Summary-first แล้ว background-load trips: ยังไม่ทำ เพราะอาจกระทบ stable behavior ที่หน้า compare ต้องมี trips พร้อมก่อน render
+- [ ] Browser/API payload cache ด้วย version key: ยังไม่ทำ เพราะต้องยืนยัน cache invalidation กับ batch/API version ก่อน เพื่อกันข้อมูลเก่าค้าง
+- [ ] CSS/animation polish: ยังไม่ทำ เพราะเป็นงาน visual/perf ที่ควรทำหลังมี baseline telemetry แล้ว
+
+Guardrail ของรอบล่าสุด: ไม่เปลี่ยนสูตรคำนวณ margin, pct, oil ratio, route identity, schema ข้อมูล, fallback data, หรือ labels ของมุมมองปกติ
+
+### Baseline ล่าสุดหลังเพิ่ม telemetry (2026-06-04)
+
+ทดสอบด้วย Playwright Chromium `148.0.7778.96` ผ่าน local server, บังคับ `DASHBOARD_API_CONFIG.baseUrl = ''` เฉพาะ test เพื่อใช้ static fallback เดิม และรัน 3 รอบด้วย dataset เดิม:
+
+- `loadSummarySource`: 62.2 ms median (50.3, 62.2, 72.7)
+- `loadTripsSource`: 102.4 ms median (100.7, 102.4, 118.7), trips 7,919 rows
+- `loadOilSource`: 5.9 ms median (4.3, 5.9, 6.5)
+- `alignDashboardData`: 63.2 ms median (56.9, 63.2, 66.9)
+- `showPage(daily)`: 67.3 ms median (64.6, 67.3, 98.1)
+- `dcRunCompare`: 180.2 ms median (180.1, 180.2, 222.0), routesA 61, routesB 47
+- `dcExportXls`: 146 ms median wall time (131, 146, 172), workbook 6 sheets, 327,844 bytes
+
+Acceptance ที่ยืนยันแล้ว: `node --check Dashboard\scripts\app.js` ผ่าน, export XLSX ยังทำงาน, workbook compare มีชีท `ขาดทุน`, `สำรองน้ำมัน > 50%`, `ราคาจ่ายผิดปกติ`, `ราคารับผิดปกติ` ครบ
+
+### Phase 1 ล่าสุด: Lazy-load XLSX (2026-06-04)
+
+เปลี่ยน `Dashboard/index.html` ให้ไม่โหลด `xlsx-js-style` ตอน startup และเพิ่ม `ensureXlsxLibrary()` ใน `Dashboard/scripts/app.js` ให้ export path โหลดไลบรารีเฉพาะเมื่อใช้งาน:
+
+- startup Playwright test: `window.XLSX` ยังไม่มี และ request ไป `xlsx-js-style` = 0
+- compare export test: request ไป `xlsx-js-style` = 1, workbook 327,844 bytes
+- อ่านไฟล์ `C:\tmp\dashboard_lazy_xlsx_compare_export.xlsx` กลับด้วย `xlsx` ได้ 6 sheets ครบ
+- no page error / no console error
+- normal audit export path ถูกครอบด้วย `ensureXlsxLibrary()` ด้วย เพื่อไม่ให้ export ฝั่งอื่นพังหลังถอด script จาก startup
+
+### Phase 1 ล่าสุด: Lazy-load Flatpickr (2026-06-04)
+
+เปลี่ยน `Dashboard/index.html` ให้ไม่โหลด `flatpickr` และ theme CSS ตอน startup และเพิ่ม `ensureFlatpickrLibrary()` ใน `Dashboard/scripts/app.js` ให้หน้า Daily Compare โหลด date picker เฉพาะเมื่อ mount input ช่วงวันที่:
+
+- startup Playwright test: `window.flatpickr` ยังไม่มี, `window.XLSX` ยังไม่มี, request ไป flatpickr = 0 และ request ไป XLSX = 0
+- เปิด Daily Compare แล้วโหลด flatpickr ตามต้องการ: main script = 1, locale script = 1, CSS/theme = 2
+- input `dc_rangeA` และ `dc_rangeB` มี `_flatpickr` พร้อม `selectedDates` ค่าเริ่มต้น (`2026-04-27`, `2026-04-26`)
+- ก่อน export ยังไม่โหลด XLSX; เมื่อ export จึงโหลด XLSX = 1 และ workbook 327,844 bytes
+- อ่านไฟล์ `C:\tmp\dashboard_lazy_flatpickr_xlsx_export.xlsx` กลับด้วย `xlsx` ได้ 6 sheets ครบ: `สรุปผลดำเนินงาน`, `รายเส้นทางที่เปรียบเทียบ`, `ขาดทุน`, `สำรองน้ำมัน > 50%`, `ราคาจ่ายผิดปกติ`, `ราคารับผิดปกติ`
+- `dcRunCompare` ใน test ล่าสุดใช้เวลา 116.3 ms, routesA 61, routesB 47, tripsA 90, tripsB 54
+- no page error / no console error / no console warning
+- alert 1 ครั้งเป็น fallback เดิมเมื่อ test stub ไม่ใส่ JSZip: `ส่งออกสำเร็จ แต่ไม่พบ JSZip จึงไม่ได้ฝังค่า Page Setup สำหรับการพิมพ์`
 
 ## Skills ที่ตรวจและนำมาใช้เป็นกรอบคิด
 

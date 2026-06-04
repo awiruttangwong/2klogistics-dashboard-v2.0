@@ -14,6 +14,11 @@ const API_SUMMARY_TIMEOUT_MS = readPositiveNumber(DASHBOARD_API_CONFIG.summaryTi
 const API_SUMMARY_RETRY_TIMEOUT_MS = readPositiveNumber(DASHBOARD_API_CONFIG.summaryRetryTimeoutMs, 12000);
 const API_TRIPS_TIMEOUT_MS = readPositiveNumber(DASHBOARD_API_CONFIG.tripsTimeoutMs, 45000);
 const API_RETRY_DELAY_MS = readPositiveNumber(DASHBOARD_API_CONFIG.retryDelayMs, 700);
+const XLSX_SCRIPT_SRC = String(DASHBOARD_API_CONFIG.xlsxScriptSrc || 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js').trim();
+const FLATPICKR_SCRIPT_SRC = String(DASHBOARD_API_CONFIG.flatpickrScriptSrc || 'https://cdn.jsdelivr.net/npm/flatpickr').trim();
+const FLATPICKR_LOCALE_SCRIPT_SRC = String(DASHBOARD_API_CONFIG.flatpickrLocaleScriptSrc || 'https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/th.js').trim();
+const FLATPICKR_CSS_HREF = String(DASHBOARD_API_CONFIG.flatpickrCssHref || 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css').trim();
+const FLATPICKR_THEME_CSS_HREF = String(DASHBOARD_API_CONFIG.flatpickrThemeCssHref || 'https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css').trim();
 const API_CACHE = { summary: null, trips: null, oil: null };
 const LEGACY_SCRIPT_PROMISES = {};
 let TRIPS_READY = false;
@@ -24,6 +29,11 @@ const DATA_SOURCE_STATE = {
   oil: 'pending',
   notes: []
 };
+const PERF_TELEMETRY_ENABLED = DASHBOARD_API_CONFIG.perfTelemetry !== false;
+const PERF_MARKS = [];
+if (typeof window !== 'undefined') {
+  window.DASHBOARD_PERF_MARKS = PERF_MARKS;
+}
 
 function isApiEnabled() {
   return API_BASE_URL.length > 0;
@@ -32,6 +42,23 @@ function isApiEnabled() {
 function readPositiveNumber(value, fallback) {
   const num = Number(value);
   return Number.isFinite(num) && num > 0 ? num : fallback;
+}
+
+function perfNow() {
+  return (typeof performance !== 'undefined' && typeof performance.now === 'function')
+    ? performance.now()
+    : Date.now();
+}
+
+function perfLog(label, startedAt, meta = {}) {
+  if (!PERF_TELEMETRY_ENABLED || !Number.isFinite(startedAt)) return;
+  const elapsedMs = Math.round((perfNow() - startedAt) * 10) / 10;
+  const entry = { label, elapsedMs, at: new Date().toISOString(), ...meta };
+  PERF_MARKS.push(entry);
+  if (PERF_MARKS.length > 200) PERF_MARKS.shift();
+  if (typeof console !== 'undefined' && typeof console.info === 'function') {
+    console.info('[perf]', label, `${elapsedMs}ms`, meta);
+  }
 }
 
 function deepClone(value) {
@@ -889,6 +916,64 @@ function loadScriptOnce(src, globalName) {
   return LEGACY_SCRIPT_PROMISES[src];
 }
 
+function loadStyleOnce(href) {
+  if (!href) return Promise.resolve(true);
+  const existing = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).some(link =>
+    link.dataset.lazyHref === href || link.getAttribute('href') === href || link.href === href
+  );
+  if (existing) return Promise.resolve(true);
+  if (LEGACY_SCRIPT_PROMISES[href]) return LEGACY_SCRIPT_PROMISES[href];
+  LEGACY_SCRIPT_PROMISES[href] = new Promise((resolve, reject) => {
+    const link = document.createElement('link');
+    let settled = false;
+    const timer = setTimeout(() => fail(new Error(`timeout loading ${href}`)), 30000);
+    const cleanup = () => {
+      clearTimeout(timer);
+      link.onload = null;
+      link.onerror = null;
+    };
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      delete LEGACY_SCRIPT_PROMISES[href];
+      reject(err);
+    };
+    const succeed = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(true);
+    };
+    link.rel = 'stylesheet';
+    link.href = href;
+    link.dataset.lazyHref = href;
+    link.onload = succeed;
+    link.onerror = () => fail(new Error(`failed to load ${href}`));
+    document.head.appendChild(link);
+  });
+  return LEGACY_SCRIPT_PROMISES[href];
+}
+
+async function ensureXlsxLibrary() {
+  if (typeof XLSX !== 'undefined') return XLSX;
+  if (!XLSX_SCRIPT_SRC) throw new Error('XLSX script source is not configured');
+  return loadScriptOnce(XLSX_SCRIPT_SRC, 'XLSX');
+}
+
+async function ensureFlatpickrLibrary() {
+  if (typeof flatpickr !== 'undefined') return flatpickr;
+  await Promise.all([
+    loadStyleOnce(FLATPICKR_CSS_HREF),
+    loadStyleOnce(FLATPICKR_THEME_CSS_HREF)
+  ]);
+  await loadScriptOnce(FLATPICKR_SCRIPT_SRC, 'flatpickr');
+  if (FLATPICKR_LOCALE_SCRIPT_SRC) {
+    await loadScriptOnce(FLATPICKR_LOCALE_SCRIPT_SRC);
+  }
+  return flatpickr;
+}
+
 async function loadLegacySummaryData() {
   await loadScriptOnce('data/data.js');
   if (typeof DATA_JSON === 'undefined') throw new Error('DATA_JSON unavailable');
@@ -1291,9 +1376,15 @@ function auditMovePage(id, delta) {
   state.page = Math.max(0, Math.min(state.page + delta, pages - 1));
   renderAuditTable(id, state, { restore: true });
 }
-function auditExportXls(id) {
+async function auditExportXls(id) {
   const state = auditTableStates[id];
   if (!state) return;
+  try {
+    await ensureXlsxLibrary();
+  } catch (err) {
+    alert('โหลดไลบรารี XLSX ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่');
+    return;
+  }
   const rows = auditFilterRows(state);
   const aoa = [
     state.cols.map(col => col.label),
@@ -4105,16 +4196,34 @@ function buildDailyCompare(data) {
   }
 
   // ── Oil price helper ───────────────────────────────────────────────
+  let oilPriceCacheSource = null;
+  let oilPriceCachePrices = null;
+  let oilPriceCacheLength = 0;
+  let oilPriceSortedCache = null;
+  const oilPriceByDateCache = new Map();
   function getOilPriceByDate(dateStr) {
     const op = (typeof OIL_PRICE_DATA !== 'undefined') ? OIL_PRICE_DATA : null;
     if (!op || !op.prices || !dateStr) return null;
+    if (
+      oilPriceCacheSource !== op ||
+      oilPriceCachePrices !== op.prices ||
+      oilPriceCacheLength !== op.prices.length
+    ) {
+      oilPriceCacheSource = op;
+      oilPriceCachePrices = op.prices;
+      oilPriceCacheLength = op.prices.length;
+      oilPriceSortedCache = [...op.prices].sort((a, b) => String(a.period_no).localeCompare(String(b.period_no)));
+      oilPriceByDateCache.clear();
+    }
+    if (oilPriceByDateCache.has(dateStr)) return oilPriceByDateCache.get(dateStr);
     // หาราคาล่าสุดที่มีวัน <= dateStr (ราคามีผลจนถึงวันที่เปลี่ยนครั้งต่อไป)
-    const sorted = [...op.prices].sort((a, b) => String(a.period_no).localeCompare(String(b.period_no)));
     let match = null;
-    for (const p of sorted) {
+    for (const p of oilPriceSortedCache || []) {
       if (p.period_name <= dateStr) { match = p; } else { break; }
     }
-    return match ? match.price : null;
+    const price = match ? match.price : null;
+    oilPriceByDateCache.set(dateStr, price);
+    return price;
   }
 
   // defaults
@@ -4440,22 +4549,30 @@ function buildDailyCompare(data) {
     let _rollingPresetBackup = null;
 
     // โ”€โ”€ Initialize Flatpickr โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
-    if (typeof flatpickr !== 'undefined') {
-      const fpOpts = {
-        mode: "range",
-        dateFormat: "Y-m-d",
-        altInput: true,
-        altFormat: "d/m/Y",
-        locale: "th",
-        allowInput: false,
-        onClose: () => {
-          if (typeof window.dcUpdateFilters === 'function') window.dcUpdateFilters(false);
-        }
-      };
-      // flatpickr automatically applies the original input's class to the altInput
-      flatpickr("#dc_rangeA", { ...fpOpts, defaultDate: [d1def, d1def], altInputClass: "dc-date-input" });
-      flatpickr("#dc_rangeB", { ...fpOpts, defaultDate: [d2def, d2def], altInputClass: "dc-date-input period-b" });
-    }
+    (async () => {
+      try {
+        await ensureFlatpickrLibrary();
+      } catch (err) {
+        console.warn('Flatpickr lazy-load failed; using plain date inputs:', err.message);
+        return;
+      }
+      if (typeof flatpickr !== 'undefined') {
+        const fpOpts = {
+          mode: "range",
+          dateFormat: "Y-m-d",
+          altInput: true,
+          altFormat: "d/m/Y",
+          locale: "th",
+          allowInput: false,
+          onClose: () => {
+            if (typeof window.dcUpdateFilters === 'function') window.dcUpdateFilters(false);
+          }
+        };
+        // flatpickr automatically applies the original input's class to the altInput
+        flatpickr("#dc_rangeA", { ...fpOpts, defaultDate: [d1def, d1def], altInputClass: "dc-date-input" });
+        flatpickr("#dc_rangeB", { ...fpOpts, defaultDate: [d2def, d2def], altInputClass: "dc-date-input period-b" });
+      }
+    })();
 
     function setRangePicker(id, start, end) {
       const el = document.getElementById(id);
@@ -4755,6 +4872,7 @@ function buildDailyCompare(data) {
 
       setTimeout(() => {
         if (runToken !== _compareRunToken) return;
+        const compareStartedAt = perfNow();
         const [a1, a2] = getRangeDates('dc_rangeA', d1def, d1def);
         const [b1, b2] = getRangeDates('dc_rangeB', d2def, d2def);
         const rollingPreset = getRollingSevenPreset(defaultAnalysisDate || '');
@@ -4796,6 +4914,13 @@ function buildDailyCompare(data) {
         _viewMode = 'anomaly';
         syncComparePresetUi();
         renderAll({ animate: true });
+        perfLog('dcRunCompare', compareStartedAt, {
+          mode: _isSingleMode ? 'single' : 'compare',
+          routesA: _stA?.routes?.length || 0,
+          routesB: _stB?.routes?.length || 0,
+          tripsA: _stA?.trips || 0,
+          tripsB: _stB?.trips || 0
+        });
 
         if (btn) { btn.style.pointerEvents = ''; btn.style.opacity = ''; }
         if (txt) txt.textContent = 'ตรวจสอบ';
@@ -5427,7 +5552,28 @@ function buildDailyCompare(data) {
     };
 
     window.dcExportXls = async function () {
-      if (typeof XLSX === 'undefined') { alert('ไม่พบไลบรารี XLSX กรุณารีเฟรชหน้า'); return; }
+      const exportBtn = document.getElementById('dc_export_btn');
+      const exportBtnHtml = exportBtn ? exportBtn.innerHTML : '';
+      const needsXlsxLoad = typeof XLSX === 'undefined';
+      if (needsXlsxLoad && exportBtn) {
+        exportBtn.disabled = true;
+        exportBtn.style.pointerEvents = 'none';
+        exportBtn.style.opacity = '0.7';
+        exportBtn.textContent = 'กำลังโหลด XLSX...';
+      }
+      try {
+        await ensureXlsxLibrary();
+      } catch (err) {
+        alert('โหลดไลบรารี XLSX ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่');
+        return;
+      } finally {
+        if (needsXlsxLoad && exportBtn) {
+          exportBtn.disabled = false;
+          exportBtn.style.pointerEvents = '';
+          exportBtn.style.opacity = '';
+          exportBtn.innerHTML = exportBtnHtml;
+        }
+      }
       if (!_stA) { alert('ยังไม่มีข้อมูล กรุณากด "ตรวจสอบ" ก่อน Export'); return; }
       if (!_isSingleMode && !_stB) {
         alert('ช่วงเปรียบเทียบไม่มีข้อมูล กรุณาเลือกช่วงวันที่ใหม่ หรือสลับเป็นมุมมองปกติก่อน Export');
@@ -8313,6 +8459,7 @@ function initNav() {
 }
 
 function showPage(idx) {
+  const pageStartedAt = perfNow();
   currentPage = idx;
   const num = String(idx + 1).padStart(2, '0');
   document.getElementById('pageTitle').innerHTML = `
@@ -8359,6 +8506,7 @@ function showPage(idx) {
       }
     });
   }
+  perfLog('showPage', pageStartedAt, { page: PAGES[idx]?.id || idx });
 }
 
 function renderDataSourceNotice() {
@@ -8588,6 +8736,7 @@ function setLoadingStatus(msg) {
 }
 
 async function init() {
+  const initStartedAt = perfNow();
   DATA_SOURCE_STATE.summary = 'pending';
   DATA_SOURCE_STATE.trips = 'pending';
   DATA_SOURCE_STATE.oil = 'pending';
@@ -8599,31 +8748,48 @@ async function init() {
   setLoadingStatus('โหลดข้อมูลสรุป...');
   await sleep(80);
   let summarySource;
+  const summaryStartedAt = perfNow();
   try {
     summarySource = await loadSummarySource();
   } catch (err) {
     document.getElementById('content').innerHTML = `<div class="kpi"><div class="kpi-value red">โหลดข้อมูลสรุปไม่สำเร็จ</div><div class="kpi-sub">${esc(err.message)}</div></div>`;
     return;
+  } finally {
+    perfLog('loadSummarySource', summaryStartedAt, { source: DATA_SOURCE_STATE.summary });
   }
 
   setLoadingStatus('โหลดข้อมูลเที่ยววิ่ง...');
   await sleep(80);
   let tripsSource = [];
+  const tripsStartedAt = perfNow();
   try {
     tripsSource = await loadTripsSource();
   } catch (err) {
     console.error('Trip data load failed:', err);
+  } finally {
+    perfLog('loadTripsSource', tripsStartedAt, {
+      source: DATA_SOURCE_STATE.trips,
+      rows: Array.isArray(tripsSource) ? tripsSource.length : 0
+    });
   }
 
   let oilSource = null;
+  const oilStartedAt = perfNow();
   try {
     oilSource = await loadOilSource();
   } catch (err) {
     console.error('Oil data load failed:', err);
+  } finally {
+    perfLog('loadOilSource', oilStartedAt, { source: DATA_SOURCE_STATE.oil });
   }
 
+  const alignStartedAt = perfNow();
   const aligned = alignDashboardData(summarySource, tripsSource, {
     rebuildDerived: DATA_SOURCE_STATE.summary === 'api' && DATA_SOURCE_STATE.trips === 'api'
+  });
+  perfLog('alignDashboardData', alignStartedAt, {
+    rebuildDerived: DATA_SOURCE_STATE.summary === 'api' && DATA_SOURCE_STATE.trips === 'api',
+    tripRows: Array.isArray(tripsSource) ? tripsSource.length : 0
   });
   DATA = aligned.data;
   window.FRAUD_DATA = aligned.trips;
@@ -8639,5 +8805,10 @@ async function init() {
   updateSidebarMeta();
   initNav();
   showPage(0);
+  perfLog('dashboardInit', initStartedAt, {
+    summary: DATA_SOURCE_STATE.summary,
+    trips: DATA_SOURCE_STATE.trips,
+    oil: DATA_SOURCE_STATE.oil
+  });
 }
 init();

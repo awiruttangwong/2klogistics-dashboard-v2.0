@@ -7642,7 +7642,8 @@ function buildDailyCompare(data) {
       const card = window._anomalyCardsData?.[idx];
       if (!card) return;
       const body = `<div class="dc-qa-table-wrap is-modal"><table class="dc-qa-table dc-qa-pair-table"><thead><tr><th>วันที่หลัก</th><th>วันที่เปรียบเทียบ</th><th>พขร.</th><th>ประเภทรถ</th><th>ทะเบียน</th><th>ราคาน้ำมัน</th><th>สำรองน้ำมัน</th><th>ราคารับ</th><th>ราคาจ่าย</th><th class="dc-qa-th-diff">ส่วนต่าง</th><th class="dc-qa-th-flag">ความผิดปกติ</th></tr></thead><tbody>${card.anomRows.map(row => dcQaPairRow(row, true)).join('')}</tbody></table></div>`;
-      dcQaModalShell('dc_anom_modal', 'dc_anom_capture', `รายละเอียดการเปรียบเทียบ: ${esc(routeGroupHeaderDisplay(card.ga))}`, `${esc(card.ga.customer || '-')} · ${esc(card.ga.vtype || '-')} · ${esc(_labelA)} / ${esc(_labelB)}`, encodeURIComponent(`anomaly_${card.ga.route || 'route'}`), body);
+      const titleHtml = `<span class="dc-qa-modal-title-prefix">รายละเอียดการเปรียบเทียบ:</span><span class="dc-qa-modal-title-route">${esc(routeGroupHeaderDisplay(card.ga))}</span>`;
+      dcQaModalShell('dc_anom_modal', 'dc_anom_capture', titleHtml, `${esc(card.ga.customer || '-')} · ${esc(card.ga.vtype || '-')} · ${esc(_labelA)} / ${esc(_labelB)}`, encodeURIComponent(`anomaly_${card.ga.route || 'route'}`), body);
       updateCompareStatusVisibility('anomaly');
     };
 
@@ -7653,7 +7654,8 @@ function buildDailyCompare(data) {
       const isA = side === 'a';
       const myLabel = isA ? _labelA : _labelB;
       const body = `<div class="dc-qa-table-wrap is-modal"><table class="dc-qa-table"><thead><tr><th>วันที่</th><th>พขร.</th><th>ประเภทรถ</th><th>ทะเบียน</th><th class="is-right">ราคาน้ำมัน</th><th class="is-right">สำรองน้ำมัน</th><th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">ส่วนต่าง</th><th>ความผิดปกติ</th></tr></thead><tbody>${card.unRows.map(row => dcQaSingleTripRow(row.ra, row.statuses, true)).join('')}</tbody></table></div>`;
-      dcQaModalShell('dc_unm_modal', 'dc_unm_capture', `รายละเอียดเที่ยวที่ไม่มีคู่: ${esc(routeGroupHeaderDisplay(card.ga))}`, `${esc(card.ga.customer || '-')} · ${esc(card.ga.vtype || '-')} · ${esc(myLabel)}`, encodeURIComponent(`unmatched_${card.ga.route || 'route'}`), body);
+      const titleHtml = `<span class="dc-qa-modal-title-prefix">รายละเอียดเที่ยวที่ไม่มีคู่:</span><span class="dc-qa-modal-title-route">${esc(routeGroupHeaderDisplay(card.ga))}</span>`;
+      dcQaModalShell('dc_unm_modal', 'dc_unm_capture', titleHtml, `${esc(card.ga.customer || '-')} · ${esc(card.ga.vtype || '-')} · ${esc(myLabel)}`, encodeURIComponent(`unmatched_${card.ga.route || 'route'}`), body);
     };
 
     document.getElementById('dc_compare_btn')?.addEventListener('click', dcRunCompare);

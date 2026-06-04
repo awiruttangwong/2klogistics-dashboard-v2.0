@@ -7646,7 +7646,7 @@ function buildDailyCompare(data) {
       }).join('');
       return `<section class="dc-qa-page">
         <div class="dc-summary-head dc-qa-filter-head" style="flex-direction:column;align-items:flex-start;">
-          <div class="dc-summary-copy"><h3 class="dc-summary-title">รายเส้นทางที่ถูกเปรียบเทียบ <span id="dc-summary-routes-anomaly">${visibleCards.length}</span> เส้นทาง</h3><p class="dc-summary-sub">พบความผิดปกติที่ต้องตรวจสอบ <span id="dc-summary-anoms-anomaly">${visibleAnoms}</span> คู่เปรียบเทียบ จากข้อมูลที่จับคู่ พขร. ได้ทั้งสองช่วง</p></div>
+          <div class="dc-summary-copy"><h3 class="dc-summary-title">รายเส้นทางที่ถูกเปรียบเทียบ <span id="dc-summary-routes-anomaly">${visibleCards.length}</span> เส้นทาง</h3></div>
           <div class="dc-summary-filter" style="width:100%;min-width:0;">${renderCompareStatusFilter('anomaly', optionKeys, selected, counts)}</div>
         </div>
         ${cardsHtml}

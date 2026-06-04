@@ -7558,10 +7558,10 @@ function buildDailyCompare(data) {
           <div class="dc-qa-table-wrap">
             <table class="dc-qa-table dc-qa-pair-table">
               <thead><tr><th>วันที่หลัก</th><th>วันที่เปรียบเทียบ</th><th>พขร.</th><th>ราคาน้ำมัน</th><th>สำรองน้ำมัน</th><th>ราคารับ</th><th>ราคาจ่าย</th><th class="dc-qa-th-diff">ส่วนต่าง</th><th class="dc-qa-th-flag">ความผิดปกติ</th></tr></thead>
-              <tbody>${card.anomRows.slice(0, 6).map(row => dcQaPairRow(row, false)).join('')}</tbody>
+              <tbody>${card.anomRows.slice(0, 10).map(row => dcQaPairRow(row, false)).join('')}</tbody>
             </table>
           </div>
-          ${card.anomRows.length > 6 ? `<div class="dc-qa-more">มีคู่เปรียบเทียบเพิ่มเติมอีก ${card.anomRows.length - 6} คู่ (คลิกเพื่อดูรายละเอียด)</div>` : ''}
+          ${card.anomRows.length > 10 ? `<div class="dc-qa-more">มีคู่เปรียบเทียบเพิ่มเติมอีก ${card.anomRows.length - 10} คู่ (คลิกเพื่อดูรายละเอียด)</div>` : ''}
         </article>`;
       }).join('');
       return `<section class="dc-qa-page">

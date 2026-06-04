@@ -31,6 +31,7 @@ Baseline ที่ตรวจแล้ว:
 - [x] Phase 0 baseline 3 รอบด้วย Playwright/Chromium ผ่านแล้ว: static trips 7,919 rows, compare export 6 sheets, XLSX 327,844 bytes, ไม่มี page/console error
 - [x] Phase 1 lazy-load `xlsx-js-style` สำเร็จ: หน้า startup ไม่โหลด XLSX, export โหลด XLSX 1 ครั้งเมื่อกดใช้งาน และ compare workbook อ่านกลับได้ 6 sheets ครบ
 - [x] Phase 1 lazy-load `flatpickr` สำเร็จ: หน้า startup ไม่โหลด flatpickr, เปิด Daily Compare แล้วโหลด main/locale/CSS ตามต้องการ, date inputs ถูกผูก `_flatpickr`, และ export compare ยังผ่านครบ
+- [x] Hotfix startup loading ค้างที่ `http://127.0.0.1:5529/Dashboard/index.html`: ปรับ loader ให้รอ live API ได้ครบ 38,007 trips พร้อม progress ระหว่าง pagination และยังคง fallback เป็น safety net เฉพาะกรณี API ล้มจริง
 
 ### ยังไม่ทำในรอบนี้
 
@@ -76,6 +77,33 @@ Acceptance ที่ยืนยันแล้ว: `node --check Dashboard\scri
 - `dcRunCompare` ใน test ล่าสุดใช้เวลา 116.3 ms, routesA 61, routesB 47, tripsA 90, tripsB 54
 - no page error / no console error / no console warning
 - alert 1 ครั้งเป็น fallback เดิมเมื่อ test stub ไม่ใส่ JSZip: `ส่งออกสำเร็จ แต่ไม่พบ JSZip จึงไม่ได้ฝังค่า Page Setup สำหรับการพิมพ์`
+
+### Hotfix ล่าสุด: Startup Live API Full Load (2026-06-04)
+
+ตรวจพบจาก Playwright repro ที่ URL จริง `http://127.0.0.1:5529/Dashboard/index.html` ว่าหน้าไม่ได้ค้างจาก Phase 1 lazy-load แต่ค้างใน startup data path:
+
+- `summary` API บางรอบตอบช้าจน fallback ใช้เวลาสูงสุดเดิมประมาณ 42 วินาที
+- `trips` API pagination ยังไล่หน้า API ต่อเนื่องเกิน 110 วินาทีในบางรอบ (`page=4` เคยใช้ ~30 วินาที, `page=5` ~22 วินาที)
+- ก่อนแก้ หน้าอยู่ที่ `โหลดข้อมูลเที่ยววิ่ง...` ต่อเนื่อง, skeleton ยังเหลือ 7 จุด, ไม่มี page error แต่ `dashboardInit` ไม่จบ
+- API probe โดยตรงยืนยันว่า live API ไม่ได้เสีย: `summary` ใช้ 4.4s, `oil` ใช้ 2.7s, `trips` โหลดครบ 38,007 rows จาก 8 pages รวมประมาณ 59s
+
+สิ่งที่แก้ใน `Dashboard/scripts/app.js`:
+
+- ตั้ง default `summaryTimeoutMs` 30 วินาที และ `summaryRetryTimeoutMs` 12 วินาที เพื่อให้ summary API มีเวลาพอโหลดจริง
+- ตั้ง `tripsTotalTimeoutMs` default 120 วินาทีสำหรับ pagination รวมของ trips API เพื่อให้ live API โหลดครบ 8 pages / 38,007 rows
+- ตั้ง `oilTimeoutMs` default 20 วินาทีสำหรับ oil API
+- เพิ่ม progress ระหว่างโหลด trips เช่น `โหลดข้อมูลเที่ยววิ่ง... 5,000 / 38,007 รายการ` เพื่อไม่ให้หน้าดูเหมือนค้าง
+- เพิ่ม HTTP status metadata และไม่ retry HTTP 4xx ที่ retry แล้วไม่ช่วย
+
+ผลทดสอบหลังแก้:
+
+- `node --check Dashboard\scripts\app.js` ผ่าน
+- `git diff --check` ผ่าน มีเฉพาะ LF/CRLF warning ของ Git
+- Playwright full live-load ที่ URL จริงโหลด dashboard สำเร็จ: `dashboardInit` 50.89s, `summary=api`, `trips=api`, `oil=api`, trips 38,007 rows, ไม่มีข้อความ fallback/timeout
+- Daily Compare full live smoke ผ่าน: `dcRunCompare` 404.6ms, routesA 193, routesB 195, tripsA 277, tripsB 281
+- Export XLSX จากข้อมูล live ครบผ่าน: workbook 848,847 bytes, 6 sheets ครบ (`สรุปผลดำเนินงาน`, `รายเส้นทางที่เปรียบเทียบ`, `ขาดทุน`, `สำรองน้ำมัน > 50%`, `ราคาจ่ายผิดปกติ`, `ราคารับผิดปกติ`)
+- รอบ export full live: `dashboardInit` 61.83s, `summary=api`, `trips=api`, `oil=api`, trips 38,007 rows, ไม่มี fallback visible, ไม่มี page error / console error
+- ยืนยันว่า Phase 1 lazy-load ยังไม่เสีย: หลังเข้า Daily Compare `flatpickr` โหลดแล้ว และ `XLSX` ยังไม่โหลดก่อน export จากนั้น export จึงโหลด XLSX 1 ครั้ง
 
 ## Skills ที่ตรวจและนำมาใช้เป็นกรอบคิด
 

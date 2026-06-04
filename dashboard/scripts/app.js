@@ -13,6 +13,8 @@ const API_TIMEOUT_MS = readPositiveNumber(DASHBOARD_API_CONFIG.timeoutMs, 20000)
 const API_SUMMARY_TIMEOUT_MS = readPositiveNumber(DASHBOARD_API_CONFIG.summaryTimeoutMs, 30000);
 const API_SUMMARY_RETRY_TIMEOUT_MS = readPositiveNumber(DASHBOARD_API_CONFIG.summaryRetryTimeoutMs, 12000);
 const API_TRIPS_TIMEOUT_MS = readPositiveNumber(DASHBOARD_API_CONFIG.tripsTimeoutMs, 45000);
+const API_TRIPS_TOTAL_TIMEOUT_MS = readPositiveNumber(DASHBOARD_API_CONFIG.tripsTotalTimeoutMs, 120000);
+const API_OIL_TIMEOUT_MS = readPositiveNumber(DASHBOARD_API_CONFIG.oilTimeoutMs, 20000);
 const API_RETRY_DELAY_MS = readPositiveNumber(DASHBOARD_API_CONFIG.retryDelayMs, 700);
 const XLSX_SCRIPT_SRC = String(DASHBOARD_API_CONFIG.xlsxScriptSrc || 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js').trim();
 const FLATPICKR_SCRIPT_SRC = String(DASHBOARD_API_CONFIG.flatpickrScriptSrc || 'https://cdn.jsdelivr.net/npm/flatpickr').trim();
@@ -221,14 +223,16 @@ async function fetchJsonWithTimeout(url, timeoutMs = API_TIMEOUT_MS) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (!res.ok) {
+      const httpErr = new Error('HTTP ' + res.status);
+      httpErr.code = 'HTTP_STATUS';
+      httpErr.status = res.status;
+      throw httpErr;
+    }
     return await res.json();
   } catch (err) {
     if (err && err.name === 'AbortError') {
-      const timeoutErr = new Error(`request timeout after ${timeoutMs}ms`);
-      timeoutErr.code = 'REQUEST_TIMEOUT';
-      timeoutErr.timeoutMs = timeoutMs;
-      throw timeoutErr;
+      throw createRequestTimeoutError(timeoutMs);
     }
     throw err;
   } finally {
@@ -274,6 +278,17 @@ function describeDataLoadError(err, sourceLabel = 'API') {
     return `${sourceLabel} timeout หลังรอ ${seconds} วินาที`;
   }
   return msg;
+}
+
+function createRequestTimeoutError(timeoutMs, message) {
+  const timeoutErr = new Error(message || `request timeout after ${timeoutMs}ms`);
+  timeoutErr.code = 'REQUEST_TIMEOUT';
+  timeoutErr.timeoutMs = timeoutMs;
+  return timeoutErr;
+}
+
+function isNonRetriableHttpError(err) {
+  return err?.code === 'HTTP_STATUS' && Number(err.status) >= 400 && Number(err.status) < 500;
 }
 
 // Helpers for multi-month readiness
@@ -8570,17 +8585,36 @@ async function loadTripsSource() {
       let page = 0;
       let hasMore = true;
       const trips = [];
+      const tripsStartedAt = perfNow();
+      const tripsRemainingMs = () => API_TRIPS_TOTAL_TIMEOUT_MS - (perfNow() - tripsStartedAt);
 
       while (hasMore && page < maxPages) {
         let payload = null;
         let lastErr = null;
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
-            payload = await apiGet('trips', { page, limit: pageSize, fields }, API_TRIPS_TIMEOUT_MS);
+            const remainingMs = tripsRemainingMs();
+            if (remainingMs <= 1000) {
+              throw createRequestTimeoutError(
+                API_TRIPS_TOTAL_TIMEOUT_MS,
+                `trips API pagination timeout after ${API_TRIPS_TOTAL_TIMEOUT_MS}ms`
+              );
+            }
+            const pageTimeoutMs = Math.max(1000, Math.min(API_TRIPS_TIMEOUT_MS, Math.floor(remainingMs)));
+            payload = await apiGet('trips', { page, limit: pageSize, fields }, pageTimeoutMs);
             lastErr = null;
             break;
           } catch (err) {
             lastErr = err;
+            if (err?.code === 'REQUEST_TIMEOUT' && tripsRemainingMs() <= 1000) {
+              throw createRequestTimeoutError(
+                API_TRIPS_TOTAL_TIMEOUT_MS,
+                `trips API pagination timeout after ${API_TRIPS_TOTAL_TIMEOUT_MS}ms`
+              );
+            }
+            if (isNonRetriableHttpError(err) || tripsRemainingMs() <= 1000) {
+              throw err;
+            }
             if (attempt === 0) {
               await new Promise(resolve => setTimeout(resolve, 700));
             }
@@ -8589,6 +8623,11 @@ async function loadTripsSource() {
         if (!payload) throw lastErr || new Error('trips api failed');
         const batch = Array.isArray(payload?.trips) ? payload.trips : [];
         if (batch.length > 0) trips.push(...batch);
+        if (payload?.total) {
+          setLoadingStatus(`โหลดข้อมูลเที่ยววิ่ง... ${Math.min(trips.length, payload.total).toLocaleString('th-TH')} / ${Number(payload.total).toLocaleString('th-TH')} รายการ`);
+        } else if (batch.length > 0) {
+          setLoadingStatus(`โหลดข้อมูลเที่ยววิ่ง... ${trips.length.toLocaleString('th-TH')} รายการ`);
+        }
         hasMore = Boolean(payload?.hasMore) && batch.length > 0;
         page += 1;
       }
@@ -8629,7 +8668,7 @@ async function loadOilSource() {
   if (API_CACHE.oil) return deepClone(API_CACHE.oil);
   if (isApiEnabled()) {
     try {
-      const payload = await apiGet('oil');
+      const payload = await apiGet('oil', {}, API_OIL_TIMEOUT_MS);
       API_CACHE.oil = payload;
       noteDataSource('oil', 'api');
       return deepClone(payload);

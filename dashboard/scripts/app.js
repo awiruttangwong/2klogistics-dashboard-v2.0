@@ -4051,6 +4051,46 @@ function buildDailyCompare(data) {
       Number.isFinite(r.margin)
     );
   const allDates = [...new Set(validFd.map(r => r.date))].sort();
+  const allDatesSet = new Set(allDates);
+  const rowsByDate = new Map();
+  validFd.forEach(r => {
+    const list = rowsByDate.get(r.date);
+    if (list) list.push(r);
+    else rowsByDate.set(r.date, [r]);
+  });
+  const routeIdentityCache = new WeakMap();
+  const dcCachedRouteIdentityKey = row => {
+    if (!row || typeof row !== 'object') return routeIdentityKey(row);
+    if (!routeIdentityCache.has(row)) routeIdentityCache.set(row, routeIdentityKey(row));
+    return routeIdentityCache.get(row);
+  };
+  const stableFilterKey = values => Array.isArray(values) && values.length
+    ? values.map(v => String(v)).sort().join('\u001f')
+    : '';
+  const rowsForDateRange = (dateStart, dateEnd) => {
+    if (!dateStart || !dateEnd) return [];
+    const rows = [];
+    for (const date of allDates) {
+      if (date < dateStart) continue;
+      if (date > dateEnd) break;
+      const list = rowsByDate.get(date);
+      if (list) rows.push(...list);
+    }
+    return rows;
+  };
+  const rowsForDateWindows = windows => {
+    const rows = [];
+    const seen = new Set();
+    (windows || []).forEach(([dateStart, dateEnd]) => {
+      rowsForDateRange(dateStart, dateEnd).forEach(r => {
+        if (seen.has(r)) return;
+        seen.add(r);
+        rows.push(r);
+      });
+    });
+    return rows;
+  };
+  const rangeStatsMemo = new Map();
   if (allDates.length === 0) {
     return `
       <div class="dc-card dc-empty">
@@ -4163,14 +4203,24 @@ function buildDailyCompare(data) {
   // ── rangeStats: รวมข้อมูลจากหลายวัน ───────────────────────────────
   function rangeStats(dateStart, dateEnd, custF, routeF, vtypeF) {
     if (!dateStart || !dateEnd) return null;
-    const rows = validFd.filter(r => {
-      if (r.date < dateStart || r.date > dateEnd) return false;
+    const memoKey = [
+      dateStart,
+      dateEnd,
+      stableFilterKey(custF),
+      stableFilterKey(routeF),
+      stableFilterKey(vtypeF)
+    ].join('\u0001');
+    if (rangeStatsMemo.has(memoKey)) return rangeStatsMemo.get(memoKey);
+    const rows = rowsForDateRange(dateStart, dateEnd).filter(r => {
       if (Array.isArray(custF) && custF.length > 0 && !custF.includes(r.customer || '-')) return false;
-      if (Array.isArray(routeF) && routeF.length > 0 && !routeF.includes(routeIdentityKey(r))) return false;
+      if (Array.isArray(routeF) && routeF.length > 0 && !routeF.includes(dcCachedRouteIdentityKey(r))) return false;
       if (Array.isArray(vtypeF) && vtypeF.length > 0 && !vtypeF.includes(r.vtype || '-')) return false;
       return true;
     });
-    if (!rows.length) return null;
+    if (!rows.length) {
+      rangeStatsMemo.set(memoKey, null);
+      return null;
+    }
     const recv = rows.reduce((s, r) => s + (r.recv || 0), 0);
     const pay = rows.reduce((s, r) => s + (r.pay || 0), 0);
     const oil = rows.reduce((s, r) => s + (r.oil || 0), 0);
@@ -4191,7 +4241,9 @@ function buildDailyCompare(data) {
     const routes = Object.values(routeMap)
       .map(v => ({ ...v, pct: v.recv ? v.margin / v.recv * 100 : 0 }))
       .sort((a, b) => b.margin - a.margin);
-    return { dateStart, dateEnd, label, recv, pay, oil, margin, trips, pct, oilRatio, routes, rows };
+    const result = { dateStart, dateEnd, label, recv, pay, oil, margin, trips, pct, oilRatio, routes, rows };
+    rangeStatsMemo.set(memoKey, result);
+    return result;
   }
 
   // ── findRefDate: หาวันอ้างอิงสำหรับ single mode ──────────────────────────
@@ -4205,7 +4257,7 @@ function buildDailyCompare(data) {
     for (let i = 1; i <= limit; i++) {
       const dt = new Date(y, m - 1, d - i);
       const iso = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-      if (allDates.includes(iso)) return iso;
+      if (allDatesSet.has(iso)) return iso;
     }
     return null;
   }
@@ -4782,6 +4834,7 @@ function buildDailyCompare(data) {
       });
     };
 
+    const _msOptionRenderKeys = Object.create(null);
     function buildMsOptions(id, options, currentVals = []) {
       const pnl = document.getElementById('ms_pnl_' + id);
       if (!pnl) return;
@@ -4794,12 +4847,20 @@ function buildDailyCompare(data) {
         const value = String(option ?? '');
         return { value, label: value, search: value };
       }).filter(option => option.value);
+      const optionValues = optionItems.map(option => option.value);
+      const validVals = currentVals.filter(v => optionValues.includes(v));
+      const renderKey = [
+        optionItems.map(option => `${option.value}\u001e${option.label}\u001e${option.search}`).join('\u001f'),
+        validVals.slice().sort().join('\u001f')
+      ].join('\u0001');
+      const searchEl = document.getElementById(`ms_search_${id}`);
+      if (_msOptionRenderKeys[id] === renderKey && pnl.dataset.dcMsRendered === '1' && !searchEl?.value) return;
+      _msOptionRenderKeys[id] = renderKey;
+      pnl.dataset.dcMsRendered = '1';
       if (optionItems.length === 0) {
         pnl.innerHTML = '<div style="padding:10px 12px;color:var(--muted);font-size:12px;text-align:center">ไม่มีข้อมูล</div>';
         return;
       }
-      const optionValues = optionItems.map(option => option.value);
-      const validVals = currentVals.filter(v => optionValues.includes(v));
       const allChecked = validVals.length === 0 || validVals.length === optionItems.length;
 
       pnl.innerHTML = `
@@ -4831,10 +4892,7 @@ function buildDailyCompare(data) {
       const [a1, a2] = getRangeDates('dc_rangeA', d1def, d1def);
       const [b1, b2] = getRangeDates('dc_rangeB', d2def, d2def);
 
-      const allRows = validFd.filter(r => {
-        const inA = r.date >= a1 && r.date <= a2;
-        const inB = b1 && r.date >= b1 && r.date <= b2;
-        if (!inA && !inB) return false;
+      const allRows = rowsForDateWindows([[a1, a2], [b1, b2]]).filter(r => {
         if (custF.length > 0 && !custF.includes(r.customer || '-')) return false;
         return true;
       });
@@ -4846,7 +4904,7 @@ function buildDailyCompare(data) {
       if (!routePanelOpen) {
         const routeOptionMap = {};
         allRows.forEach(r => {
-          const value = routeIdentityKey(r);
+          const value = dcCachedRouteIdentityKey(r);
           if (!routeOptionMap[value]) routeOptionMap[value] = { value, label: routeDisplay(r), search: `${routeDisplay(r)} ${r.route || ''} ${value}` };
         });
         const routeOptions = Object.values(routeOptionMap).sort((a, b) => String(a.label).localeCompare(String(b.label), 'th'));
@@ -4854,7 +4912,7 @@ function buildDailyCompare(data) {
       }
 
       if (!vtypePanelOpen) {
-        const vtypeOptions = [...new Set(allRows.filter(r => routeF.length === 0 || routeF.includes(routeIdentityKey(r))).map(r => r.vtype || '-'))].sort();
+        const vtypeOptions = [...new Set(allRows.filter(r => routeF.length === 0 || routeF.includes(dcCachedRouteIdentityKey(r))).map(r => r.vtype || '-'))].sort();
         buildMsOptions('vtype', vtypeOptions, vtypeF);
       }
 
@@ -4912,7 +4970,7 @@ function buildDailyCompare(data) {
           for (let i = 1; i <= 3; i++) {
             const dt = new Date(y, m - 1, d - i);
             const iso = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-            if (allDates.includes(iso)) refCandidates.push(iso);
+            if (allDatesSet.has(iso)) refCandidates.push(iso);
           }
           if (refCandidates.length > 0) {
             // Load stats for each candidate day (reuse custF/routeF/vtypeF filters).
@@ -7210,6 +7268,24 @@ function buildDailyCompare(data) {
       return String(driver || '').trim().toUpperCase();
     }
 
+    function dcQaBuildDriverBuckets(trips = []) {
+      const buckets = new Map();
+      (trips || []).forEach(trip => {
+        const key = dcQaDriverKey(trip?.driver);
+        if (!dcQaValidDriver(key)) return;
+        const list = buckets.get(key);
+        if (list) list.push(trip);
+        else buckets.set(key, [trip]);
+      });
+      return buckets;
+    }
+
+    function dcQaConsumeDriverMatch(buckets, driver) {
+      const key = dcQaDriverKey(driver);
+      const list = buckets?.get(key);
+      return list && list.length ? list.shift() : null;
+    }
+
     function dcQaStatusPeersForTrip(trip, refTrips = []) {
       const tripDriver = dcQaDriverKey(trip?.driver);
       if (!tripDriver || tripDriver === '-' || !dcQaValidDriver(tripDriver)) return [trip];
@@ -7473,14 +7549,11 @@ function buildDailyCompare(data) {
       Object.keys(groupA).filter(k => groupB[k]).forEach(key => {
         const ga = groupA[key];
         const gb = groupB[key];
-        const usedB = new Set();
-        const norm = d => String(d || '').trim().toLowerCase();
+        const gbDriverBuckets = dcQaBuildDriverBuckets(gb.trips);
         const anomRows = [];
         ga.trips.forEach(ra => {
-          const idx = gb.trips.findIndex((rb, i) => !usedB.has(i) && norm(rb.driver) === norm(ra.driver));
-          if (idx < 0) return;
-          usedB.add(idx);
-          const rb = gb.trips[idx];
+          const rb = dcQaConsumeDriverMatch(gbDriverBuckets, ra.driver);
+          if (!rb) return;
           const statuses = dcQaCompareStatuses(ra, rb);
           anomRows.push({ ra, rb, statuses });
         });
@@ -7525,16 +7598,14 @@ function buildDailyCompare(data) {
       });
 
       const cards = [];
-      const norm = d => String(d || '').trim().toLowerCase();
       Object.keys(myGroup).forEach(key => {
         const ga = myGroup[key];
         const opTrips = opGroup[key]?.trips || [];
-        const usedOp = new Set();
+        const opDriverBuckets = dcQaBuildDriverBuckets(opTrips);
         const unmatched = [];
         ga.trips.forEach(rmy => {
-          const idx = opTrips.findIndex((rop, i) => !usedOp.has(i) && norm(rop.driver) === norm(rmy.driver));
-          if (idx >= 0) usedOp.add(idx);
-          else unmatched.push(rmy);
+          const matched = dcQaConsumeDriverMatch(opDriverBuckets, rmy.driver);
+          if (!matched) unmatched.push(rmy);
         });
         if (!unmatched.length) return;
         // Use unmatched-only peer group (same period, same route) for fair comparison
@@ -7601,6 +7672,14 @@ function buildDailyCompare(data) {
         return { dateLabel: fmtDate(st.dateStart), map };
       });
       const hasRef = refDayMaps.length > 0;
+      const currentRouteRows = new Map();
+      (stA.rows || []).forEach(r => {
+        const key = `${r.customer || '-'}\u0001${dcCachedRouteIdentityKey(r)}\u0001${r.vtype || '-'}`;
+        const list = currentRouteRows.get(key);
+        if (list) list.push(r);
+        else currentRouteRows.set(key, [r]);
+      });
+      currentRouteRows.forEach(list => list.sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))));
 
       // Per-route: find the nearest ref day that has trips for this route.
       const getRefForRoute = (routeKey) => {
@@ -7613,8 +7692,8 @@ function buildDailyCompare(data) {
       };
 
       const cases = stA.routes.map(route => {
-        const trips = (stA.rows || []).filter(r => r.customer === route.customer && routeIdentityKey(r) === routeIdentityKey(route) && r.vtype === route.vtype)
-          .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+        const bucketKey = `${route.customer || '-'}\u0001${routeIdentityKey(route)}\u0001${route.vtype || '-'}`;
+        const trips = currentRouteRows.get(bucketKey) || [];
 
         // Per-route: find nearest ref day that has data for this route+vtype.
         const routeKey = trips.length > 0 ? dcQaRouteKey(trips[0]) : null;
@@ -8400,6 +8479,7 @@ function initNav() {
     sidebarAutoEnabled = Boolean(hoverSidebarQuery?.matches);
     clearSidebarHoverTimers();
     document.body.classList.toggle('sidebar-auto', sidebarAutoEnabled);
+    document.documentElement.classList.remove('sidebar-auto-preload');
     document.body.classList.remove('sidebar-hover-expanded', 'sidebar-hover-transitioning');
     if (sidebarAutoEnabled) {
       document.body.classList.remove('sidebar-collapsed');
@@ -8446,17 +8526,40 @@ function initNav() {
     </span>
   </button>`).join('');
 
+  let pendingNavRenderFrame = 0;
+  let pendingNavRenderTimer = 0;
+  let pendingNavPage = null;
+  const scheduleNavRender = idx => {
+    pendingNavPage = idx;
+    if (pendingNavRenderFrame) window.cancelAnimationFrame(pendingNavRenderFrame);
+    if (pendingNavRenderTimer) window.clearTimeout(pendingNavRenderTimer);
+    pendingNavRenderFrame = window.requestAnimationFrame(() => {
+      pendingNavRenderFrame = 0;
+      pendingNavRenderTimer = window.setTimeout(() => {
+        pendingNavRenderTimer = 0;
+        const nextPage = pendingNavPage;
+        pendingNavPage = null;
+        if (Number.isInteger(nextPage)) showPage(nextPage);
+      }, 0);
+    });
+  };
+
   nav.addEventListener('click', e => {
     const item = e.target.closest('.nav-item');
     if (!item) return;
+    const nextIdx = Number(item.dataset.idx);
+    if (nextIdx === currentPage) {
+      closeMobileSidebar();
+      return;
+    }
     nav.querySelectorAll('.nav-item').forEach(n => {
       n.classList.remove('active');
       n.removeAttribute('aria-current');
     });
     item.classList.add('active');
     item.setAttribute('aria-current', 'page');
-    showPage(+item.dataset.idx);
     closeMobileSidebar();
+    scheduleNavRender(nextIdx);
   });
 
   sidebarMobileToggle?.addEventListener('click', () => {
@@ -8730,10 +8833,7 @@ function setShellLoadingState(loading = true) {
     sidebarMeta.innerHTML = '<span class="shell-skeleton shell-skeleton-meta"></span>';
     nav.innerHTML = `
       <div class="shell-nav-skeleton">
-        <div class="shell-skeleton shell-skeleton-nav"></div>
-        <div class="shell-skeleton shell-skeleton-nav"></div>
-        <div class="shell-skeleton shell-skeleton-nav"></div>
-        <div class="shell-skeleton shell-skeleton-nav"></div>
+        ${PAGES.map(() => '<div class="shell-skeleton shell-skeleton-nav"></div>').join('')}
       </div>`;
     pageTitle.innerHTML = '<span class="shell-skeleton shell-skeleton-topbar"></span>';
     return;

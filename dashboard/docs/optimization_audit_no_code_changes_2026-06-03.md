@@ -18,7 +18,7 @@ Baseline ที่ตรวจแล้ว:
 - static fallback `Dashboard/data/fraud_data.js` ประมาณ 2.88 MB
 - static fallback `Dashboard/data/data.js` ประมาณ 625 KB
 
-## สถานะการดำเนินงานล่าสุด (2026-06-04)
+## สถานะการดำเนินงานล่าสุด (2026-06-05)
 
 ### ทำแล้ว
 
@@ -32,14 +32,20 @@ Baseline ที่ตรวจแล้ว:
 - [x] Phase 1 lazy-load `xlsx-js-style` สำเร็จ: หน้า startup ไม่โหลด XLSX, export โหลด XLSX 1 ครั้งเมื่อกดใช้งาน และ compare workbook อ่านกลับได้ 6 sheets ครบ
 - [x] Phase 1 lazy-load `flatpickr` สำเร็จ: หน้า startup ไม่โหลด flatpickr, เปิด Daily Compare แล้วโหลด main/locale/CSS ตามต้องการ, date inputs ถูกผูก `_flatpickr`, และ export compare ยังผ่านครบ
 - [x] Hotfix startup loading ค้างที่ `http://127.0.0.1:5529/Dashboard/index.html`: ปรับ loader ให้รอ live API ได้ครบ 38,007 trips พร้อม progress ระหว่าง pagination และยังคง fallback เป็น safety net เฉพาะกรณี API ล้มจริง
+- [x] Phase 2 รอบแรกใน Daily Compare สำเร็จ: เพิ่ม `rowsByDate`, `allDatesSet`, route identity cache, `rangeStats()` memo และ route-row map สำหรับ single-mode render โดยไม่แตะ startup live API loader, สูตรคำนวณ, schema หรือ XLSX sheet logic
+- [x] Phase 2 ต่อเนื่องใน Daily Compare สำเร็จ: เปลี่ยน driver matching ใน compare/unmatched cards จาก `findIndex()` ซ้ำ เป็น driver bucket queue โดยยัง match driver ตามลำดับเดิมและไม่เปลี่ยน status/tag logic
+- [x] Phase 2 filter panel DOM diff สำเร็จ: `buildMsOptions()` ข้ามการ rebuild เฉพาะเมื่อ option set/selected set เหมือนเดิมและไม่มี search ค้าง โดยยัง rebuild เมื่อ search ต้องถูก clear หรือ filter state เปลี่ยน
+- [x] Phase 2 local metrics guard สำเร็จ: ลด CLS/INP local จาก F12 report โดย preload desktop auto-sidebar ก่อน first paint, ปรับ skeleton ให้ขนาดใกล้ nav/topbar จริง และ defer heavy `showPage()` หลัง nav click เพื่อให้ active state paint ก่อน
+- [x] Phase 2 skeleton polish สำเร็จ: ปรับ loading skeleton สำหรับ desktop collapsed sidebar ให้แสดง compact logo, ซ่อน brand/meta skeleton ที่ถูกบีบ, จัด nav skeleton เป็น icon blocks และเปลี่ยน topbar skeleton เป็น icon + text line ที่สมดุลขึ้น
 
 ### ยังไม่ทำในรอบนี้
 
 - [ ] Summary-first แล้ว background-load trips: ยังไม่ทำ เพราะอาจกระทบ stable behavior ที่หน้า compare ต้องมี trips พร้อมก่อน render
 - [ ] Browser/API payload cache ด้วย version key: ยังไม่ทำ เพราะต้องยืนยัน cache invalidation กับ batch/API version ก่อน เพื่อกันข้อมูลเก่าค้าง
 - [ ] CSS/animation polish: ยังไม่ทำ เพราะเป็นงาน visual/perf ที่ควรทำหลังมี baseline telemetry แล้ว
+- [x] Phase 2 filter panel DOM diff: ทำแล้วและทดสอบ interaction ของ route filter panel ผ่าน
 
-Guardrail ของรอบล่าสุด: ไม่เปลี่ยนสูตรคำนวณ margin, pct, oil ratio, route identity, schema ข้อมูล, fallback data, หรือ labels ของมุมมองปกติ
+Guardrail ของรอบล่าสุด: ไม่เปลี่ยนสูตรคำนวณ margin, pct, oil ratio, route identity, schema ข้อมูล, fallback data, startup live API loader, XLSX sheet logic, หรือ labels ของมุมมองปกติ
 
 ### Baseline ล่าสุดหลังเพิ่ม telemetry (2026-06-04)
 
@@ -104,6 +110,117 @@ Acceptance ที่ยืนยันแล้ว: `node --check Dashboard\scri
 - Export XLSX จากข้อมูล live ครบผ่าน: workbook 848,847 bytes, 6 sheets ครบ (`สรุปผลดำเนินงาน`, `รายเส้นทางที่เปรียบเทียบ`, `ขาดทุน`, `สำรองน้ำมัน > 50%`, `ราคาจ่ายผิดปกติ`, `ราคารับผิดปกติ`)
 - รอบ export full live: `dashboardInit` 61.83s, `summary=api`, `trips=api`, `oil=api`, trips 38,007 rows, ไม่มี fallback visible, ไม่มี page error / console error
 - ยืนยันว่า Phase 1 lazy-load ยังไม่เสีย: หลังเข้า Daily Compare `flatpickr` โหลดแล้ว และ `XLSX` ยังไม่โหลดก่อน export จากนั้น export จึงโหลด XLSX 1 ครั้ง
+
+### Phase 2 ล่าสุด: Daily Compare Index/Memoization รอบแรก (2026-06-05)
+
+ขอบเขตที่ทำเฉพาะ `buildDailyCompare()` ใน `Dashboard/scripts/app.js`:
+
+- เพิ่ม `allDatesSet` สำหรับ lookup วันอ้างอิงแทน `allDates.includes(...)`
+- เพิ่ม `rowsByDate` และ `rowsForDateRange()` ให้ `rangeStats()` ดึงเฉพาะ rows ในช่วงวันที่ที่เลือก แทนสแกน `validFd` ทั้งก้อนทุกครั้ง
+- เพิ่ม `routeIdentityCache`/`dcCachedRouteIdentityKey()` เพื่อลดการคำนวณ route identity ซ้ำกับ row object เดิม
+- เพิ่ม memo ของ `rangeStats(dateStart,dateEnd,custF,routeF,vtypeF)` ด้วย stable filter key
+- ปรับ `dcUpdateFilters()` ให้ใช้ rows จากช่วงวันที่ A/B ผ่าน index เดียวกัน
+- ปรับ single-mode `renderSingleTable(stA, stRef, labelRef)` ให้สร้าง `currentRouteRows` ครั้งเดียว แทน filter `stA.rows` ซ้ำต่อ route
+
+Guardrail รอบนี้:
+
+- ไม่แตะ `loadSummarySource()`, `loadTripsSource()`, `loadOilSource()`, timeout/retry config หรือ progress loader
+- ไม่เปลี่ยน `dcQaTripStatuses()`, `dcQaCompareStatuses()`, `dcQaPairNotes()`, route grouping formula, XLSX sheet names, XLSX column format หรือ normal view export
+- ไม่ตัด rows ในหน้า, modal หรือ export
+
+ผลทดสอบหลังแก้:
+
+- `node --check Dashboard\scripts\app.js` ผ่าน
+- Playwright live single-mode + export ที่ URL จริงผ่าน: `dashboardInit` 56.38s, `summary=api`, `trips=api`, `oil=api`, trips 38,246 rows, fallback ไม่ขึ้น, ไม่มี page/console error
+- Single-mode baseline ก่อนแก้ `dcRunCompare` 692.8ms, หลังแก้ 359.8ms โดยจำนวนเท่าเดิม: routesA 196, routesB 187, tripsA 286, tripsB 267
+- Export XLSX หลังแก้ยังครบ 6 sheets และขนาด workbook เท่า baseline รอบเดียวกัน 819,101 bytes: `สรุปผลดำเนินงาน`, `รายเส้นทางที่เปรียบเทียบ`, `ขาดทุน`, `สำรองน้ำมัน > 50%`, `ราคาจ่ายผิดปกติ`, `ราคารับผิดปกติ`
+- Playwright live compare-mode ผ่าน: `dcRunCompare` 230.6ms, `mode=compare`, routesA 196, routesB 187, tripsA 286, tripsB 267, fallback ไม่ขึ้น, ไม่มี page/console error
+- หมายเหตุ: live API วันที่ 2026-06-05 ส่งกลับ 38,246 trips ซึ่งมากกว่า baseline hotfix วันที่ 2026-06-04 ที่ 38,007 trips ตามข้อมูลจริงที่เปลี่ยนเพิ่ม ไม่ใช่ผลจาก Phase 2
+
+### Phase 2 ล่าสุด: Driver Bucket Matching ต่อเนื่อง (2026-06-05)
+
+ขอบเขตที่ทำเฉพาะ Daily Compare card matching:
+
+- เพิ่ม `dcQaBuildDriverBuckets()` เพื่อสร้าง queue ของ trips ตาม driver key จาก rows ฝั่งอ้างอิง
+- เพิ่ม `dcQaConsumeDriverMatch()` เพื่อดึง match แรกของ driver เดียวกันตามลำดับเดิม แทน `findIndex()` + `used Set`
+- ปรับ `dcQaBuildAnomalyCards()` และ `dcQaBuildUnmatchedCards()` ให้ใช้ driver bucket queue
+- ไม่เปลี่ยน `dcQaTripStatuses()`, `dcQaCompareStatuses()`, `dcQaPairNotes()`, route grouping, export workbook หรือ startup live API loader
+
+ผลทดสอบหลังแก้:
+
+- `node --check Dashboard\scripts\app.js` ผ่าน
+- Playwright live startup + Daily Compare + export + compare-mode ที่ URL จริงผ่าน: `dashboardInit` 58.03s, `summary=api`, `trips=api`, `oil=api`, trips 38,246 rows, fallback ไม่ขึ้น
+- Single-mode หลัง driver bucket: `dcRunCompare` 348.0ms, routesA 196, routesB 187, tripsA 286, tripsB 267
+- Compare-mode หลัง driver bucket: `dcRunCompare` 222.9ms, `mode=compare`, routesA 196, routesB 187, tripsA 286, tripsB 267
+- Export XLSX หลัง driver bucket ยังอ่าน workbook ได้ 6 sheets ครบและขนาด 819,101 bytes: `สรุปผลดำเนินงาน`, `รายเส้นทางที่เปรียบเทียบ`, `ขาดทุน`, `สำรองน้ำมัน > 50%`, `ราคาจ่ายผิดปกติ`, `ราคารับผิดปกติ`
+- ไม่มี page error / console error
+
+### Phase 2 ล่าสุด: Filter Panel DOM Diff (2026-06-05)
+
+ขอบเขตที่ทำเฉพาะ filter panel ของ Daily Compare:
+
+- เพิ่ม `_msOptionRenderKeys` ใน `buildDailyCompare()` เพื่อจำ signature ของ option set และ selected set ของ multiselect แต่ละตัว
+- `buildMsOptions()` จะข้าม `pnl.innerHTML = ...` เฉพาะเมื่อ options เดิม, selection เดิม, panel เคย render แล้ว และ search input ไม่มีค่า
+- ถ้า search input มีค่า จะ rebuild เพื่อ clear search เหมือนพฤติกรรมเดิม
+- ถ้า filter state หรือ option set เปลี่ยน จะ rebuild ตามเดิม
+
+ผลทดสอบหลังแก้:
+
+- `node --check Dashboard\scripts\app.js` ผ่าน
+- Playwright live filter probe ผ่าน: route options 199 รายการก่อน/หลัง, no-change update preserve DOM node, search ค้างถูก rebuild และ clear
+- Playwright live compare-mode หลัง filter DOM diff ผ่าน: `dashboardInit` 54.87s, `summary=api`, `trips=api`, `oil=api`, trips 38,246 rows, fallback ไม่ขึ้น, `dcRunCompare` 403.6ms, `mode=compare`, routesA 196, routesB 187, tripsA 286, tripsB 267
+- Playwright live export หลัง filter DOM diff ผ่าน: `dashboardInit` 76.73s, `summary=api`, `trips=api`, `oil=api`, trips 38,246 rows, fallback ไม่ขึ้น, workbook 819,101 bytes, 6 sheets ครบ
+- ไม่มี page error / console error
+
+### Phase 2 ล่าสุด: Local Metrics Guard สำหรับ LCP/CLS/INP (2026-06-05)
+
+สัญญาณจาก F12 local metrics:
+
+- LCP 184.26s poor และ Chrome เตือนว่าอาจ inflated เพราะหน้าเริ่มโหลดใน background
+- CLS 0.32 poor, worst cluster 32 shifts
+- INP 240ms needs improvement โดย interaction อยู่ที่ pointer บน `span.nav-label` / `button.nav-item`
+
+สิ่งที่แก้โดยไม่แตะ data/API:
+
+- เพิ่ม preload class `sidebar-auto-preload` ใน `Dashboard/index.html` ก่อนโหลด CSS เพื่อให้ desktop auto-sidebar layout ใช้ตั้งแต่ first paint ไม่รอ `initNav()` หลัง API โหลดเสร็จ
+- เพิ่ม CSS สำหรับ `html.sidebar-auto-preload .sidebar/.main` ให้ `.main` เริ่มที่ `margin-left:94px` ตั้งแต่ต้น ลดการกระโดดจาก sidebar full width ไป auto-sidebar หลังโหลดข้อมูล
+- ปรับ skeleton nav/topbar ให้ขนาดใกล้ UI จริงขึ้น: nav skeleton สูง 66px และ topbar skeleton สูง 64px
+- ปรับ nav click ใน `initNav()` ให้ update active state และปิด mobile sidebar ก่อน แล้ว defer `showPage()` ไปหลัง paint ถัดไป เพื่อลด pointer event blocking / INP
+- เพิ่ม guard ไม่ rerender ถ้ากด nav item หน้าเดิม
+
+ผล recheck หลังแก้:
+
+- `node --check Dashboard\scripts\app.js` ผ่าน
+- `git diff --check` ผ่าน มีเฉพาะ LF/CRLF warning
+- Playwright local metrics probe หลังแก้: `summary=api`, `trips=api`, `oil=api`, trips 38,246 rows, fallback ไม่ขึ้น
+- CLS probe ลดเหลือ 0.0155, shift ใหญ่จาก `.main` หายไป; worst shift หลังแก้เหลือ 0.0087 จาก card content ย่อย
+- Event Timing proxy หลัง nav click: max event duration 32ms, eventCount 3
+- Nav click ไป Daily Compare ทำงาน: activeIdx `1`, `showPage(daily)` 212.2ms
+- Compare-mode หลังแก้ผ่าน: `dcRunCompare` 287.9ms, routesA 196, routesB 187, tripsA 286, tripsB 267
+- LCP probe ใน headless อยู่ที่ 54.16s ใกล้ `dashboardInit` 53.67s; ยังผูกกับ live API full-load แต่ต่ำกว่า local report 184.26s ที่ Chrome ระบุว่าอาจ inflated จาก background load
+- Export XLSX หลัง local metrics guard ผ่าน: `dashboardInit` 62.60s, `summary=api`, `trips=api`, `oil=api`, trips 38,246 rows, fallback ไม่ขึ้น, `dcRunCompare` 96.1ms, workbook 819,101 bytes, 6 sheets ครบ
+- ไม่มี page error / console error
+
+### Phase 2 ล่าสุด: Loading Skeleton Polish (2026-06-05)
+
+สาเหตุที่พบจาก screenshot/F12:
+
+- หลังเพิ่ม `sidebar-auto-preload` หน้า loading ใช้ sidebar collapsed width 94px ตั้งแต่แรก แต่ skeleton ภายใน sidebar ยังเป็นรูปแบบ sidebar เต็ม ทำให้ brand/meta skeleton ถูกบีบและดูไม่สมดุล
+- topbar skeleton เดิมเป็นกล่องใหญ่โล่ง ๆ แม้ช่วยเรื่อง CLS แต่ดูไม่เหมือน page title จริง
+
+สิ่งที่แก้:
+
+- เพิ่ม CSS เฉพาะ `html.sidebar-auto-preload` ให้ sidebar loading ใช้ layout collapsed จริง: แสดง compact logo, ซ่อน brand row/meta, จัด nav skeleton เป็น 58x58 icon blocks
+- ปรับ `.shell-skeleton-topbar` เป็นโครง icon 56x56 + text line แทนกล่องใหญ่
+- ให้ `syncSidebarAutoMode()` ถอด `sidebar-auto-preload` หลัง `body.sidebar-auto` ถูกตั้งแล้ว เพื่อไม่ให้ preload CSS ไปกระทบ hover/expanded sidebar หลังโหลดเสร็จ
+
+ผลทดสอบ:
+
+- loading screenshot recheck ผ่าน: sidebar 94px, main x=94, compact logo แสดง, brand skeleton ซ่อน, nav skeleton 3 ชิ้นตามจำนวนหน้า
+- full live recheck ผ่าน: preload class ถูกถอดหลังโหลด, `body.sidebar-auto` ยังทำงาน, `summary=api`, `trips=api`, `oil=api`, trips 38,246 rows, fallback ไม่ขึ้น
+- nav ไป Daily Compare และ compare-mode ผ่าน: `dcRunCompare` 395.3ms, routesA 196, routesB 187, tripsA 286, tripsB 267
+- CLS local probe หลัง polish = 0.053, ยังอยู่ในเกณฑ์ดี (<0.1)
+- ไม่มี page error / console error
 
 ## Skills ที่ตรวจและนำมาใช้เป็นกรอบคิด
 
@@ -308,11 +425,12 @@ Acceptance:
 
 ความเสี่ยงกลาง ต้องมี regression test/manual compare:
 
-- สร้าง route/date/driver indexes จาก `validFd`
-- Memoize `rangeStats()`
-- Cache `oilPriceByDate`
-- เปลี่ยน driver matching เป็น bucket map
-- ลด `innerHTML` rebuild ของ filter panel เมื่อ option set ไม่เปลี่ยน
+- [x] สร้าง date index จาก `validFd` ผ่าน `rowsByDate` และ `allDatesSet`
+- [x] Memoize `rangeStats()`
+- [x] Cache `oilPriceByDate`
+- [x] ลด repeated route row filtering ใน single-mode `renderSingleTable()` ด้วย `currentRouteRows`
+- [x] สร้าง driver bucket map สำหรับ matching ที่เคยใช้ `findIndex()`
+- [x] ลด `innerHTML` rebuild ของ filter panel เมื่อ option set ไม่เปลี่ยน
 
 Acceptance:
 

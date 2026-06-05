@@ -1601,7 +1601,8 @@ function parseTimedRouteParts_(route) {
     vehicle: parts[1],
     core: parts.slice(2, timeIndex).join('-'),
     routeBeforeTime: parts.slice(0, timeIndex).join('-'),
-    suffix: parts.slice(timeIndex).join('-')
+    suffixAfterTime: parts.slice(timeIndex + 1).join('-'),
+    routeWithoutTime: parts.slice(0, timeIndex).concat(parts.slice(timeIndex + 1)).join('-')
   };
 }
 
@@ -1641,16 +1642,18 @@ function getRouteIdentity_(customer, vtype, route, routeDesc) {
     };
   }
   var routePrefix = parsed.service + '-' + parsed.vehicle;
-  var routeDescription = parsedSource === 'route' ? (d || parsed.routeBeforeTime) : (r || parsed.routeBeforeTime);
+  var routeWithoutTime = parsed.routeWithoutTime || parsed.routeBeforeTime;
+  var keySuffix = parsed.suffixAfterTime ? '|' + parsed.suffixAfterTime : '';
+  var routeDescription = parsedSource === 'route' ? (d || routeWithoutTime) : (r || routeWithoutTime);
   return {
-    key: c + '|' + v + '|' + routePrefix + '|' + parsed.core,
+    key: c + '|' + v + '|' + routePrefix + '|' + parsed.core + keySuffix,
     customer: c,
     vtype: v,
     route: r,
     routeCore: parsed.core,
     routeVehicle: parsed.vehicle,
     routePrefix: routePrefix,
-    displayRoute: parsed.routeBeforeTime,
+    displayRoute: routeWithoutTime,
     routeDescription: routeDescription,
     isFlashRoute: true
   };

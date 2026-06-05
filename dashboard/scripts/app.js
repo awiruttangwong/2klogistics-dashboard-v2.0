@@ -94,7 +94,8 @@ function parseTimedRouteParts(route) {
     vehicle: parts[1],
     core: parts.slice(2, timeIndex).join('-'),
     routeBeforeTime: parts.slice(0, timeIndex).join('-'),
-    suffix: parts.slice(timeIndex).join('-')
+    suffixAfterTime: parts.slice(timeIndex + 1).join('-'),
+    routeWithoutTime: [...parts.slice(0, timeIndex), ...parts.slice(timeIndex + 1)].join('-')
   };
 }
 
@@ -116,14 +117,15 @@ function getRouteIdentity(row) {
   const routeCore = useFlashCore ? parsed.core : route;
   const routeVehicle = useFlashCore ? parsed.vehicle : vtype;
   const routePrefix = useFlashCore ? `${parsed.service}-${parsed.vehicle}` : '';
-  const displayRoute = useFlashCore ? parsed.routeBeforeTime : route;
+  const displayRoute = useFlashCore ? (parsed.routeWithoutTime || parsed.routeBeforeTime) : route;
+  const keySuffix = useFlashCore && parsed.suffixAfterTime ? `|${parsed.suffixAfterTime}` : '';
   const routeDescription = useFlashCore
     ? (parsedCandidate.source === 'route'
       ? (cleanRouteDisplayText(routeDesc) || cleanRouteDisplayText(routeName) || displayRoute)
       : (cleanRouteDisplayText(route) || cleanRouteDisplayText(routeName) || displayRoute))
     : route;
   return {
-    key: useFlashCore ? `${customer}|${vtype}|${routePrefix}|${routeCore}` : `${customer}|${vtype}|${route}`,
+    key: useFlashCore ? `${customer}|${vtype}|${routePrefix}|${routeCore}${keySuffix}` : `${customer}|${vtype}|${route}`,
     customer,
     vtype,
     route,
@@ -458,8 +460,7 @@ function routeDisplay(row) {
     row?.isFlashRoute ||
     /(^|\|)(FD|LH|CPU|SHOP)-/.test(routeKeyText) ||
     /^(FD|LH|CPU|SHOP)-[^-]+-/.test(routeCode || '');
-  if (isFlashRouteLike && routeDescription && routeCode && routeDescription !== routeCode) return `${routeDescription} (${routeCode})`;
-  if (isFlashRouteLike && desc && routeCode && desc !== routeCode) return `${desc} (${routeCode})`;
+  if (isFlashRouteLike && routeCode) return routeCode;
   return routeDescription ||
     desc ||
     cleanRouteDisplayText(row?.displayName) ||
@@ -1193,6 +1194,7 @@ function buildLossAuditTableRowsFromTrips(trips) {
     .map(row => ({
       name: row.name || '-',
       route: row.route || row.name || '-',
+      routeKey: row.routeKey,
       routeDesc: row.routeDesc || '-',
       count: Number(row.count) || 0,
       loss: Number(row.loss) || 0,
@@ -1242,7 +1244,7 @@ function buildLossAuditTableConfigs(rows, drillOptions = {}) {
       csvName: 'loss-by-route',
       rows: rows.routeRows,
       cols: [
-        { key: 'name', label: 'ชื่อเส้นทาง', strong: true, value: row => routeDisplay(row), sortValue: row => routeDisplay(row), exportValue: row => routeDisplay(row) },
+        { key: 'name', label: 'ชื่อเส้นทาง', strong: true, value: row => routeDisplay(row), sortValue: row => routeDisplay(row), exportValue: row => routeGroupHeaderDisplay(row) },
         { key: 'count', label: 'จำนวนเที่ยวขาดทุน', type: 'number', align: 'right', noFilter: true },
         { key: 'loss', label: 'มูลค่า', type: 'currency', align: 'right', strong: true, tone: 'sign', noFilter: true },
         { key: 'avgLoss', label: 'เฉลี่ย/เที่ยว', type: 'currency', align: 'right' }
@@ -5654,10 +5656,11 @@ function buildDailyCompare(data) {
       }
 
       const { custF, routeF, vtypeF } = getFilters();
+      const xlsxRouteDisplay = row => routeGroupHeaderDisplay(row);
       const routeLabelMap = {};
       validFd.forEach(row => {
         const value = routeIdentityKey(row);
-        if (!routeLabelMap[value]) routeLabelMap[value] = routeDisplay(row);
+        if (!routeLabelMap[value]) routeLabelMap[value] = xlsxRouteDisplay(row);
       });
       const routeFilterLabels = routeF.map(route => routeLabelMap[route] || route);
       function fmtNum(n) { return (n == null || isNaN(n)) ? 0 : Math.round(Number(n) * 100) / 100; }
@@ -6101,7 +6104,7 @@ function buildDailyCompare(data) {
           if (pa !== pb) return pa - pb;
           if (b.severity !== a.severity) return b.severity - a.severity;
           if (b.anomCount !== a.anomCount) return b.anomCount - a.anomCount;
-          return routeDisplay(a.route).localeCompare(routeDisplay(b.route), 'th');
+          return xlsxRouteDisplay(a.route).localeCompare(xlsxRouteDisplay(b.route), 'th');
         });
 
         const grouped = {};
@@ -6160,7 +6163,7 @@ function buildDailyCompare(data) {
               const zf = (rowIdx % 2 === 0) ? 'F9FAFB' : null;
               wsData.push([
                 cCell(r.customer || '-', { fill: zf }),
-                cCell(routeDisplay(r), { fill: zf }),
+                cCell(xlsxRouteDisplay(r), { fill: zf }),
                 cCell(r.date || '-', { fill: zf }),
                 cCell(r.driver || '-', { fill: zf }),
                 cCell(r.vtype || '-', { fill: zf }),
@@ -6252,7 +6255,7 @@ function buildDailyCompare(data) {
             const zf = (rowIdx % 2 === 0) ? 'F9FAFB' : null;
             const row = [
               cCell(r.customer || '-', { fill: zf }),
-              cCell(routeDisplay(r), { fill: zf }),
+              cCell(xlsxRouteDisplay(r), { fill: zf }),
               cCell(r.date || '-', { fill: zf }),
               cCell(r.driver || '-', { fill: zf }),
               cCell(r.vtype || '-', { fill: zf }),
@@ -6597,7 +6600,7 @@ function buildDailyCompare(data) {
               const colMValign = isTargetSheet ? 'center' : 'top';
               const row = [
                 cCell(ra.customer || rb.customer || '-', { fill: zf }),
-                cCell(routeDisplay(ra.route || ra.routeDesc ? ra : rb), { fill: zf }),
+                cCell(xlsxRouteDisplay(ra.route || ra.routeDesc ? ra : rb), { fill: zf }),
                 cCell(ra.date || '-', { fill: zf }),
                 cCell(rb.date || '-', { fill: zf }),
                 cCell(ra.driver || rb.driver || '-', { fill: zf }),
@@ -6764,7 +6767,7 @@ function buildDailyCompare(data) {
             const pa = custOrder[ca] ?? 999;
             const pb = custOrder[cb] ?? 999;
             if (pa !== pb) return pa - pb;
-            return routeDisplay(a.route).localeCompare(routeDisplay(b.route), 'th');
+            return xlsxRouteDisplay(a.route).localeCompare(xlsxRouteDisplay(b.route), 'th');
           });
         };
 
@@ -6843,7 +6846,7 @@ function buildDailyCompare(data) {
 
             visibleRows.forEach(entry => {
               const r = entry.ra || {};
-              const raDisp = routeDisplay(r);
+              const raDisp = xlsxRouteDisplay(r);
               if (raDisp && raDisp.length > maxRouteLen) maxRouteLen = raDisp.length;
 
               const oilPrice = getOilPriceByDate(r.date);
@@ -6884,7 +6887,7 @@ function buildDailyCompare(data) {
             });
 
             (item.refTripsForRoute || []).forEach(refTrip => {
-              const refDisp = routeDisplay(refTrip);
+              const refDisp = xlsxRouteDisplay(refTrip);
               if (refDisp && refDisp.length > maxRouteLen) maxRouteLen = refDisp.length;
 
               const oilPrice = getOilPriceByDate(refTrip.date);
@@ -7011,7 +7014,7 @@ function buildDailyCompare(data) {
                 const colLValign = isTargetSheet ? 'center' : 'top';
                 const row = [
                   cCell(r.customer || '-', { fill: zf }),
-                  cCell(routeDisplay(r), { fill: zf }),
+                  cCell(xlsxRouteDisplay(r), { fill: zf }),
                   cCell(r.date || '-', { fill: zf }),
                   cCell(r.driver || '-', { fill: zf }),
                   cCell(r.vtype || '-', { fill: zf }),
@@ -7032,7 +7035,7 @@ function buildDailyCompare(data) {
                 const refFill = 'E5E7EB'; // slightly darker gray tint to distinguish reference-day rows
                 const row = [
                   cCell(refTrip.customer || '-', { fill: refFill }),
-                  cCell(routeDisplay(refTrip), { fill: refFill }),
+                  cCell(xlsxRouteDisplay(refTrip), { fill: refFill }),
                   cCell(refTrip.date || '-', { fill: refFill }),
                   cCell(refTrip.driver || '-', { fill: refFill }),
                   cCell(refTrip.vtype || '-', { fill: refFill }),

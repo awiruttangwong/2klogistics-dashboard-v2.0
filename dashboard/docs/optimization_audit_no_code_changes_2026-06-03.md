@@ -36,7 +36,7 @@ Baseline ที่ตรวจแล้ว:
 - [x] Phase 2 ต่อเนื่องใน Daily Compare สำเร็จ: เปลี่ยน driver matching ใน compare/unmatched cards จาก `findIndex()` ซ้ำ เป็น driver bucket queue โดยยัง match driver ตามลำดับเดิมและไม่เปลี่ยน status/tag logic
 - [x] Phase 2 filter panel DOM diff สำเร็จ: `buildMsOptions()` ข้ามการ rebuild เฉพาะเมื่อ option set/selected set เหมือนเดิมและไม่มี search ค้าง โดยยัง rebuild เมื่อ search ต้องถูก clear หรือ filter state เปลี่ยน
 - [x] Phase 2 local metrics guard สำเร็จ: ลด CLS/INP local จาก F12 report โดย preload desktop auto-sidebar ก่อน first paint, ปรับ skeleton ให้ขนาดใกล้ nav/topbar จริง และ defer heavy `showPage()` หลัง nav click เพื่อให้ active state paint ก่อน
-- [x] Phase 2 skeleton polish สำเร็จ: ปรับ loading skeleton สำหรับ desktop collapsed sidebar ให้แสดง compact logo, ซ่อน brand/meta skeleton ที่ถูกบีบ, จัด nav skeleton เป็น icon blocks และเปลี่ยน topbar skeleton เป็น icon + text line ที่สมดุลขึ้น
+- [x] Phase 2 skeleton polish สำเร็จ: ปรับ loading skeleton สำหรับ desktop collapsed sidebar ให้แสดง skeleton block แทนโลโก้จริง, ซ่อน brand/meta skeleton ที่ถูกบีบ, จัด nav skeleton เป็น icon blocks และเปลี่ยน topbar skeleton เป็น icon + text line ที่สมดุลขึ้น
 
 ### ยังไม่ทำในรอบนี้
 
@@ -210,13 +210,14 @@ Guardrail รอบนี้:
 
 สิ่งที่แก้:
 
-- เพิ่ม CSS เฉพาะ `html.sidebar-auto-preload` ให้ sidebar loading ใช้ layout collapsed จริง: แสดง compact logo, ซ่อน brand row/meta, จัด nav skeleton เป็น 58x58 icon blocks
+- เพิ่ม CSS เฉพาะ `html.sidebar-auto-preload` ให้ sidebar loading ใช้ layout collapsed จริง: แสดง skeleton block ขนาดเดียวกับ compact logo, ซ่อนรูปโลโก้จริงเฉพาะตอน preload, ซ่อน brand row/meta, จัด nav skeleton เป็น 58x58 icon blocks
 - ปรับ `.shell-skeleton-topbar` เป็นโครง icon 56x56 + text line แทนกล่องใหญ่
 - ให้ `syncSidebarAutoMode()` ถอด `sidebar-auto-preload` หลัง `body.sidebar-auto` ถูกตั้งแล้ว เพื่อไม่ให้ preload CSS ไปกระทบ hover/expanded sidebar หลังโหลดเสร็จ
 
 ผลทดสอบ:
 
-- loading screenshot recheck ผ่าน: sidebar 94px, main x=94, compact logo แสดง, brand skeleton ซ่อน, nav skeleton 3 ชิ้นตามจำนวนหน้า
+- loading screenshot recheck ผ่าน: sidebar 94px, main x=94, logo area เป็น skeleton block, รูปโลโก้จริง opacity 0 เฉพาะตอน preload, brand skeleton ซ่อน, nav skeleton 3 ชิ้นตามจำนวนหน้า
+- full live recheck หลังปรับโลโก้ skeleton ผ่าน: เมื่อโหลดเสร็จ `sidebar-auto-preload` ถูกถอด, logo image กลับมา opacity 1, `summary=api`, `trips=api`, `oil=api`, trips 38,246 rows, fallback ไม่ขึ้น, compare-mode ผ่าน
 - full live recheck ผ่าน: preload class ถูกถอดหลังโหลด, `body.sidebar-auto` ยังทำงาน, `summary=api`, `trips=api`, `oil=api`, trips 38,246 rows, fallback ไม่ขึ้น
 - nav ไป Daily Compare และ compare-mode ผ่าน: `dcRunCompare` 395.3ms, routesA 196, routesB 187, tripsA 286, tripsB 267
 - CLS local probe หลัง polish = 0.053, ยังอยู่ในเกณฑ์ดี (<0.1)

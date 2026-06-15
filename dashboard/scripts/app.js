@@ -5163,6 +5163,7 @@ function buildDailyCompare(data) {
     function statusMatchesFilter(status, filterKey) {
       const normStatus = status === 'oilHigh' ? 'payHigh' : status;
       const normFilter = filterKey === 'oilHigh' ? 'payHigh' : filterKey;
+      if (normFilter === 'payHigh') return normStatus === 'payHigh' || normStatus === 'payOilChanged';
       if (normFilter === 'recvLow') return normStatus === 'recvLow' || normStatus === 'recvOilChanged';
       return normStatus === normFilter;
     }
@@ -5439,6 +5440,7 @@ function buildDailyCompare(data) {
         loss: 'ขาดทุน',
         oil50: 'สำรองน้ำมัน>50%',
         payHigh: 'ราคาจ่ายผิดปกติ',
+        payOilChanged: 'ราคาจ่ายเปลี่ยนแปลงตามราคาน้ำมัน',
         recvLow: 'ราคารับผิดปกติ',
         recvOilChanged: 'ราคารับเปลี่ยนแปลงตามราคาน้ำมัน',
         normal: 'ข้อมูลไม่เปลี่ยนแปลง',
@@ -5464,6 +5466,7 @@ function buildDailyCompare(data) {
         if (k === 'loss') return 'red';
         if (k === 'oil50') return 'orange';
         if (k === 'payHigh') return 'purple';
+        if (k === 'payOilChanged') return 'rose';
         if (k === 'recvLow') return 'blue';
         if (k === 'recvOilChanged') return 'cyan';
         if (k === 'normal') return 'green';
@@ -6000,13 +6003,13 @@ function buildDailyCompare(data) {
       const addPeriod = (title, periodLabel) => `${title} (${periodLabel || '-'})`;
       const qaStatusLabels = () => (typeof getCompareStatusLabelMap === 'function')
         ? getCompareStatusLabelMap()
-        : { loss: 'ขาดทุน', oil50: 'สำรองน้ำมัน>50%', payHigh: 'ราคาจ่ายผิดปกติ', recvLow: 'ราคารับผิดปกติ', recvOilChanged: 'ราคารับเปลี่ยนแปลงตามราคาน้ำมัน', normal: 'ข้อมูลไม่เปลี่ยนแปลง', noRef: 'ไม่มีข้อมูลเปรียบเทียบ' };
+        : { loss: 'ขาดทุน', oil50: 'สำรองน้ำมัน>50%', payHigh: 'ราคาจ่ายผิดปกติ', payOilChanged: 'ราคาจ่ายเปลี่ยนแปลงตามราคาน้ำมัน', recvLow: 'ราคารับผิดปกติ', recvOilChanged: 'ราคารับเปลี่ยนแปลงตามราคาน้ำมัน', normal: 'ข้อมูลไม่เปลี่ยนแปลง', noRef: 'ไม่มีข้อมูลเปรียบเทียบ' };
       const cleanStatuses = statuses => {
         const values = [...new Set((statuses && statuses.length ? statuses : ['normal']).map(s => s === 'oilHigh' ? 'payHigh' : s))];
         return values.some(s => s !== 'normal') ? values.filter(s => s !== 'normal') : values;
       };
-      // Priority order matches dcQaStatusRank: loss(4) > oil50(3) > payHigh/recvLow(2) > recvOilChanged/normal/noRef(0)
-      const statusPriorityOrder = ['loss', 'oil50', 'payHigh', 'recvLow', 'recvOilChanged', 'normal', 'noRef'];
+      // Priority order matches dcQaStatusRank: loss(4) > oil50(3) > payHigh/recvLow(2) > payOilChanged/recvOilChanged/normal/noRef(0)
+      const statusPriorityOrder = ['loss', 'oil50', 'payHigh', 'recvLow', 'payOilChanged', 'recvOilChanged', 'normal', 'noRef'];
       const statusText = statuses => {
         const labels = qaStatusLabels();
         const sorted = [...cleanStatuses(statuses)].sort(
@@ -6023,6 +6026,7 @@ function buildDailyCompare(data) {
         if (values.includes('oil50')) return 'oil50';
         if (values.includes('payHigh')) return 'payHigh';
         if (values.includes('recvLow')) return 'recvLow';
+        if (values.includes('payOilChanged')) return 'payOilChanged';
         if (values.includes('recvOilChanged')) return 'recvOilChanged';
         if (values.includes('noRef')) return 'noRef';
         return 'normal';
@@ -6032,6 +6036,7 @@ function buildDailyCompare(data) {
         loss: 'DC2626',
         oil50: 'EA580C',
         payHigh: 'A855F7',
+        payOilChanged: 'DB2777',
         recvLow: '3B82F6',
         recvOilChanged: '0891B2',
         normal: '16A34A',
@@ -6057,6 +6062,7 @@ function buildDailyCompare(data) {
         if (color === 'loss') cell = rCell(text, base);
         else if (color === 'oil50') cell = oCell(text, base);
         else if (color === 'payHigh') cell = pCell(text, base);
+        else if (color === 'payOilChanged') cell = cCell(text, { ...base, color: statusColorMap.payOilChanged });
         else if (color === 'recvLow') cell = bCell(text, base);
         else if (color === 'recvOilChanged') cell = cCell(text, { ...base, color: statusColorMap.recvOilChanged });
         else if (color === 'normal') cell = gCell(text, base);
@@ -6391,7 +6397,9 @@ function buildDailyCompare(data) {
       const anomalySelectedSet = new Set(anomalySelectedRaw);
       const normalSelectedSet = new Set(normalSelectedRaw);
       const matchesStatusFilter = (card, selectedSet) => {
-        const statuses = (card && Array.isArray(card.statuses) && card.statuses.length) ? card.statuses : ['normal'];
+        const statuses = (card && Array.isArray(card.filterStatuses) && card.filterStatuses.length)
+          ? card.filterStatuses
+          : ((card && Array.isArray(card.statuses) && card.statuses.length) ? card.statuses : ['normal']);
         return statusesMatchFilterSet(statuses, selectedSet);
       };
       const formatStatusLabels = keys => {
@@ -6429,17 +6437,14 @@ function buildDailyCompare(data) {
             const routeKey = trips.length > 0 ? dcQaRouteKey(trips[0]) : null;
             const refResult = routeKey ? getRefForRoute(routeKey) : null;
             const refTripsForRoute = refResult ? refResult.trips : [];
-            const currentPatternCtx = dcQaBuildPatternContext(trips);
-            const refPatternCtx = dcQaBuildPatternContext(refTripsForRoute);
             const analyzedRows = trips.map(ra => {
               const peers = dcQaStatusPeersForTrip(ra, refTripsForRoute);
-              const analysis = dcQaAnalyzeTrip(ra, peers, { current: currentPatternCtx, peer: refPatternCtx });
+              const analysis = dcQaAnalyzeTrip(ra, peers, null);
               return {
                 ra,
                 statuses: analysis.statuses,
                 infoStatuses: analysis.infoStatuses,
-                matchedRefTrip: analysis.matchedRefTrip,
-                basePatternPairs: analysis.basePatternPairs || []
+                matchedRefTrip: analysis.matchedRefTrip
               };
             })
               .sort((a, b) => {
@@ -6449,18 +6454,43 @@ function buildDailyCompare(data) {
                 return String(a.ra.date || '').localeCompare(String(b.ra.date || ''));
               });
             const attachResult = dcQaAttachMatchedRefTrips(analyzedRows, refTripsForRoute);
-            const rows = attachResult.entries;
-            const basePatternRows = rows.flatMap(row => (row.basePatternPairs || []).map(pair => ({
+            const pairPatternCtx = dcQaBuildPairPatternContext(
+              (attachResult.entries || []).filter(entry => entry?.ra && entry?.matchedRefTrip).map(entry => ({
+                ra: entry.ra,
+                rb: entry.matchedRefTrip
+              }))
+            );
+            const rows = attachResult.entries.map(entry => {
+              const displayedPeer = entry?.matchedRefTrip || null;
+              if (!displayedPeer) {
+                return {
+                  ...entry,
+                  pairScopedStatuses: entry?.statuses || ['normal'],
+                  pairScopedInfoStatuses: entry?.infoStatuses || []
+                };
+              }
+              const pairScopedAnalysis = dcQaAnalyzeMatchedPair(entry.ra || {}, displayedPeer, pairPatternCtx, { includePeerIntrinsic: false });
+              return {
+                ...entry,
+                statuses: pairScopedAnalysis.statuses || entry?.statuses || ['normal'],
+                infoStatuses: pairScopedAnalysis.infoStatuses || entry?.infoStatuses || [],
+                pairScopedStatuses: pairScopedAnalysis.statuses || entry?.statuses || ['normal'],
+                pairScopedInfoStatuses: pairScopedAnalysis.infoStatuses || entry?.infoStatuses || []
+              };
+            });
+            const basePatternRows = rows.filter(row => !dcQaHasAnomalyStatus(row.statuses) && (row.infoStatuses || []).length).map(row => ({
               ra: row.ra,
-              statuses: ['normal'],
-              infoStatuses: pair.infoStatuses || [],
-              matchedRefTrip: pair.peer || null
-            })));
-            const previewRows = rows.filter(row => dcQaHasAnomalyStatus(row.statuses) || !(row.infoStatuses || []).length);
+              statuses: row.statuses || ['normal'],
+              infoStatuses: row.infoStatuses || [],
+              matchedRefTrip: row.matchedRefTrip || null
+            }));
+            const previewRows = rows.filter(dcQaShouldDisplayPrimaryRow);
+            const filterStatuses = dcQaCollectDisplayStatuses(rows);
             return {
               route,
               rows,
               previewRows,
+              filterStatuses,
               basePatternRows,
               basePatternCount: basePatternRows.length,
               leftoverRefTrips: attachResult.leftoverRefTrips || [],
@@ -6501,8 +6531,8 @@ function buildDailyCompare(data) {
         // We need: total routes, total trips, anomaly count, per-status counts, ref days.
         // Walk the same cases/rows used by the single-mode export sheets so summary
         // and detail sheets are based on the exact same displayed pairs.
-        const statusCount = { loss: 0, oil50: 0, payHigh: 0, recvLow: 0, normal: 0, noRef: 0 };
-        const statusImpact = { loss: 0, oil50: 0, payHigh: 0, recvLow: 0 };
+        const statusCount = { loss: 0, oil50: 0, payHigh: 0, payOilChanged: 0, recvLow: 0, recvOilChanged: 0, normal: 0, noRef: 0 };
+        const statusImpact = { loss: 0, oil50: 0, payHigh: 0, payOilChanged: 0, recvLow: 0, recvOilChanged: 0 };
         let totalAnomCount = 0;
         const routesWithRefCount = singleCases.filter(item => (item.refTripsForRoute || []).length > 0).length;
         const calcMarginValue = trip => hasNum(trip?.margin)
@@ -6517,24 +6547,35 @@ function buildDailyCompare(data) {
         const absPairDiff = (a, b) => (hasNum(a) && hasNum(b)) ? Math.abs(Number(a) - Number(b)) : 0;
         singleCases.forEach(item => {
           (item.rows || []).forEach(entry => {
+            if (!dcQaShouldDisplayPrimaryRow(entry)) return;
             const ra = entry.ra || {};
             const statuses = entry.statuses || [];
             const cleaned = statuses.some(s => s !== 'normal') ? statuses.filter(s => s !== 'normal') : statuses;
+            const pairScopedStatuses = entry.pairScopedStatuses || statuses || ['normal'];
+            const pairScopedCleaned = pairScopedStatuses.some(s => s !== 'normal') ? pairScopedStatuses.filter(s => s !== 'normal') : pairScopedStatuses;
             if (cleaned.includes('normal')) statusCount.normal++;
             else if (dcQaHasAnomalyStatus(cleaned)) totalAnomCount++;
             if (cleaned.includes('loss')) statusCount.loss++;
             if (cleaned.includes('oil50')) statusCount.oil50++;
-            if (cleaned.includes('payHigh')) statusCount.payHigh++;
-            if (cleaned.some(status => statusMatchesFilter(status, 'recvLow'))) statusCount.recvLow++;
+            if (pairScopedCleaned.includes('payHigh')) statusCount.payHigh++;
+            if (pairScopedCleaned.includes('payOilChanged')) statusCount.payOilChanged++;
+            if (pairScopedCleaned.includes('recvLow')) statusCount.recvLow++;
+            if (pairScopedCleaned.includes('recvOilChanged')) statusCount.recvOilChanged++;
             if (cleaned.includes('noRef')) statusCount.noRef++;
             if (cleaned.includes('loss')) statusImpact.loss += Math.abs(Math.min(calcMarginValue(ra), 0));
             if (cleaned.includes('oil50')) statusImpact.oil50 += calcOilReserveExcess(ra);
             const displayedPeer = entry.matchedRefTrip || null;
-            if (cleaned.includes('payHigh')) {
+            if (pairScopedCleaned.includes('payHigh')) {
               statusImpact.payHigh += absPairDiff(ra?.pay, displayedPeer?.pay);
             }
-            if (cleaned.includes('recvLow')) {
+            if (pairScopedCleaned.includes('payOilChanged')) {
+              statusImpact.payOilChanged += absPairDiff(ra?.pay, displayedPeer?.pay);
+            }
+            if (pairScopedCleaned.includes('recvLow')) {
               statusImpact.recvLow += absPairDiff(ra?.recv, displayedPeer?.recv);
+            }
+            if (pairScopedCleaned.includes('recvOilChanged')) {
+              statusImpact.recvOilChanged += absPairDiff(ra?.recv, displayedPeer?.recv);
             }
           });
         });
@@ -6582,13 +6623,16 @@ function buildDailyCompare(data) {
           loss: 'รวมมูลค่าขาดทุนจากเที่ยวที่ส่วนต่างติดลบ (คำนวณจากค่าส่วนต่างที่ติดลบของแต่ละเที่ยว)',
           oil50: 'รวมเฉพาะส่วนที่สำรองน้ำมันเกิน 50% ของราคาจ่าย (คำนวณจากสำรองน้ำมัน - 50% ของราคาจ่าย)',
           payHigh: 'รวมผลต่างราคาจ่ายระหว่างวันหลักกับวันอ้างอิง (คำนวณจากผลต่างระหว่างราคาจ่ายวันหลักและวันอ้างอิง)',
+          payOilChanged: 'รวมผลต่างราคาจ่ายของคู่ที่ราคาน้ำมันเปลี่ยนแปลง (คำนวณจากผลต่างระหว่างราคาจ่ายวันหลักและวันอ้างอิง)',
           recvLow: 'รวมผลต่างราคารับระหว่างวันหลักกับวันอ้างอิง (คำนวณจากผลต่างระหว่างราคารับวันหลักและวันอ้างอิง)',
+          recvOilChanged: 'รวมผลต่างราคารับของคู่ที่ราคาน้ำมันเปลี่ยนแปลง (คำนวณจากผลต่างระหว่างราคารับวันหลักและวันอ้างอิง)',
           normal: '-',
           noRef: '-'
         };
         const impactCellFor = key => {
           if (key === 'normal' || key === 'noRef') return mCell('-', { align: 'center' });
-          const amount = fmtNum(statusImpact[key] || 0);
+          const rawAmount = Number(statusImpact[key] || 0);
+          const amount = fmtNum(rawAmount);
           return amount > 0
             ? cCell(amount, { numFmt: nTHB, align: 'right' })
             : cCell(0, { numFmt: nTHB, align: 'right' });
@@ -6597,16 +6641,21 @@ function buildDailyCompare(data) {
           ['ขาดทุน', statusCount.loss, 'loss'],
           ['สำรองน้ำมัน > 50%', statusCount.oil50, 'oil50'],
           ['ราคาจ่ายผิดปกติ', statusCount.payHigh, 'payHigh'],
+          ['ราคาจ่ายเปลี่ยนแปลงตามราคาน้ำมัน', statusCount.payOilChanged, 'payOilChanged'],
           ['ราคารับผิดปกติ', statusCount.recvLow, 'recvLow'],
+          ['ราคารับเปลี่ยนแปลงตามราคาน้ำมัน', statusCount.recvOilChanged, 'recvOilChanged'],
           ['ข้อมูลไม่เปลี่ยนแปลง', statusCount.normal, 'normal'],
           ['ไม่มีข้อมูลเปรียบเทียบ', statusCount.noRef, 'noRef']
         ];
         breakdown.forEach(([label, count, key]) => {
+          const isInfoImpactStatus = key === 'payOilChanged' || key === 'recvOilChanged';
           const valueCell = key === 'normal'
             ? gCell(count, { numFmt: '#,##0', align: 'right' })
             : key === 'noRef'
               ? mCell(count, { numFmt: '#,##0', align: 'right' })
-            : (count > 0 ? rCell(count, { numFmt: '#,##0', align: 'right' }) : cCell(count, { numFmt: '#,##0', align: 'right' }));
+            : isInfoImpactStatus
+              ? cCell(count, { numFmt: '#,##0', align: 'right' })
+              : (count > 0 ? rCell(count, { numFmt: '#,##0', align: 'right' }) : cCell(count, { numFmt: '#,##0', align: 'right' }));
           ws1Data.push([
             cCell(label, { bold: true }),
             valueCell,
@@ -6900,6 +6949,7 @@ function buildDailyCompare(data) {
         // the requested tag regardless of UI toggle, by design).
         const buildSingleSheet = (cases, sheetTitle, statusFilter, userFilterSet) => {
           const wsData = [];
+          const isPairFirstStatusFilter = statusFilter === 'payHigh' || statusFilter === 'recvLow';
           const titleMap = {
             'รายเส้นทางที่เปรียบเทียบ': 'รายงานการเปรียบเทียบข้อมูลรายเส้นทาง',
             'ขาดทุน': 'รายการเส้นทางที่มีผลประกอบการขาดทุน',
@@ -6939,6 +6989,16 @@ function buildDailyCompare(data) {
             const arr = ss && ss.length ? ss : ['normal'];
             return arr.some(s => s !== 'normal') ? arr.filter(s => s !== 'normal') : arr;
           };
+          const exportEntryStatusesForFilter = entry => {
+            if (!isPairFirstStatusFilter) return entry?.statuses || ['normal'];
+            return entry?.pairScopedStatuses || entry?.statuses || ['normal'];
+          };
+          const entryMatchesExportStatusFilter = entry => {
+            const statuses = exportEntryStatusesForFilter(entry);
+            if (statusFilter === 'payHigh') return statuses.includes('payHigh') || statuses.includes('payOilChanged');
+            if (statusFilter === 'recvLow') return statuses.includes('recvLow') || statuses.includes('recvOilChanged');
+            return (statuses || ['normal']).some(status => statusMatchesFilter(status, statusFilter));
+          };
 
           let maxRouteLen = 10;
           let maxOilLen = 10;     // 'ราคาน้ำมัน' (min 10)
@@ -6953,7 +7013,7 @@ function buildDailyCompare(data) {
           cases.forEach(item => {
             let visibleRows;
             if (statusFilter) {
-              visibleRows = item.rows.filter(r => (r.statuses || ['normal']).some(status => statusMatchesFilter(status, statusFilter)));
+              visibleRows = item.rows.filter(entryMatchesExportStatusFilter);
             } else if (userFilterSet) {
               visibleRows = item.rows.filter(r => {
                 const ss = cleanStatuses(r.statuses || []);
@@ -6992,7 +7052,7 @@ function buildDailyCompare(data) {
               if (isOverviewSheet || isTargetSheet) {
                 let displayStatuses;
                 if (statusFilter) {
-                  displayStatuses = statusesForFilterDisplay(entry.statuses, statusFilter);
+                  displayStatuses = statusesForFilterDisplay(exportEntryStatusesForFilter(entry), statusFilter);
                 } else if (userFilterSet) {
                   const ss = cleanStatuses(entry.statuses || ['normal']);
                   displayStatuses = statusesForFilterSetDisplay(ss, userFilterSet);
@@ -7041,7 +7101,7 @@ function buildDailyCompare(data) {
             // 'normal' only picks pure-normal trips, matching renderSingleTable semantics).
             let visibleRows;
             if (statusFilter) {
-              visibleRows = item.rows.filter(r => (r.statuses || ['normal']).some(status => statusMatchesFilter(status, statusFilter)));
+              visibleRows = item.rows.filter(entryMatchesExportStatusFilter);
             } else if (userFilterSet) {
               visibleRows = item.rows.filter(r => {
                 const ss = cleanStatuses(r.statuses || []);
@@ -7081,7 +7141,7 @@ function buildDailyCompare(data) {
                 const oilPrice = getOilPriceByDate(r.date);
                 let displayStatuses;
                 if (statusFilter) {
-                  displayStatuses = statusesForFilterDisplay(entry.statuses, statusFilter);
+                  displayStatuses = statusesForFilterDisplay(exportEntryStatusesForFilter(entry), statusFilter);
                 } else if (userFilterSet) {
                   const ss = cleanStatuses(entry.statuses || ['normal']);
                   displayStatuses = statusesForFilterSetDisplay(ss, userFilterSet);
@@ -7301,7 +7361,7 @@ function buildDailyCompare(data) {
     // 3. Re-test normal mode, matched comparison, unmatched A/B, popup opening,
     //    status filters, XLSX export, and PNG export.
     const dcQaExportIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M240-80q-33 0-56.5-23.5T160-160v-400q0-33 23.5-56.5T240-640h120v80H240v400h480v-400H600v-80h120q33 0 56.5 23.5T800-560v400q0 33-23.5 56.5T720-80H240Zm200-240v-447l-64 64-56-57 160-160 160 160-56 57-64-64v447h-80Z"/></svg>';
-    const dcQaStatusOrder = ['loss', 'oil50', 'payHigh', 'recvLow', 'recvOilChanged', 'normal', 'noRef'];
+    const dcQaStatusOrder = ['loss', 'oil50', 'payHigh', 'recvLow', 'payOilChanged', 'recvOilChanged', 'normal', 'noRef'];
     const dcQaInfoStatusOrder = ['payBasePattern', 'recvBasePattern'];
 
     function dcQaStatusLabels() {
@@ -7309,6 +7369,7 @@ function buildDailyCompare(data) {
         loss: 'ขาดทุน',
         oil50: 'สำรองน้ำมัน>50%',
         payHigh: 'ราคาจ่ายผิดปกติ',
+        payOilChanged: 'ราคาจ่ายเปลี่ยนแปลงตามราคาน้ำมัน',
         recvLow: 'ราคารับผิดปกติ',
         recvOilChanged: 'ราคารับเปลี่ยนแปลงตามราคาน้ำมัน',
         normal: 'ข้อมูลไม่เปลี่ยนแปลง',
@@ -7331,11 +7392,16 @@ function buildDailyCompare(data) {
       return status === 'payBasePattern' || status === 'recvBasePattern';
     }
 
+    function dcQaIsOilChangeStatus(status) {
+      return status === 'payOilChanged' || status === 'recvOilChanged';
+    }
+
     function dcQaStatusRank(statuses) {
       const values = statuses || [];
       if (values.includes('loss')) return 4;
       if (values.includes('oil50')) return 3;
       if (values.includes('payHigh') || values.includes('recvLow')) return 2;
+      if (values.includes('payOilChanged')) return 0;
       if (values.includes('recvOilChanged')) return 0;
       if (values.includes('normal')) return 0;
       if (values.includes('noRef')) return 0;
@@ -7343,7 +7409,26 @@ function buildDailyCompare(data) {
     }
 
     function dcQaHasAnomalyStatus(statuses) {
-      return (statuses || []).some(status => status !== 'normal' && status !== 'noRef' && !dcQaIsInfoStatus(status));
+      return (statuses || []).some(status =>
+        status !== 'normal' &&
+        status !== 'noRef' &&
+        !dcQaIsInfoStatus(status) &&
+        !dcQaIsOilChangeStatus(status)
+      );
+    }
+
+    function dcQaShouldDisplayPrimaryRow(row) {
+      const statuses = row?.statuses || [];
+      const infoStatuses = row?.infoStatuses || [];
+      return dcQaHasAnomalyStatus(statuses) || infoStatuses.length === 0;
+    }
+
+    function dcQaCollectDisplayStatuses(rows = []) {
+      const set = new Set();
+      (rows || []).filter(dcQaShouldDisplayPrimaryRow).forEach(row => {
+        (row?.statuses || []).forEach(status => set.add(status));
+      });
+      return [...set];
     }
 
     function dcQaStatusSummaryText(statuses, anomalyCount, anomalyUnit, options = {}) {
@@ -7351,6 +7436,7 @@ function buildDailyCompare(data) {
       const basePatternCount = Number(options?.basePatternCount) || 0;
       if (basePatternCount > 0) return `มีรูปแบบราคากลางของวัน ${basePatternCount} ${anomalyUnit || 'รายการ'}`;
       const values = new Set(statuses || []);
+      if (values.has('payOilChanged')) return 'ราคาจ่ายเปลี่ยนแปลงตามราคาน้ำมัน';
       if (values.has('recvOilChanged')) return 'ราคารับเปลี่ยนแปลงตามราคาน้ำมัน';
       if (values.has('noRef')) return 'ไม่มีข้อมูลเปรียบเทียบ';
       return 'ข้อมูลไม่เปลี่ยนแปลง';
@@ -7440,7 +7526,17 @@ function buildDailyCompare(data) {
         const idx = refBuckets[key].indexOf(trip);
         if (idx >= 0) refBuckets[key].splice(idx, 1);
       };
-      const consumeRefTrip = aTrip => {
+      const consumeSpecificRefTrip = preferredTrip => {
+        if (!preferredTrip) return null;
+        const idx = refFallback.indexOf(preferredTrip);
+        if (idx < 0) return null;
+        refFallback.splice(idx, 1);
+        removeFromBucket(preferredTrip);
+        return preferredTrip;
+      };
+      const consumeRefTrip = (aTrip, preferredTrip = null) => {
+        const preferredPicked = consumeSpecificRefTrip(preferredTrip);
+        if (preferredPicked) return preferredPicked;
         const key = normalizeDriverKey(aTrip);
         let picked = null;
         if (key && refBuckets[key] && refBuckets[key].length) picked = refBuckets[key].shift();
@@ -7455,7 +7551,7 @@ function buildDailyCompare(data) {
       };
       const linkedEntries = (entries || []).map(entry => {
         const clone = { ...(entry || {}) };
-        clone.matchedRefTrip = consumeRefTrip(clone?.ra || {});
+        clone.matchedRefTrip = consumeRefTrip(clone?.ra || {}, clone?.matchedRefTrip || null);
         return clone;
       });
       return { entries: linkedEntries, leftoverRefTrips: refFallback.slice() };
@@ -7477,6 +7573,15 @@ function buildDailyCompare(data) {
 
     function dcQaPatternValueKey(value) {
       return hasNum(value) ? Number(value).toFixed(4) : '';
+    }
+
+    function dcQaPairPatternValueKey(mainValue, peerValue) {
+      const mainKey = dcQaPatternValueKey(mainValue);
+      const peerKey = dcQaPatternValueKey(peerValue);
+      if (!mainKey || !peerKey) return '';
+      if (!hasNum(mainValue) || !hasNum(peerValue)) return '';
+      if (Math.abs(Number(mainValue) - Number(peerValue)) < 0.0001) return '';
+      return `${mainKey}|${peerKey}`;
     }
 
     function dcQaBuildDominantFieldMap(rows = [], field) {
@@ -7515,6 +7620,35 @@ function buildDailyCompare(data) {
       };
     }
 
+    function dcQaBuildPairPatternFieldMap(pairs = [], field) {
+      const counts = new Map();
+      (pairs || []).forEach(pair => {
+        const ra = pair?.ra || pair?.a || null;
+        const rb = pair?.rb || pair?.b || null;
+        const signature = dcQaPairPatternValueKey(ra?.[field], rb?.[field]);
+        if (!signature) return;
+        counts.set(signature, (counts.get(signature) || 0) + 1);
+      });
+      return counts;
+    }
+
+    function dcQaBuildPairPatternContext(pairs = []) {
+      return {
+        pay: dcQaBuildPairPatternFieldMap(pairs, 'pay'),
+        recv: dcQaBuildPairPatternFieldMap(pairs, 'recv')
+      };
+    }
+
+    function dcQaGetPairPatternCount(ctx, field, mainValue, peerValue) {
+      const signature = dcQaPairPatternValueKey(mainValue, peerValue);
+      if (!signature) return 0;
+      return Number(ctx?.[field]?.get(signature) || 0);
+    }
+
+    function dcQaIsPairBasePattern(ctx, field, mainValue, peerValue) {
+      return dcQaGetPairPatternCount(ctx, field, mainValue, peerValue) >= 2;
+    }
+
     function dcQaGetDominantPatternValue(ctx, field, date) {
       return ctx?.[field]?.get(dcQaPatternDateKey(date)) || null;
     }
@@ -7528,6 +7662,56 @@ function buildDailyCompare(data) {
       if (!dcQaValueMatchesPattern(peerValue, peerPattern)) return false;
       if (!hasNum(tripValue) || !hasNum(peerValue)) return false;
       return Math.abs(Number(tripValue) - Number(peerValue)) >= 0.0001;
+    }
+
+    function dcQaAnalyzeMatchedPair(ra, rb, pairPatternCtx = null, options = {}) {
+      const statuses = new Set();
+      const infoStatuses = new Set();
+      const includePeerIntrinsic = !!options.includePeerIntrinsic;
+
+      const addIntrinsicStatuses = trip => {
+        if (!trip) return;
+        if ((trip.margin || 0) < 0) statuses.add('loss');
+        if ((trip.oil || 0) > (trip.pay || 0) * 0.5 && (trip.pay || 0) > 0) statuses.add('oil50');
+      };
+
+      addIntrinsicStatuses(ra);
+      if (includePeerIntrinsic) addIntrinsicStatuses(rb);
+
+      const tripOilPrice = getOilPriceByDate(ra?.date);
+      const peerOilPrice = getOilPriceByDate(rb?.date);
+      const tripPay = ra?.pay || 0;
+      const peerPay = rb?.pay || 0;
+      const tripRecv = ra?.recv || 0;
+      const peerRecv = rb?.recv || 0;
+
+      if (hasNum(tripPay) && hasNum(peerPay) && Math.abs(tripPay - peerPay) >= 0.0001) {
+        if (dcQaIsPairBasePattern(pairPatternCtx, 'pay', tripPay, peerPay)) {
+          infoStatuses.add('payBasePattern');
+        } else if (hasNum(tripOilPrice) && hasNum(peerOilPrice) && Math.abs(tripOilPrice - peerOilPrice) >= 0.0001) {
+          statuses.add('payOilChanged');
+        } else {
+          statuses.add('payHigh');
+        }
+      }
+
+      if (hasNum(tripRecv) && hasNum(peerRecv) && Math.abs(tripRecv - peerRecv) >= 0.0001) {
+        if (dcQaIsPairBasePattern(pairPatternCtx, 'recv', tripRecv, peerRecv)) {
+          infoStatuses.add('recvBasePattern');
+        } else if (hasNum(tripOilPrice) && hasNum(peerOilPrice)) {
+          if (Math.abs(tripOilPrice - peerOilPrice) < 0.0001) {
+            statuses.add('recvLow');
+          } else {
+            statuses.add('recvOilChanged');
+          }
+        }
+      }
+
+      if (!statuses.size) statuses.add('normal');
+      return {
+        statuses: [...statuses].sort((a, b) => dcQaStatusOrder.indexOf(a) - dcQaStatusOrder.indexOf(b)),
+        infoStatuses: [...infoStatuses].sort((a, b) => dcQaInfoStatusOrder.indexOf(a) - dcQaInfoStatusOrder.indexOf(b))
+      };
     }
 
     function dcQaAnalyzeTrip(trip, peers = [], patternCtx = null) {
@@ -7563,8 +7747,14 @@ function buildDailyCompare(data) {
           const peerRecv = peer.recv || 0;
 
           if (hasNum(tripPay) && hasNum(peerPay) && Math.abs(tripPay - peerPay) >= 0.0001) {
-            if (dcQaIsBasePatternPair(tripPay, peerPay, tripPayPattern, peerPayPattern)) pairInfoStatuses.add('payBasePattern');
-            else pairStatuses.add('payHigh');
+            const peerOilPrice = getOilPriceByDate(peer?.date);
+            if (dcQaIsBasePatternPair(tripPay, peerPay, tripPayPattern, peerPayPattern)) {
+              pairInfoStatuses.add('payBasePattern');
+            } else if (hasNum(tripOilPrice) && hasNum(peerOilPrice) && Math.abs(tripOilPrice - peerOilPrice) >= 0.0001) {
+              pairStatuses.add('payOilChanged');
+            } else {
+              pairStatuses.add('payHigh');
+            }
           }
 
           if (hasNum(tripRecv) && hasNum(peerRecv) && Math.abs(tripRecv - peerRecv) >= 0.0001) {
@@ -7627,7 +7817,7 @@ function buildDailyCompare(data) {
         ? unique.filter(status => status !== 'normal')
         : (unique.includes('noRef') ? ['noRef'] : ['normal']);
       const infoSet = new Set([...left.infoStatuses, ...right.infoStatuses]);
-      if (cleaned.includes('payHigh')) infoSet.delete('payBasePattern');
+      if (cleaned.some(status => status === 'payHigh' || status === 'payOilChanged')) infoSet.delete('payBasePattern');
       if (cleaned.some(status => status === 'recvLow' || status === 'recvOilChanged')) infoSet.delete('recvBasePattern');
       cleaned.sort((a, b) => dcQaStatusOrder.indexOf(a) - dcQaStatusOrder.indexOf(b));
       return {
@@ -7647,6 +7837,7 @@ function buildDailyCompare(data) {
       if (statuses.includes('loss')) labels.push('ตรวจส่วนต่าง');
       if (statuses.includes('oil50')) labels.push('ตรวจสำรองน้ำมัน');
       if (statuses.includes('payHigh')) labels.push(`ราคาจ่าย A/B ต่างกัน ${fmt(Math.abs((ra.pay || 0) - (rb.pay || 0)))}`);
+      if (statuses.includes('payOilChanged')) labels.push(`ราคาจ่าย A/B ต่างกันตามราคาน้ำมัน ${fmt(Math.abs((ra.pay || 0) - (rb.pay || 0)))}`);
       if ((ra.oil || 0) > (rb.oil || 0)) labels.push(`น้ำมัน A สูงกว่า B ${fmt((ra.oil || 0) - (rb.oil || 0))}`);
       if (statuses.includes('recvLow')) labels.push(`ราคารับ A/B ไม่เท่ากัน ${fmt(Math.abs((ra.recv || 0) - (rb.recv || 0)))}`);
       if (statuses.includes('recvOilChanged')) labels.push(`ราคารับ A/B ต่างกันตามราคาน้ำมัน ${fmt(Math.abs((ra.recv || 0) - (rb.recv || 0)))}`);
@@ -7849,19 +8040,22 @@ function buildDailyCompare(data) {
         const ga = groupA[key];
         const gb = groupB[key];
         const gbDriverBuckets = dcQaBuildDriverBuckets(gb.trips);
-        const gaPatternCtx = dcQaBuildPatternContext(ga.trips);
-        const gbPatternCtx = dcQaBuildPatternContext(gb.trips);
-        const rows = [];
+        const matchedPairs = [];
         ga.trips.forEach(ra => {
           const rb = dcQaConsumeDriverMatch(gbDriverBuckets, ra.driver);
           if (!rb) return;
-          const analysis = dcQaAnalyzeComparePair(ra, rb, gaPatternCtx, gbPatternCtx);
-          rows.push({ ra, rb, statuses: analysis.statuses, infoStatuses: analysis.infoStatuses });
+          matchedPairs.push({ ra, rb });
+        });
+        const pairPatternCtx = dcQaBuildPairPatternContext(matchedPairs);
+        const rows = matchedPairs.map(({ ra, rb }) => {
+          const analysis = dcQaAnalyzeMatchedPair(ra, rb, pairPatternCtx, { includePeerIntrinsic: true });
+          return { ra, rb, statuses: analysis.statuses, infoStatuses: analysis.infoStatuses };
         });
         if (!rows.length) return;
         const anomRows = rows.filter(row => dcQaHasAnomalyStatus(row.statuses));
         const basePatternRows = rows.filter(row => !dcQaHasAnomalyStatus(row.statuses) && (row.infoStatuses || []).length);
-        const previewRows = rows.filter(row => dcQaHasAnomalyStatus(row.statuses) || !(row.infoStatuses || []).length);
+        const previewRows = rows.filter(dcQaShouldDisplayPrimaryRow);
+        const filterStatuses = dcQaCollectDisplayStatuses(rows);
         const statusSet = new Set();
         rows.forEach(row => row.statuses.forEach(s => statusSet.add(s)));
         rows.sort((a, b) => {
@@ -7878,6 +8072,7 @@ function buildDailyCompare(data) {
           previewRows,
           basePatternRows,
           basePatternCount: basePatternRows.length,
+          filterStatuses,
           statuses: [...statusSet],
           severity: Math.max(...rows.map(r => dcQaStatusRank(r.statuses)))
         });
@@ -8033,17 +8228,14 @@ function buildDailyCompare(data) {
         const routeKey = trips.length > 0 ? dcQaRouteKey(trips[0]) : null;
         const refResult = (hasRef && routeKey) ? getRefForRoute(routeKey) : null;
         const refTripsForRoute = refResult ? refResult.trips : [];
-        const currentPatternCtx = dcQaBuildPatternContext(trips);
-        const refPatternCtx = dcQaBuildPatternContext(refTripsForRoute);
         const rows = trips.map(ra => {
           const peers = dcQaStatusPeersForTrip(ra, refTripsForRoute);
-          const analysis = dcQaAnalyzeTrip(ra, peers, { current: currentPatternCtx, peer: refPatternCtx });
+          const analysis = dcQaAnalyzeTrip(ra, peers, null);
           return {
             ra,
             statuses: analysis.statuses,
             infoStatuses: analysis.infoStatuses,
             matchedRefTrip: analysis.matchedRefTrip,
-            basePatternPairs: analysis.basePatternPairs || [],
             hasMatchedDriverRef: peers.length > 1
           };
         })
@@ -8053,38 +8245,58 @@ function buildDailyCompare(data) {
             if (rankB !== rankA) return rankB - rankA;
             return String(a.ra.date || '').localeCompare(String(b.ra.date || ''));
           });
-        const anomRows = rows.filter(r => dcQaHasAnomalyStatus(r.statuses));
-        const basePatternRows = rows.flatMap(row => (row.basePatternPairs || []).map(pair => ({
+        const attachResult = dcQaAttachMatchedRefTrips(rows, refTripsForRoute);
+        const pairPatternCtx = dcQaBuildPairPatternContext(
+          (attachResult.entries || []).filter(entry => entry?.ra && entry?.matchedRefTrip).map(entry => ({
+            ra: entry.ra,
+            rb: entry.matchedRefTrip
+          }))
+        );
+        const normalizedRows = attachResult.entries.map(entry => {
+          const displayedPeer = entry?.matchedRefTrip || null;
+          if (!displayedPeer) return entry;
+          const analysis = dcQaAnalyzeMatchedPair(entry.ra || {}, displayedPeer, pairPatternCtx, { includePeerIntrinsic: false });
+          return {
+            ...entry,
+            statuses: analysis.statuses || entry?.statuses || ['normal'],
+            infoStatuses: analysis.infoStatuses || entry?.infoStatuses || []
+          };
+        });
+        const anomRows = normalizedRows.filter(r => dcQaHasAnomalyStatus(r.statuses));
+        const basePatternRows = normalizedRows.filter(row => !dcQaHasAnomalyStatus(row.statuses) && (row.infoStatuses || []).length).map(row => ({
           ra: row.ra,
-          statuses: ['normal'],
-          infoStatuses: pair.infoStatuses || [],
-          matchedRefTrip: pair.peer || null
-        })));
-        const previewRows = rows.filter(r => dcQaHasAnomalyStatus(r.statuses) || !(r.infoStatuses || []).length);
+          statuses: row.statuses || ['normal'],
+          infoStatuses: row.infoStatuses || [],
+          matchedRefTrip: row.matchedRefTrip || null
+        }));
+        const previewRows = normalizedRows.filter(dcQaShouldDisplayPrimaryRow);
         const anomCount = anomRows.length;
+        const filterStatuses = dcQaCollectDisplayStatuses(normalizedRows);
         const statusSet = new Set();
-        rows.forEach(r => r.statuses.forEach(s => statusSet.add(s)));
+        normalizedRows.forEach(r => r.statuses.forEach(s => statusSet.add(s)));
         const statuses = [...statusSet];
-        const hasComparedStatus = statuses.some(s => s === 'payHigh' || s === 'recvLow' || s === 'recvOilChanged');
-        const hasUnpairedIntrinsicAnomaly = rows.some(row => {
+        const hasComparedStatus = statuses.some(s => s === 'payHigh' || s === 'payOilChanged' || s === 'recvLow' || s === 'recvOilChanged');
+        const hasUnpairedIntrinsicAnomaly = normalizedRows.some(row => {
           const rowStatuses = row.statuses || [];
           const intrinsicOnly = rowStatuses.some(s => s === 'loss' || s === 'oil50') &&
-            !rowStatuses.some(s => s === 'payHigh' || s === 'recvLow' || s === 'recvOilChanged');
+            !rowStatuses.some(s => s === 'payHigh' || s === 'payOilChanged' || s === 'recvLow' || s === 'recvOilChanged');
           return intrinsicOnly && !row.hasMatchedDriverRef;
         });
         const deferUnpairedIntrinsicCard = hasUnpairedIntrinsicAnomaly && !hasComparedStatus;
         return {
           route,
-          rows,
+          rows: normalizedRows,
           previewRows,
           anomRows,
           basePatternRows,
           basePatternCount: basePatternRows.length,
           anomCount,
+          filterStatuses,
           statuses,
-          severity: Math.max(...rows.map(r => dcQaStatusRank(r.statuses))),
+          severity: Math.max(...normalizedRows.map(r => dcQaStatusRank(r.statuses))),
           refTripsForRoute,
           refDateLabel: refResult ? refResult.dateLabel : null,
+          leftoverRefTrips: attachResult.leftoverRefTrips || [],
           deferUnpairedIntrinsicCard
         };
       }).sort((a, b) => {
@@ -8100,7 +8312,9 @@ function buildDailyCompare(data) {
       const counts = {};
       normalOptionKeys.forEach(k => {
         counts[k] = cases.reduce((sum, item) => {
-          return sum + (item.rows || []).filter(row => (row.statuses || ['normal']).some(status => statusMatchesFilter(status, k))).length;
+          return sum + (item.rows || [])
+            .filter(row => dcQaShouldDisplayPrimaryRow(row) && (row.statuses || ['normal']).some(status => statusMatchesFilter(status, k)))
+            .length;
         }, 0);
       });
 
@@ -8109,7 +8323,8 @@ function buildDailyCompare(data) {
         const previewRows = item.previewRows || rows;
         const basePatternCount = item.basePatternCount || 0;
         const cardIdx = cases.indexOf(item);
-        const displayStyle = statusesMatchFilterSet(statuses, selectedNormalSet) ? '' : 'display:none;';
+        const displayStatuses = (item.filterStatuses && item.filterStatuses.length) ? item.filterStatuses : statuses;
+        const displayStyle = statusesMatchFilterSet(displayStatuses, selectedNormalSet) ? '' : 'display:none;';
 
         // Reference-day trips for this route (already sorted by date in the cases loop).
         // Match key is route+vtype only; drivers are independent — show all ref trips.
@@ -8132,12 +8347,13 @@ function buildDailyCompare(data) {
           </tr>`;
         };
 
-        const buildZigzagRowsHtml = (aRows, refRows) => {
-          const sequence = dcQaBuildZigzagEntrySequence(aRows, refRows);
-          return sequence.map(part => {
-            if (part.kind === 'a') return dcQaSingleTripRow(part.entry.ra, part.entry.statuses, false, part.entry.infoStatuses || []);
-            return renderRefRow(part.trip);
-          }).join('');
+        const buildMainFirstZigzagRowsHtml = (aRows, refRows) => {
+          const sequence = dcQaBuildZigzagEntrySequence(aRows || [], refRows || []);
+          return sequence.map(part => (
+            part.kind === 'a'
+              ? dcQaSingleTripRow(part.entry.ra, part.entry.statuses, false, part.entry.infoStatuses || [])
+              : renderRefRow(part.trip)
+          )).join('');
         };
 
         // Strip label: show the actual ref date used for THIS route (may differ per route).
@@ -8156,14 +8372,14 @@ function buildDailyCompare(data) {
 
         // Body rows: alternate A/ref rows for easier visual comparison.
         const rowsHtml = routeHasRefTrips
-          ? buildZigzagRowsHtml(previewRows, trailingRefTrips)
+          ? buildMainFirstZigzagRowsHtml(previewRows, trailingRefTrips)
           : previewRows.map(row => dcQaSingleTripRow(row.ra, row.statuses, false, row.infoStatuses || [])).join('');
 
         const basePatternDisclosure = basePatternCount > 0
           ? `<div class="dc-qa-more dc-qa-more-base" onclick="event.stopPropagation(); window.dcOpenNormalBasePatternModal && window.dcOpenNormalBasePatternModal(${cardIdx})">มีรูปแบบราคากลางของวันอีก ${basePatternCount} เที่ยว (คลิกเพื่อดูรายละเอียด)</div>`
           : '';
 
-        return `<article class="dc-qa-case dc-status-card dc-status-card-normal" data-severity="${item.severity}" data-status-keys="${esc(statuses.join(','))}" data-anom-count="${anomCount}" data-base-count="${basePatternCount}" data-trip-count="${rows.length}" data-recv="${route.recv || 0}" data-pay="${route.pay || 0}" data-oil="${route.oil || 0}" data-margin="${route.margin || 0}" style="${displayStyle}">
+        return `<article class="dc-qa-case dc-status-card dc-status-card-normal" data-severity="${item.severity}" data-status-keys="${esc(displayStatuses.join(','))}" data-anom-count="${anomCount}" data-base-count="${basePatternCount}" data-trip-count="${rows.length}" data-recv="${route.recv || 0}" data-pay="${route.pay || 0}" data-oil="${route.oil || 0}" data-margin="${route.margin || 0}" style="${displayStyle}">
           <header class="dc-qa-case-head">
             <div class="dc-qa-title-block">
               <div class="dc-qa-identity"><span class="dc-qa-customer">${esc(route.customer || '-')}</span><span class="dc-qa-vtype">${esc(route.vtype || '-')}</span></div>
@@ -8192,6 +8408,7 @@ function buildDailyCompare(data) {
         if (!groupedCases[customer]) groupedCases[customer] = [];
         groupedCases[customer].push(item);
       });
+      const displayableCases = cases.filter(item => (item.filterStatuses && item.filterStatuses.length) || !(item.basePatternCount > 0 && (item.previewRows || []).length === 0));
       const body = Object.entries(groupedCases).sort((a, b) => {
         const pa = custOrder[String(a[0] || '').trim().toUpperCase()] ?? 999;
         const pb = custOrder[String(b[0] || '').trim().toUpperCase()] ?? 999;
@@ -8202,14 +8419,15 @@ function buildDailyCompare(data) {
           const pb = b.deferUnpairedIntrinsicCard ? 1 : 0;
           return pa - pb;
         });
-        return `<section class="dc-normal-customer-section" style="${sortedItems.some(item => statusesMatchFilterSet(item.statuses, selectedNormalSet)) ? '' : 'display:none;'}">
-        ${dcQaSingleCustomerSummaryCard(customer, sortedItems, sortedItems.map(renderCaseCard).join(''))}
+        const visibleItems = sortedItems.filter(item => (item.filterStatuses && item.filterStatuses.length) || !(item.basePatternCount > 0 && (item.previewRows || []).length === 0));
+        return `<section class="dc-normal-customer-section" style="${visibleItems.some(item => statusesMatchFilterSet((item.filterStatuses && item.filterStatuses.length) ? item.filterStatuses : item.statuses, selectedNormalSet)) ? '' : 'display:none;'}">
+        ${dcQaSingleCustomerSummaryCard(customer, visibleItems, visibleItems.map(renderCaseCard).join(''))}
       </section>`;
       }).join('');
 
       return `<section class="dc-qa-page">
         <section class="dc-normal-summary">
-          ${dcQaSingleReportHead(cases, stA, hasRef ? labelRef : null)}
+          ${dcQaSingleReportHead(displayableCases, stA, hasRef ? labelRef : null)}
           <div class="dc-summary-filter dc-normal-filter">${renderCompareStatusFilter('normal', normalOptionKeys, selectedNormalStatuses, counts)}</div>
         </section>
         ${body}
@@ -8225,7 +8443,7 @@ function buildDailyCompare(data) {
       const optionKeys = ['loss', 'oil50', 'payHigh', 'recvLow', 'normal', 'noRef'];
       const selected = getSelectedCompareStatuses('anomaly', optionKeys);
       const selectedSet = new Set(selected);
-      const visibleCards = cardsData.filter(card => statusesMatchFilterSet(card.statuses, selectedSet));
+      const visibleCards = cardsData.filter(card => statusesMatchFilterSet((card.filterStatuses && card.filterStatuses.length) ? card.filterStatuses : card.statuses, selectedSet));
       const visibleAnoms = visibleCards.reduce((sum, card) => sum + card.anomRows.filter(r => dcQaHasAnomalyStatus(r.statuses)).length, 0);
       const counts = {};
       optionKeys.forEach(k => {
@@ -8234,7 +8452,8 @@ function buildDailyCompare(data) {
         }, 0);
       });
       const cardsHtml = cardsData.map((card, idx) => {
-        const displayStyle = statusesMatchFilterSet(card.statuses, selectedSet) ? '' : 'display:none;';
+        const cardFilterStatuses = (card.filterStatuses && card.filterStatuses.length) ? card.filterStatuses : card.statuses;
+        const displayStyle = statusesMatchFilterSet(cardFilterStatuses, selectedSet) ? '' : 'display:none;';
         const anomCount = card.anomRows.filter(r => dcQaHasAnomalyStatus(r.statuses)).length;
         const previewRows = (card.previewRows && card.previewRows.length ? card.previewRows : card.anomRows || []);
         const basePatternCount = card.basePatternCount || 0;
@@ -8244,7 +8463,7 @@ function buildDailyCompare(data) {
         const overflowDisclosure = previewRows.length > 10
           ? `<div class="dc-qa-more">มีคู่เปรียบเทียบเพิ่มเติมอีก ${previewRows.length - 10} คู่ (คลิกเพื่อดูรายละเอียด)</div>`
           : '';
-        return `<article class="dc-qa-case dc-status-card dc-status-card-anomaly" data-card-idx="${idx}" data-status-keys="${esc(card.statuses.join(','))}" data-anom-count="${anomCount}" data-base-count="${basePatternCount}" style="${displayStyle}" onclick="dcOpenAnomalyModal(${idx})">
+        return `<article class="dc-qa-case dc-status-card dc-status-card-anomaly" data-card-idx="${idx}" data-status-keys="${esc(cardFilterStatuses.join(','))}" data-anom-count="${anomCount}" data-base-count="${basePatternCount}" style="${displayStyle}" onclick="dcOpenAnomalyModal(${idx})">
           <header class="dc-qa-case-head">
             <div class="dc-qa-title-block">
               <div class="dc-qa-identity"><span class="dc-qa-customer">${esc(card.ga.customer || '-')}</span><span class="dc-qa-vtype">${esc(card.ga.vtype || '-')}</span></div>
@@ -8364,7 +8583,12 @@ function buildDailyCompare(data) {
         return `<tr class="dc-qa-ref-row"><td class="dc-qa-date">${esc(dcQaShortDate(refTrip.date))}</td><td class="dc-qa-driver" title="${esc(refTrip.driver || '-')}">${esc(refTrip.driver || '-')}</td><td>${esc(refTrip.vtype || '-')}</td><td>${esc(refTrip.plate || '-')}</td><td class="is-right">${dcQaOilPrice(refTrip.date)}</td><td class="is-right is-oil">${dcQaNum(refTrip.oil)}</td><td class="is-right">${dcQaNum(refTrip.recv)}</td><td class="is-right">${dcQaNum(refTrip.pay)}</td><td class="is-right ${refMarginClass}">${dcQaNum(refTrip.margin)}</td><td></td></tr>`;
       };
       const sequence = dcQaBuildZigzagEntrySequence(card.basePatternRows || [], []);
-      const body = `<div class="dc-qa-table-wrap is-modal"><table class="dc-qa-table"><thead><tr><th>วันที่</th><th>พขร.</th><th>ประเภทรถ</th><th>ทะเบียน</th><th class="is-right">ราคาน้ำมัน</th><th class="is-right">สำรองน้ำมัน</th><th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">ส่วนต่าง</th><th>ความผิดปกติ</th></tr></thead><tbody>${sequence.map(part => part.kind === 'a' ? dcQaSingleTripRow(part.entry.ra, part.entry.statuses, true, part.entry.infoStatuses || []) : renderRefRow(part.trip)).join('')}</tbody></table></div>`;
+      const rowsHtml = sequence.map(part => (
+        part.kind === 'a'
+          ? dcQaSingleTripRow(part.entry.ra, part.entry.statuses, true, part.entry.infoStatuses || [])
+          : renderRefRow(part.trip)
+      )).join('');
+      const body = `<div class="dc-qa-table-wrap is-modal"><table class="dc-qa-table"><thead><tr><th>วันที่</th><th>พขร.</th><th>ประเภทรถ</th><th>ทะเบียน</th><th class="is-right">ราคาน้ำมัน</th><th class="is-right">สำรองน้ำมัน</th><th class="is-right">ราคารับ</th><th class="is-right">ราคาจ่าย</th><th class="is-right">ส่วนต่าง</th><th>ความผิดปกติ</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
       const titleHtml = `<span class="dc-qa-modal-title-prefix">รูปแบบราคากลางของวัน:</span><span class="dc-qa-modal-title-route">${esc(routeGroupHeaderDisplay(card.route || {}))}</span>`;
       dcQaModalShell('dc_norm_base_modal', 'dc_norm_base_capture', titleHtml, `${esc(card.route?.customer || '-')} · ${esc(card.route?.vtype || '-')} · ${esc(_labelA || '')}`, encodeURIComponent(`normal_base_${card.route?.route || 'route'}`), body);
     };

@@ -6068,6 +6068,12 @@ body.sidebar-hover-transitioning .content.page-daily .dc-normal-summary {
   border-color: rgba(168, 85, 247, .24);
 }
 
+.dc-qa-badge.is-payOilChanged {
+  color: #f9a8d4;
+  background: rgba(219, 39, 119, .14);
+  border-color: rgba(219, 39, 119, .26);
+}
+
 .dc-qa-badge.is-recvLow {
   color: #93c5fd;
   background: rgba(59, 130, 246, .14);

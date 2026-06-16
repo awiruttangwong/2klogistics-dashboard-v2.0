@@ -5799,6 +5799,64 @@ function buildDailyCompare(data) {
         }
         return out;
       }
+      function xmlAttrEscape(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/"/g, '&quot;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+      function patchWorksheetDataValidationXml(xml, refs = []) {
+        const validRefs = (refs || []).filter(Boolean);
+        if (!xml || validRefs.length === 0) return xml;
+        const sqref = xmlAttrEscape(validRefs.join(' '));
+        const validationXml =
+          `<dataValidations count="1"><dataValidation type="list" allowBlank="1" showErrorMessage="1" sqref="${sqref}"><formula1>"☐,☑"</formula1></dataValidation></dataValidations>`;
+        let out = xml.replace(/<dataValidations\b[\s\S]*?<\/dataValidations>/g, '');
+        const insertBefore = [
+          /<hyperlinks\b/,
+          /<printOptions\b/,
+          /<pageMargins\b/,
+          /<pageSetup\b/,
+          /<headerFooter\b/,
+          /<drawing\b/,
+          /<legacyDrawing\b/,
+          /<tableParts\b/,
+          /<extLst\b/,
+          /<\/worksheet>/
+        ];
+        for (const pattern of insertBefore) {
+          if (pattern.test(out)) {
+            return out.replace(pattern, match => validationXml + match);
+          }
+        }
+        return out + validationXml;
+      }
+      function xlsxRangeRef(rowStart, rowEnd, colStart, colEnd) {
+        return XLSX.utils.encode_range({ s: { r: rowStart, c: colStart }, e: { r: rowEnd, c: colEnd } });
+      }
+      function xlsxCompressRowRefs(rowIndexes, colStart, colEnd) {
+        const rows = [...new Set((rowIndexes || []).filter(row => Number.isInteger(row) && row >= 0))].sort((a, b) => a - b);
+        const refs = [];
+        let start = null;
+        let prev = null;
+        rows.forEach(row => {
+          if (start == null) {
+            start = row;
+            prev = row;
+            return;
+          }
+          if (row === prev + 1) {
+            prev = row;
+            return;
+          }
+          refs.push(xlsxRangeRef(start, prev, colStart, colEnd));
+          start = row;
+          prev = row;
+        });
+        if (start != null) refs.push(xlsxRangeRef(start, prev, colStart, colEnd));
+        return refs;
+      }
       function downloadBlob(blob, fileName) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -5840,7 +5898,7 @@ function buildDailyCompare(data) {
         applyWorkbookPrintSettings(wb, sheetPrintOptions);
         if (typeof JSZip === 'undefined') {
           XLSX.writeFile(wb, fileName, { bookType: 'xlsx', cellStyles: true });
-          alert('ส่งออกสำเร็จ แต่ไม่พบ JSZip จึงไม่ได้ฝังค่า Page Setup สำหรับการพิมพ์');
+          alert('ส่งออกสำเร็จ แต่ไม่พบ JSZip จึงไม่ได้ฝังค่า Page Setup และ dropdown สำหรับ checkbox');
           return;
         }
 
@@ -5851,8 +5909,14 @@ function buildDailyCompare(data) {
           const entry = zip.file(entryName);
           if (!entry) return;
           const xml = await entry.async('string');
-          const opts = sheetPrintOptions[sheetName] || {};
-          zip.file(entryName, patchWorksheetPrintXml(xml, opts));
+          const ws = wb.Sheets?.[sheetName];
+          const opts = {
+            ...(sheetPrintOptions[sheetName] || {}),
+            qaCheckboxValidationRefs: ws?.['!qaCheckboxValidationRefs'] || []
+          };
+          let patchedXml = patchWorksheetPrintXml(xml, opts);
+          patchedXml = patchWorksheetDataValidationXml(patchedXml, opts.qaCheckboxValidationRefs);
+          zip.file(entryName, patchedXml);
         }));
 
         const blob = await zip.generateAsync({
@@ -5911,6 +5975,17 @@ function buildDailyCompare(data) {
         if (opts.color) s.font.color = { rgb: opts.color };
         if (opts.fill) s.fill = { fgColor: { rgb: opts.fill }, patternType: 'solid' };
         return { v: v, s: s };
+      }
+      function formulaCell(formula, opts) {
+        opts = opts || {};
+        const styleOpts = { ...opts };
+        delete styleOpts.numFmt;
+        const cell = cCell(0, styleOpts);
+        if (opts.numFmt) cell.s.numFmt = opts.numFmt;
+        cell.t = 'n';
+        cell.v = 0;
+        cell.f = formula;
+        return cell;
       }
       function rCell(v, opts) {
         opts = opts || {};
@@ -6518,6 +6593,38 @@ function buildDailyCompare(data) {
 
       const sumAnomalyPairs = anomalyCards.reduce((s, c) => s + (c.rows || []).length, 0);
       const sumAnomalyAnoms = anomalyCards.reduce((s, c) => s + (c.rows || []).filter(r => dcQaHasAnomalyStatus(r.statuses)).length, 0);
+      const qaCheckboxStatusSheetConfigs = [
+        { key: 'loss', name: 'ขาดทุน' },
+        { key: 'oil50', name: 'สำรองน้ำมัน > 50%' },
+        { key: 'payHigh', name: 'ราคาจ่ายผิดปกติ' },
+        { key: 'recvLow', name: 'ราคารับผิดปกติ' }
+      ];
+      const qaCheckboxSheetNames = new Set(qaCheckboxStatusSheetConfigs.map(s => s.name));
+      const qaCheckboxHeaders = ['โปร', 'ดันราคา/หารถไม่ได้'];
+      const qaCheckboxCells = fill => qaCheckboxHeaders.map(() => cCell('☐', { fill, align: 'center', sz: 11 }));
+      const qaFormulaSheetName = name => "'" + String(name || '').replace(/'/g, "''") + "'";
+      const qaFormulaRange = (sheetName, col) => `${qaFormulaSheetName(sheetName)}!$${col}$4:$${col}$5000`;
+      const qaFormulaMeta = _isSingleMode
+        ? { routeTypeCol: 'E', qaCols: ['M', 'N'] }
+        : { routeTypeCol: 'F', qaCols: ['N', 'O'] };
+      const qaHelperSheetName = 'QA_Helper';
+      const qaHelperRows = [];
+      const qaHelperSheet = qaFormulaSheetName(qaHelperSheetName);
+      const qaHelperRange = col => `${qaHelperSheet}!$${col}$2:$${col}$5000`;
+      const qaSheetTotalRoutesFormula = sheetName => `COUNTIF(${qaHelperRange('A')},"${sheetName}")`;
+      const qaSheetCheckedRoutesFormula = sheetName => `SUMIF(${qaHelperRange('A')},"${sheetName}",${qaHelperRange('G')})`;
+      const qaSheetCheckedRowsFormula = sheetName => `SUMIF(${qaHelperRange('A')},"${sheetName}",${qaHelperRange('H')})`;
+      const qaSheetReasonFormula = (sheetName, helperCol) => `SUMIF(${qaHelperRange('A')},"${sheetName}",${qaHelperRange(helperCol)})`;
+      const qaAllTotalRoutesFormula = () => `COUNTA(${qaHelperRange('F')})`;
+      const qaAllCheckedRoutesFormula = () => `SUM(${qaHelperRange('G')})`;
+      const qaAllCheckedRowsFormula = () => `SUM(${qaHelperRange('H')})`;
+      const qaAllReasonFormula = helperCol => `SUM(${qaHelperRange(helperCol)})`;
+      const addQaHelperRoute = (sheetName, customer, route, vtype) => {
+        if (!qaCheckboxSheetNames.has(sheetName)) return;
+        const key = [sheetName, customer || '-', route || '-', vtype || '-'].join('|');
+        if (qaHelperRows.some(row => row.key === key)) return;
+        qaHelperRows.push({ key, sheetName, customer: customer || '-', route: route || '-', vtype: vtype || '-' });
+      };
 
       // ─── Sheet 1: สรุปผลดำเนินงาน (template-driven) ─────────────────────────────
       const ws1Data = [];
@@ -6665,6 +6772,106 @@ function buildDailyCompare(data) {
             cCell(impactNoteMap[key] || '-', { wrap: false, color: key === 'normal' || key === 'noRef' ? '6B7280' : '374151' })
           ]);
         });
+        const visualStatusColors = {
+          loss: 'DC2626',
+          oil50: 'D97706',
+          payHigh: '7C3AED',
+          payOilChanged: 'DB2777',
+          recvLow: '2563EB',
+          recvOilChanged: '0891B2',
+          normal: '059669',
+          noRef: '64748B'
+        };
+        const visualBarCell = (pct, key) => {
+          const safePct = Math.max(0, Math.min(Number(pct) || 0, 1));
+          const totalBlocks = 24;
+          const filledBlocks = Math.round(safePct * totalBlocks);
+          const bar = '█'.repeat(filledBlocks) + '░'.repeat(totalBlocks - filledBlocks);
+          return cCell(bar, { color: visualStatusColors[key] || '374151', sz: 9 });
+        };
+        const pushVisualStatusBlock = (title, rows, denominator) => {
+          ws1Data.push([cCell(title, { bold: true, sz: 10, color: '111827', fill: 'E5E7EB' }), cCell(''), cCell(''), cCell(''), cCell('')]);
+          ws1Data.push([hCell('ฐานการนับ'), hCell('สถานะ'), hCell('จำนวนเที่ยว'), hCell('สัดส่วน'), hCell('แถบสรุป')]);
+          rows.forEach(row => {
+            const pct = denominator > 0 ? row.count / denominator : 0;
+            const countCell = row.key === 'normal'
+              ? gCell(row.count, { numFmt: '#,##0', align: 'right' })
+              : row.key === 'noRef'
+                ? mCell(row.count, { numFmt: '#,##0', align: 'right' })
+                : cCell(row.count, { numFmt: '#,##0', align: 'right', color: visualStatusColors[row.key] || '374151' });
+            ws1Data.push([
+              cCell(row.viewLabel, { color: '6B7280', sz: 9 }),
+              cCell(row.label, { bold: true, color: visualStatusColors[row.key] || '111827' }),
+              countCell,
+              cCell(pct, { numFmt: nPct, align: 'right' }),
+              visualBarCell(pct, row.key)
+            ]);
+          });
+        };
+        const statusVisualRows = breakdown.map(([label, count, key]) => ({
+          viewLabel: 'นับทุกสถานะที่พบ',
+          label,
+          count: Number(count) || 0,
+          key
+        }));
+        ws1Data.push([]);
+        ws1Data.push([cCell('สรุปเชิงภาพ', { bold: true, sz: 11, color: '111827' }), cCell(''), cCell(''), cCell(''), cCell('')]);
+        ws1Data.push([cCell('สรุปตามสถานะ/tag ที่ตรวจพบ เพื่อใช้ตรวจเทียบกับชีทแยกและคอลัมน์ความผิดปกติในไฟล์เดียวกัน', { color: '6B7280', sz: 9, wrap: true }), cCell(''), cCell(''), cCell(''), cCell('')]);
+        pushVisualStatusBlock(
+          'สัดส่วนต่อเที่ยวทั้งหมด',
+          statusVisualRows,
+          totalForPct
+        );
+        ws1Data.push([]);
+        ws1Data.push([cCell('หมายเหตุการอ่านกราฟ: สัดส่วนอาจรวมเกิน 100% ได้ เพราะ 1 เที่ยวอาจพบได้มากกว่า 1 สถานะ', { color: '6B7280', sz: 9, wrap: true }), cCell(''), cCell(''), cCell(''), cCell('')]);
+        ws1Data.push([]);
+        ws1Data.push([cCell('สรุปการตรวจของ QA', { bold: true, sz: 11, color: '111827' }), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell('')]);
+        ws1Data.push([cCell('ผูกกับช่อง QA ในชีท ขาดทุน, สำรองน้ำมัน > 50%, ราคาจ่ายผิดปกติ, ราคารับผิดปกติ โดยนับแถวที่มีค่า ☑ อย่างน้อย 1 ช่องเป็นรายการที่ QA เช็คแล้ว', { color: '6B7280', sz: 9, wrap: true }), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell('')]);
+        ws1Data.push([hCell('รายการ'), hCell('ค่า'), hCell(''), hCell(''), hCell(''), hCell(''), hCell(''), hCell(''), hCell('')]);
+        const qaTotalRoutesFormula = qaAllTotalRoutesFormula();
+        const qaCheckedRoutesFormula = qaAllCheckedRoutesFormula();
+        const qaCheckedRowsFormula = qaAllCheckedRowsFormula();
+        const qaPromoFormula = qaAllReasonFormula('I');
+        const qaPushOrNoCarFormula = qaAllReasonFormula('J');
+        [
+          ['งานตรวจเส้นทางตามชีททั้งหมด', formulaCell(qaTotalRoutesFormula, { numFmt: '#,##0', align: 'right' })],
+          ['QA เช็คแล้ว', formulaCell(qaCheckedRoutesFormula, { numFmt: '#,##0', align: 'right', color: '16A34A' })],
+          ['ยังไม่เช็ค', formulaCell(`MAX((${qaTotalRoutesFormula})-(${qaCheckedRoutesFormula}),0)`, { numFmt: '#,##0', align: 'right', color: 'DC2626' })],
+          ['% ความคืบหน้า QA', formulaCell(`IFERROR((${qaCheckedRoutesFormula})/(${qaTotalRoutesFormula}),0)`, { numFmt: nPct, align: 'right' })],
+          ['เที่ยวที่ QA เช็คแล้ว', formulaCell(qaCheckedRowsFormula, { numFmt: '#,##0', align: 'right' })],
+          ['โปร', formulaCell(qaPromoFormula, { numFmt: '#,##0', align: 'right' })],
+          ['ดันราคา/หารถไม่ได้', formulaCell(qaPushOrNoCarFormula, { numFmt: '#,##0', align: 'right' })]
+        ].forEach(([label, valueCell]) => {
+          ws1Data.push([cCell(label, { bold: true }), valueCell, cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell('')]);
+        });
+        ws1Data.push([]);
+        ws1Data.push([cCell('ความคืบหน้า QA แยกตามสถานะ', { bold: true, sz: 10, color: '111827', fill: 'E5E7EB' }), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell('')]);
+        ws1Data.push([
+          hCell('สถานะ'),
+          hCell('งานตรวจเส้นทางตามชีท'),
+          hCell('เช็คแล้ว'),
+          hCell('ยังไม่เช็ค'),
+          hCell('% เช็คแล้ว'),
+          hCell('เที่ยวที่เช็คแล้ว'),
+          hCell('โปร'),
+          hCell('ดันราคา/หารถไม่ได้'),
+          hCell('')
+        ]);
+        qaCheckboxStatusSheetConfigs.forEach(config => {
+          const totalRoutesFormula = qaSheetTotalRoutesFormula(config.name);
+          const checkedRoutesFormula = qaSheetCheckedRoutesFormula(config.name);
+          ws1Data.push([
+            cCell(config.name, { bold: true }),
+            formulaCell(totalRoutesFormula, { numFmt: '#,##0', align: 'right' }),
+            formulaCell(checkedRoutesFormula, { numFmt: '#,##0', align: 'right', color: '16A34A' }),
+            formulaCell(`MAX((${totalRoutesFormula})-(${checkedRoutesFormula}),0)`, { numFmt: '#,##0', align: 'right', color: 'DC2626' }),
+            formulaCell(`IFERROR((${checkedRoutesFormula})/(${totalRoutesFormula}),0)`, { numFmt: nPct, align: 'right' }),
+            formulaCell(qaSheetCheckedRowsFormula(config.name), { numFmt: '#,##0', align: 'right' }),
+            formulaCell(qaSheetReasonFormula(config.name, 'I'), { numFmt: '#,##0', align: 'right' }),
+            formulaCell(qaSheetReasonFormula(config.name, 'J'), { numFmt: '#,##0', align: 'right' }),
+            cCell('')
+          ]);
+        });
       } else {
         ws1Data.push([hCell('รายการ'), hCell(periodALabel), hCell(periodBLabel), hCell('ผลต่าง (' + periodALabel + ' - ' + periodBLabel + ')')]);
         const dR = _stA.recv - _stB.recv, dP = _stA.pay - _stB.pay, dO = _stA.oil - _stB.oil, dM = _stA.margin - _stB.margin;
@@ -6685,6 +6892,54 @@ function buildDailyCompare(data) {
           [cCell('กำไร %', { bold: true }), cCell(_stA.pct / 100, { numFmt: nPct, align: 'right' }), cCell(_stB.pct / 100, { numFmt: nPct, align: 'right' }), dPct < 0 ? rCell(dPct, { numFmt: nPct, align: 'right' }) : gCell(dPct, { numFmt: nPct, align: 'right' })]
         ];
         rows.forEach(r => ws1Data.push(r));
+        ws1Data.push([]);
+        ws1Data.push([cCell('สรุปการตรวจของ QA', { bold: true, sz: 11, color: '111827' }), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell('')]);
+        ws1Data.push([cCell('ผูกกับช่อง QA ในชีท ขาดทุน, สำรองน้ำมัน > 50%, ราคาจ่ายผิดปกติ, ราคารับผิดปกติ โดยนับแถวที่มีค่า ☑ อย่างน้อย 1 ช่องเป็นรายการที่ QA เช็คแล้ว', { color: '6B7280', sz: 9, wrap: true }), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell('')]);
+        ws1Data.push([hCell('รายการ'), hCell('ค่า'), hCell(''), hCell(''), hCell(''), hCell(''), hCell(''), hCell(''), hCell('')]);
+        const qaTotalRoutesFormula = qaAllTotalRoutesFormula();
+        const qaCheckedRoutesFormula = qaAllCheckedRoutesFormula();
+        const qaCheckedRowsFormula = qaAllCheckedRowsFormula();
+        const qaPromoFormula = qaAllReasonFormula('I');
+        const qaPushOrNoCarFormula = qaAllReasonFormula('J');
+        [
+          ['งานตรวจเส้นทางตามชีททั้งหมด', formulaCell(qaTotalRoutesFormula, { numFmt: '#,##0', align: 'right' })],
+          ['QA เช็คแล้ว', formulaCell(qaCheckedRoutesFormula, { numFmt: '#,##0', align: 'right', color: '16A34A' })],
+          ['ยังไม่เช็ค', formulaCell(`MAX((${qaTotalRoutesFormula})-(${qaCheckedRoutesFormula}),0)`, { numFmt: '#,##0', align: 'right', color: 'DC2626' })],
+          ['% ความคืบหน้า QA', formulaCell(`IFERROR((${qaCheckedRoutesFormula})/(${qaTotalRoutesFormula}),0)`, { numFmt: nPct, align: 'right' })],
+          ['เที่ยวที่ QA เช็คแล้ว', formulaCell(qaCheckedRowsFormula, { numFmt: '#,##0', align: 'right' })],
+          ['โปร', formulaCell(qaPromoFormula, { numFmt: '#,##0', align: 'right' })],
+          ['ดันราคา/หารถไม่ได้', formulaCell(qaPushOrNoCarFormula, { numFmt: '#,##0', align: 'right' })]
+        ].forEach(([label, valueCell]) => {
+          ws1Data.push([cCell(label, { bold: true }), valueCell, cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell('')]);
+        });
+        ws1Data.push([]);
+        ws1Data.push([cCell('ความคืบหน้า QA แยกตามสถานะ', { bold: true, sz: 10, color: '111827', fill: 'E5E7EB' }), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell('')]);
+        ws1Data.push([
+          hCell('สถานะ'),
+          hCell('งานตรวจเส้นทางตามชีท'),
+          hCell('เช็คแล้ว'),
+          hCell('ยังไม่เช็ค'),
+          hCell('% เช็คแล้ว'),
+          hCell('เที่ยวที่เช็คแล้ว'),
+          hCell('โปร'),
+          hCell('ดันราคา/หารถไม่ได้'),
+          hCell('')
+        ]);
+        qaCheckboxStatusSheetConfigs.forEach(config => {
+          const totalRoutesFormula = qaSheetTotalRoutesFormula(config.name);
+          const checkedRoutesFormula = qaSheetCheckedRoutesFormula(config.name);
+          ws1Data.push([
+            cCell(config.name, { bold: true }),
+            formulaCell(totalRoutesFormula, { numFmt: '#,##0', align: 'right' }),
+            formulaCell(checkedRoutesFormula, { numFmt: '#,##0', align: 'right', color: '16A34A' }),
+            formulaCell(`MAX((${totalRoutesFormula})-(${checkedRoutesFormula}),0)`, { numFmt: '#,##0', align: 'right', color: 'DC2626' }),
+            formulaCell(`IFERROR((${checkedRoutesFormula})/(${totalRoutesFormula}),0)`, { numFmt: nPct, align: 'right' }),
+            formulaCell(qaSheetCheckedRowsFormula(config.name), { numFmt: '#,##0', align: 'right' }),
+            formulaCell(qaSheetReasonFormula(config.name, 'I'), { numFmt: '#,##0', align: 'right' }),
+            formulaCell(qaSheetReasonFormula(config.name, 'J'), { numFmt: '#,##0', align: 'right' }),
+            cCell('')
+          ]);
+        });
       }
       const bottomStartIdx = ws1Data.length;
       ws1Data.push([]);
@@ -6700,10 +6955,10 @@ function buildDailyCompare(data) {
       ws1Data.push([cCell('สร้างเมื่อ: ' + new Date().toLocaleString('th-TH'), { color: '6B7280', sz: 9 })]);
 
       const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
-      const ws1ColumnCount = _isSingleMode ? 5 : 4;
+      const ws1ColumnCount = 9;
       ws1['!cols'] = _isSingleMode
-        ? [{ wch: 34 }, { wch: 14 }, { wch: 24 }, { wch: 22 }, { wch: 90 }]
-        : [{ wch: 46 }, { wch: 30 }, { wch: 30 }, { wch: 38 }];
+        ? [{ wch: 34 }, { wch: 42 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 14 }, { wch: 24 }, { wch: 8 }]
+        : [{ wch: 46 }, { wch: 30 }, { wch: 30 }, { wch: 38 }, { wch: 16 }, { wch: 18 }, { wch: 14 }, { wch: 24 }, { wch: 8 }];
       ws1['!rows'] = ws1Data.map((_, idx) => {
         if (idx === 0) return { hpt: 32 };
         return {};
@@ -6721,6 +6976,22 @@ function buildDailyCompare(data) {
           ws1Merges.push({ s: { r: overlapNoteRow, c: 0 }, e: { r: overlapNoteRow, c: ws1ColumnCount - 1 } });
           ws1['!rows'][overlapNoteRow] = { hpt: 18 };
         }
+        ws1Data.forEach((row, idx) => {
+          const firstText = String(row?.[0]?.v || row?.[0] || '');
+          const shouldMergeVisualRow =
+            firstText.startsWith('สรุปเชิงภาพ') ||
+            firstText.startsWith('สรุปตามสถานะ') ||
+            firstText.startsWith('สัดส่วนต่อเที่ยวทั้งหมด') ||
+            firstText.startsWith('หมายเหตุการอ่านกราฟ') ||
+            firstText.startsWith('สรุปการตรวจของ QA') ||
+            firstText.startsWith('ผูกกับช่อง QA') ||
+            firstText.startsWith('ความคืบหน้า QA แยกตามสถานะ');
+          if (!shouldMergeVisualRow) return;
+          ws1Merges.push({ s: { r: idx, c: 0 }, e: { r: idx, c: ws1ColumnCount - 1 } });
+          ws1['!rows'][idx] = firstText.startsWith('หมายเหตุการอ่านกราฟ')
+            ? { hpt: 24 }
+            : { hpt: 20 };
+        });
         ws1Merges.push({ s: { r: 4, c: 1 }, e: { r: 4, c: ws1ColumnCount - 1 } });
       }
       const bottomEndIdx = ws1Data.length - 1;
@@ -6745,10 +7016,12 @@ function buildDailyCompare(data) {
       ];
       if (!_isSingleMode && _stA) {
         const buildCompareSheet = (sourceCards, sheetTitle, selectedRaw, statusFilter = null) => {
+          const hasQaCheckboxColumns = qaCheckboxSheetNames.has(sheetTitle);
           const h4 = [
             'ลูกค้า', 'ชื่อเส้นทาง', 'วันที่หลัก', 'วันที่เปรียบเทียบ', 'พขร.',
             'ประเภทรถ', 'ทะเบียน', 'ราคาน้ำมัน', 'สำรองน้ำมัน',
-            'ราคารับ', 'ราคาจ่าย', 'ส่วนต่าง', 'ความผิดปกติ', 'หมายเหตุ'
+            'ราคารับ', 'ราคาจ่าย', 'ส่วนต่าง', 'ความผิดปกติ',
+            ...(hasQaCheckboxColumns ? qaCheckboxHeaders : ['หมายเหตุ'])
           ];
           const isTargetSheet = compareStatusSheetConfigs.some(config => config.name === sheetTitle);
           const cards = statusFilter
@@ -6773,6 +7046,7 @@ function buildDailyCompare(data) {
 
           // Track group-header rows that need C+D and E+F merges.
           const ws4GroupHeaderRows = [];
+          const qaCheckboxRows = [];
 
           cards.forEach(card => {
             (card.rows || []).forEach(entry => {
@@ -6820,13 +7094,16 @@ function buildDailyCompare(data) {
               const bOptsNeutral = f => ({ fill: f, align: 'right', wrap: true, valign: 'top', neutralColor: true });
               const displayStatuses = statusFilter ? statusesForFilterDisplay(entry.statuses, statusFilter) : (entry.statuses || ['normal']);
               const colMValign = isTargetSheet ? 'center' : 'top';
+              const qaCustomerVal = ra.customer || rb.customer || '-';
+              const qaRouteVal = xlsxRouteDisplay(ra.route || ra.routeDesc ? ra : rb);
+              const qaVtypeVal = (ra.vtype || '-') + ' / ' + (rb.vtype || '-');
               const row = [
-                cCell(ra.customer || rb.customer || '-', { fill: zf }),
-                cCell(xlsxRouteDisplay(ra.route || ra.routeDesc ? ra : rb), { fill: zf }),
+                cCell(qaCustomerVal, { fill: zf }),
+                cCell(qaRouteVal, { fill: zf }),
                 cCell(ra.date || '-', { fill: zf }),
                 cCell(rb.date || '-', { fill: zf }),
                 cCell(ra.driver || rb.driver || '-', { fill: zf }),
-                cCell((ra.vtype || '-') + ' / ' + (rb.vtype || '-'), { fill: zf }),
+                cCell(qaVtypeVal, { fill: zf }),
                 cCell((ra.plate || '-') + ' / ' + (rb.plate || '-'), { fill: zf }),
                 bulletPairCell(oilPriceA, oilPriceB, bOpts(zf), true),
                 bulletPairCell(ra.oil, rb.oil, bOpts(zf), true),
@@ -6834,8 +7111,12 @@ function buildDailyCompare(data) {
                 bulletPairCell(ra.pay, rb.pay, bOptsNeutral(zf), true),      // col K - dark
                 bulletPairCell(mA, mB, bOptsNeutral(zf), false),             // col L - dark
                 statusRichCell(displayStatuses, { fill: zf, align: 'left', wrap: true, valign: colMValign }),
-                cCell('', { fill: zf })
+                ...(hasQaCheckboxColumns ? qaCheckboxCells(zf) : [cCell('', { fill: zf })])
               ];
+              if (hasQaCheckboxColumns) {
+                qaCheckboxRows.push(ws4Data.length);
+                addQaHelperRoute(sheetTitle, qaCustomerVal, qaRouteVal, qaVtypeVal);
+              }
               ws4Data.push(row);
               rowIdx4++;
             });
@@ -6852,7 +7133,7 @@ function buildDailyCompare(data) {
 
           const bottomStartIdx = ws4Data.length;
           ws4Data.push([]);
-          const reviewerStartCol = h4.length - 3; // L
+          const reviewerStartCol = h4.length - qaCheckboxHeaders.length;
           const appendNoteRow = (noteCell, reviewerCell = null) => {
             const row = [noteCell];
             if (isTargetSheet) {
@@ -6897,11 +7178,20 @@ function buildDailyCompare(data) {
             return { hpt: Math.max(lines * 14 + 6, 20) };
           });
           const ws = XLSX.utils.aoa_to_sheet(ws4Data);
-          ws['!cols'] = [
+          if (hasQaCheckboxColumns) {
+            ws['!qaCheckboxValidationRefs'] = xlsxCompressRowRefs(qaCheckboxRows, h4.length - qaCheckboxHeaders.length, h4.length - 1);
+          }
+          const ws4Cols = [
             { wch: 12 }, { wch: 22 }, { wch: 12 }, { wch: 18 }, { wch: 18 },
             { wch: 13 }, { wch: 18 }, { wch: 16 }, { wch: 16 },
-            { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: maxStatusLen }, { wch: 16 }
+            { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: maxStatusLen }
           ];
+          if (hasQaCheckboxColumns) {
+            ws4Cols.push({ wch: 10 }, { wch: 24 });
+          } else {
+            ws4Cols.push({ wch: 16 });
+          }
+          ws['!cols'] = ws4Cols;
           ws['!rows'] = ws4RowHeights;
           ws['!merges'] = [
             { s: { r: 0, c: 0 }, e: { r: 0, c: h4.length - 1 } },
@@ -6958,6 +7248,7 @@ function buildDailyCompare(data) {
         const buildSingleSheet = (cases, sheetTitle, statusFilter, userFilterSet) => {
           const wsData = [];
           const isPairFirstStatusFilter = statusFilter === 'payHigh' || statusFilter === 'recvLow';
+          const hasQaCheckboxColumns = qaCheckboxSheetNames.has(sheetTitle);
           const titleMap = {
             'รายเส้นทางที่เปรียบเทียบ': 'รายงานการเปรียบเทียบข้อมูลรายเส้นทาง',
             'ขาดทุน': 'รายการเส้นทางที่มีผลประกอบการขาดทุน',
@@ -6971,7 +7262,8 @@ function buildDailyCompare(data) {
           const headers = [
             'ลูกค้า', 'ชื่อเส้นทาง', 'วันที่', 'พขร.',
             'ประเภทรถ', 'ทะเบียน', 'ราคาน้ำมัน', 'สำรองน้ำมัน',
-            'ราคารับ', 'ราคาจ่าย', 'ส่วนต่าง', 'ความผิดปกติ', 'หมายเหตุ'
+            'ราคารับ', 'ราคาจ่าย', 'ส่วนต่าง', 'ความผิดปกติ',
+            ...(hasQaCheckboxColumns ? qaCheckboxHeaders : ['หมายเหตุ'])
           ];
           const titleRow = [tCell(displayTitle)];
           for (let i = 1; i < headers.length; i++) titleRow.push(tCell(''));
@@ -6992,6 +7284,7 @@ function buildDailyCompare(data) {
           wsData.push(headers.map(t => hCell(t)));
           let rowIdx = headerRow + 1;
           const groupHeaderRows = [];
+          const qaCheckboxRows = [];
 
           const cleanStatuses = ss => {
             const arr = ss && ss.length ? ss : ['normal'];
@@ -7158,12 +7451,15 @@ function buildDailyCompare(data) {
                 }
                 const zf = (rowIdx % 2 === 0) ? 'F9FAFB' : null;
                 const colLValign = isTargetSheet ? 'center' : 'top';
+                const qaCustomerVal = r.customer || '-';
+                const qaRouteVal = xlsxRouteDisplay(r);
+                const qaVtypeVal = r.vtype || '-';
                 const row = [
-                  cCell(r.customer || '-', { fill: zf }),
-                  cCell(xlsxRouteDisplay(r), { fill: zf }),
+                  cCell(qaCustomerVal, { fill: zf }),
+                  cCell(qaRouteVal, { fill: zf }),
                   cCell(r.date || '-', { fill: zf }),
                   cCell(r.driver || '-', { fill: zf }),
-                  cCell(r.vtype || '-', { fill: zf }),
+                  cCell(qaVtypeVal, { fill: zf }),
                   cCell(r.plate || '-', { fill: zf }),
                   hasNum(oilPrice) ? cCell(fmtMoney(oilPrice), { align: 'right', fill: zf }) : cCell('-', { align: 'right', fill: zf }),
                   cCell(fmtMoney(r.oil), { align: 'right', fill: zf }),
@@ -7171,8 +7467,12 @@ function buildDailyCompare(data) {
                   cCell(fmtMoney(r.pay), { align: 'right', fill: zf }),
                   mar < 0 ? rCell(fmtMoney(mar), { align: 'right', fill: zf }) : gCell(fmtMoney(mar), { align: 'right', fill: zf }),
                   statusRichCell(displayStatuses, { fill: zf, align: 'left', wrap: true, valign: colLValign, neutralStatusColor: isOverviewSheet }),
-                  cCell('', { fill: zf })
+                  ...(hasQaCheckboxColumns ? qaCheckboxCells(zf) : [cCell('', { fill: zf })])
                 ];
+                if (hasQaCheckboxColumns) {
+                  qaCheckboxRows.push(wsData.length);
+                  addQaHelperRoute(sheetTitle, qaCustomerVal, qaRouteVal, qaVtypeVal);
+                }
                 wsData.push(row);
               } else {
                 const refTrip = part.trip || {};
@@ -7192,7 +7492,9 @@ function buildDailyCompare(data) {
                   cCell(fmtMoney(refTrip.pay), { align: 'right', fill: refFill }),
                   mar < 0 ? rCell(fmtMoney(mar), { align: 'right', fill: refFill }) : gCell(fmtMoney(mar), { align: 'right', fill: refFill }),
                   cCell('', { fill: refFill }),
-                  cCell('', { fill: refFill })
+                  ...(hasQaCheckboxColumns
+                    ? qaCheckboxHeaders.map(() => cCell('', { fill: refFill }))
+                    : [cCell('', { fill: refFill })])
                 ];
                 wsData.push(row);
               }
@@ -7210,7 +7512,7 @@ function buildDailyCompare(data) {
           // Add the bottom Notes section (ย้ายไปด้านล่างสุด)
           const bottomStartIdx = wsData.length;
           wsData.push([]);
-          const reviewerStartCol = 10; // K
+          const reviewerStartCol = headers.length - qaCheckboxHeaders.length;
           const appendNoteRow = (noteCell, reviewerCell = null) => {
             const row = [noteCell];
             if (isTargetSheet) {
@@ -7248,6 +7550,9 @@ function buildDailyCompare(data) {
           }
 
           const ws = XLSX.utils.aoa_to_sheet(wsData);
+          if (hasQaCheckboxColumns) {
+            ws['!qaCheckboxValidationRefs'] = xlsxCompressRowRefs(qaCheckboxRows, headers.length - qaCheckboxHeaders.length, headers.length - 1);
+          }
           const statusColumnWidth = isOverviewSheet
             ? Math.min(Math.max(maxStatusLen, 36), 46)
             : (isTargetSheet ? maxStatusLen : 24);
@@ -7260,11 +7565,17 @@ function buildDailyCompare(data) {
               return sum + Math.max(1, Math.ceil(len / usableChars));
             }, 0);
           };
-          ws['!cols'] = [
+          const wsCols = [
             { wch: 12 }, { wch: maxRouteLen }, { wch: 12 }, { wch: 18 },
             { wch: 13 }, { wch: 18 }, { wch: maxOilLen }, { wch: maxReserveLen },
-            { wch: maxRecvLen }, { wch: maxPayLen }, { wch: maxMarginLen }, { wch: statusColumnWidth }, { wch: 16 }
+            { wch: maxRecvLen }, { wch: maxPayLen }, { wch: maxMarginLen }, { wch: statusColumnWidth }
           ];
+          if (hasQaCheckboxColumns) {
+            wsCols.push({ wch: 10 }, { wch: 24 });
+          } else {
+            wsCols.push({ wch: 16 });
+          }
+          ws['!cols'] = wsCols;
 
           // Row heights: header rows = default; group header = 20pt; data row proportional to status lines.
           const groupHeaderSet = new Set(groupHeaderRows);
@@ -7325,6 +7636,56 @@ function buildDailyCompare(data) {
         });
       }
 
+      const buildQaHelperSheet = () => {
+        const helperData = [[
+          hCell('ชีท'),
+          hCell('สถานะ'),
+          hCell('ลูกค้า'),
+          hCell('ชื่อเส้นทาง'),
+          hCell('ประเภทรถ'),
+          hCell('Route Key'),
+          hCell('เช็คแล้ว'),
+          hCell('เที่ยวที่เช็คแล้ว'),
+          hCell('โปร'),
+          hCell('ดันราคา/หารถไม่ได้')
+        ]];
+        qaHelperRows.forEach((item, idx) => {
+          const rowNum = idx + 2;
+          const sourceSheet = item.sheetName;
+          const sourceCustomer = qaFormulaRange(sourceSheet, 'A');
+          const sourceRoute = qaFormulaRange(sourceSheet, 'B');
+          const sourceVtype = qaFormulaRange(sourceSheet, qaFormulaMeta.routeTypeCol);
+          const sourcePromo = qaFormulaRange(sourceSheet, qaFormulaMeta.qaCols[0]);
+          const sourcePushOrNoCar = qaFormulaRange(sourceSheet, qaFormulaMeta.qaCols[1]);
+          const criteria = `${sourceCustomer},$C${rowNum},${sourceRoute},$D${rowNum},${sourceVtype},$E${rowNum}`;
+          const checkedTripsFormula =
+            `SUMPRODUCT(--(${sourceCustomer}=$C${rowNum}),--(${sourceRoute}=$D${rowNum}),--(${sourceVtype}=$E${rowNum}),--(((${sourcePromo}="☑")+(${sourcePushOrNoCar}="☑"))>0))`;
+          helperData.push([
+            cCell(item.sheetName),
+            cCell(item.sheetName),
+            cCell(item.customer),
+            cCell(item.route),
+            cCell(item.vtype),
+            formulaCell(`C${rowNum}&"|"&D${rowNum}&"|"&E${rowNum}`, { align: 'left' }),
+            formulaCell(`--((I${rowNum}+J${rowNum})>0)`, { numFmt: '#,##0', align: 'right' }),
+            formulaCell(checkedTripsFormula, { numFmt: '#,##0', align: 'right' }),
+            formulaCell(`COUNTIFS(${criteria},${sourcePromo},"☑")`, { numFmt: '#,##0', align: 'right' }),
+            formulaCell(`COUNTIFS(${criteria},${sourcePushOrNoCar},"☑")`, { numFmt: '#,##0', align: 'right' })
+          ]);
+        });
+        if (helperData.length === 1) {
+          helperData.push([cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(0), cCell(0), cCell(0), cCell(0)]);
+        }
+        const ws = XLSX.utils.aoa_to_sheet(helperData);
+        ws['!cols'] = [
+          { wch: 24 }, { wch: 24 }, { wch: 18 }, { wch: 34 }, { wch: 16 },
+          { wch: 44 }, { wch: 12 }, { wch: 18 }, { wch: 10 }, { wch: 24 }
+        ];
+        ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
+        return ws;
+      };
+      XLSX.utils.book_append_sheet(wb, buildQaHelperSheet(), qaHelperSheetName);
+
       const printSettingsBySheet = {
         'สรุปผลดำเนินงาน': { printTitlesRow: '1:3' },
         'รายเส้นทางที่ถูกเปรียบเทียบ': { printTitlesRow: '$1:$2' },
@@ -7344,7 +7705,7 @@ function buildDailyCompare(data) {
       }
 
       const safeFilePart = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_');
-      const fileName = 'วิเคราะห์ผลการดำเนินงาน_' + safeFilePart(periodALabel) + (_isSingleMode ? '' : '_vs_' + safeFilePart(periodBLabel)) + '_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+      const fileName = 'วิเคราะห์ผลการดำเนินงาน_' + safeFilePart(periodALabel) + (_isSingleMode ? '' : '_vs_' + safeFilePart(periodBLabel)) + '.xlsx';
       try {
         await writeWorkbookWithPrintSettings(wb, fileName, printSettingsBySheet);
       } catch (err) {

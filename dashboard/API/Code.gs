@@ -4,7 +4,7 @@
  * - Data Import & Sync (M1-M12)
  * - Pre-calculate: MASTER, SUMMARY_CACHE, TRIPS_CACHE
  * - API: doGet() for frontend
- * - Daily Batch Job (Trigger 08:30, Asia/Bangkok)
+ * - Daily Batch Job (Trigger 08:00, Asia/Bangkok)
  * ============================================
  */
 
@@ -14,6 +14,13 @@
 // HTML Service include helper (used by Index.html)
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+function getDashboardSpreadsheet_() {
+  if (typeof EXPECTED_DASHBOARD_SPREADSHEET_ID !== 'undefined' && EXPECTED_DASHBOARD_SPREADSHEET_ID) {
+    return SpreadsheetApp.openById(EXPECTED_DASHBOARD_SPREADSHEET_ID);
+  }
+  return SpreadsheetApp.getActiveSpreadsheet();
 }
 
 // ============================================
@@ -51,11 +58,11 @@ function showHelpV2() {
   lines.push('2. Verify SOURCE_SHEET_NAMES match your source tab names.');
   lines.push('3. Run menu "4. Sync DATA(M1-M12)" to import raw rows.');
   lines.push('4. Run menu "1. Refresh Full Dashboard" to rebuild MASTER, caches, and normalize oil sheet data.');
-  lines.push('5. If needed, run menu "2. Create Daily Trigger" for auto-refresh at 08:30 (UTC+7).');
+  lines.push('5. If needed, run menu "2. Create Daily Trigger" for auto-refresh at 08:00 (UTC+7).');
   lines.push('');
   lines.push('--- Menu Actions ---');
   lines.push('- Refresh Full Dashboard: sync + rebuild MASTER + SUMMARY_CACHE + TRIPS_CACHE + oil sheet normalization');
-  lines.push('- Create Daily Trigger: create a time trigger for dailyBatchJob at 08:30 (UTC+7)');
+  lines.push('- Create Daily Trigger: create a time trigger for dailyBatchJob at 08:00 (UTC+7)');
   lines.push('- Remove All Triggers: remove all project triggers');
   lines.push('- Sync DATA(M1-M12): import source sheets only, without cache rebuild');
   lines.push('');
@@ -243,7 +250,7 @@ function processSheetData(sheet) {
 
 function importAllConfiguredSheets() {
   var ui = SpreadsheetApp.getUi();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var fullReport = {
     totalRead: 0,
     totalDeleted: 0,
@@ -345,9 +352,51 @@ function importAllConfiguredSheets() {
 // TRIGGERS
 // ============================================
 
+var DAILY_BATCH_LAST_STATUS_PROPERTY = 'DAILY_BATCH_LAST_STATUS';
+
+function getDailyBatchTriggerConfig_() {
+  return {
+    timezone: typeof DAILY_BATCH_TRIGGER_TIMEZONE !== 'undefined' ? DAILY_BATCH_TRIGGER_TIMEZONE : 'Asia/Bangkok',
+    hour: typeof DAILY_BATCH_TRIGGER_HOUR !== 'undefined' ? DAILY_BATCH_TRIGGER_HOUR : 8,
+    nearMinute: typeof DAILY_BATCH_TRIGGER_NEAR_MINUTE !== 'undefined' ? DAILY_BATCH_TRIGGER_NEAR_MINUTE : 0
+  };
+}
+
+function getLastDailyBatchStatus_() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(DAILY_BATCH_LAST_STATUS_PROPERTY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (err) {
+    return {
+      ok: false,
+      error: 'Failed to read last daily batch status: ' + err.message,
+      checkedAt: new Date().toISOString()
+    };
+  }
+}
+
+function saveLastDailyBatchStatus_(status) {
+  try {
+    PropertiesService.getScriptProperties().setProperty(
+      DAILY_BATCH_LAST_STATUS_PROPERTY,
+      JSON.stringify(status || {})
+    );
+  } catch (err) {
+    Logger.log('[dailyBatchJob] failed to save last status: ' + err.message);
+  }
+}
+
 function createDailyTrigger() {
   // Keep the original function name for menus/triggers, but route to the safe core implementation.
-  return createDailyTriggerCore_();
+  var result = createDailyTriggerCore_();
+  SpreadsheetApp.getUi().alert(
+    'Trigger configured.\n\n' +
+    '- Removed old dailyBatchJob triggers: ' + result.removed + '\n' +
+    '- Created new trigger: dailyBatchJob at ' + result.expectedWindow + '\n\n' +
+    'Note: Apps Script may run a few minutes around this time window.'
+  );
+  return result;
 }
 
 function removeAllTriggers() {
@@ -367,12 +416,14 @@ function dailyBatchJob() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) {
     Logger.log('[dailyBatchJob] skipped: another dailyBatchJob run is already active');
-    return {
+    var skippedStatus = {
       ok: false,
       skipped: true,
       error: 'dailyBatchJob is already running',
       checkedAt: new Date().toISOString()
     };
+    saveLastDailyBatchStatus_(skippedStatus);
+    return skippedStatus;
   }
   try {
     // Keep the original function name for menus/triggers, but route to the safe core implementation.
@@ -387,7 +438,7 @@ function importAllConfiguredSheetsSilent() {
 }
 
 function createDailyTriggerCore_() {
-  var ui = SpreadsheetApp.getUi();
+  var triggerConfig = getDailyBatchTriggerConfig_();
   var triggers = ScriptApp.getProjectTriggers();
   var removed = 0;
   for (var i = 0; i < triggers.length; i++) {
@@ -400,17 +451,23 @@ function createDailyTriggerCore_() {
   ScriptApp.newTrigger('dailyBatchJob')
     .timeBased()
     .everyDays(1)
-    .inTimezone('Asia/Bangkok')
-    .atHour(8)
-    .nearMinute(30)
+    .inTimezone(triggerConfig.timezone)
+    .atHour(triggerConfig.hour)
+    .nearMinute(triggerConfig.nearMinute)
     .create();
 
-  ui.alert(
-    'Trigger configured.\n\n' +
-    '- Removed old dailyBatchJob triggers: ' + removed + '\n' +
-    '- Created new trigger: dailyBatchJob at 08:30 (UTC+7, Asia/Bangkok)\n\n' +
-    'Note: Apps Script may run a few minutes around this time window.'
-  );
+  return {
+    ok: true,
+    removed: removed,
+    expectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' +
+      ('0' + triggerConfig.nearMinute).slice(-2) +
+      ' (UTC+7, ' + triggerConfig.timezone + ')',
+    checkedAt: new Date().toISOString()
+  };
+}
+
+function installDailyTriggerForAutomation() {
+  return createDailyTriggerCore_();
 }
 
 function getOilServiceMeta_() {
@@ -424,7 +481,7 @@ function getOilServiceMeta_() {
 }
 
 function refreshOilDataForApi_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var sheet = getOrCreateSheet(ss, SHEET_OIL_DIESEL);
   var header = [['date', 'diesel_b7', 'source', 'note']];
   var existing = readOilRowsMap_(sheet);
@@ -793,7 +850,7 @@ function trimForLog_(s) {
 }
 
 function buildMasterSnapshotForAudit_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var master = ss.getSheetByName(SHEET_MASTER);
   if (!master || master.getLastRow() < 2) {
     return {
@@ -962,7 +1019,7 @@ function makeAuditDetailRow_(changeType, key, beforeRec, afterRec, changedFields
 }
 
 function writeSyncAuditReport_(runId, beforeSnap, afterSnap, context) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   hideSyncAuditLogSheet_(ss);
   var detailSheet = getOrCreateSheet(ss, SHEET_SYNC_AUDIT_DETAIL);
   var diff = diffAuditSnapshots_(beforeSnap, afterSnap, AUDIT_MAX_DETAIL_ROWS);
@@ -1075,7 +1132,12 @@ function formatAuditDetailRows_(sheet, startRow, rowCount) {
 }
 
 function systemStatusReport() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
+  var triggerConfig = getDailyBatchTriggerConfig_();
+  var expectedSpreadsheetId = typeof EXPECTED_DASHBOARD_SPREADSHEET_ID !== 'undefined'
+    ? EXPECTED_DASHBOARD_SPREADSHEET_ID
+    : '';
+  var activeSpreadsheetId = ss.getId();
   var triggers = ScriptApp.getProjectTriggers().filter(function(t) {
     return t.getHandlerFunction() === 'dailyBatchJob';
   });
@@ -1089,8 +1151,20 @@ function systemStatusReport() {
   var contract = validateFrontendApiContract();
   return {
     trigger: {
-      dailyBatchJobCount: triggers.length
+      dailyBatchJobCount: triggers.length,
+      configuredTimezone: triggerConfig.timezone,
+      configuredHour: triggerConfig.hour,
+      configuredNearMinute: triggerConfig.nearMinute,
+      expectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' + ('0' + triggerConfig.nearMinute).slice(-2) + ' ' + triggerConfig.timezone
     },
+    spreadsheet: {
+      id: activeSpreadsheetId,
+      name: ss.getName(),
+      expectedId: expectedSpreadsheetId || null,
+      matchesExpected: expectedSpreadsheetId ? activeSpreadsheetId === expectedSpreadsheetId : null,
+      appsScriptProjectId: typeof APPS_SCRIPT_PROJECT_ID !== 'undefined' ? APPS_SCRIPT_PROJECT_ID : null
+    },
+    lastDailyBatchJob: getLastDailyBatchStatus_(),
     sheets: {
       masterRows: sheetRowCount(SHEET_MASTER),
       summaryCacheRows: sheetRowCount(SHEET_SUMMARY_CACHE),
@@ -1111,7 +1185,7 @@ var SHEET_SYNC_AUDIT_DETAIL = 'SYNC_AUDIT_DETAIL';
 var AUDIT_MAX_DETAIL_ROWS = 400;
 
 function dailyBatchJobCore_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   hideSyncAuditLogSheet_(ss);
   Logger.log('[dailyBatchJob] === START ===');
   var t0 = new Date().getTime();
@@ -1252,22 +1326,29 @@ function dailyBatchJobCore_() {
   Logger.log('[dailyBatchJob] === END === Total time: ' + totalMs + 'ms');
   Logger.log(summaryText);
   ss.toast(summaryText, 'Batch Report', 20);
-  return {
+  var result = {
     ok: stepErrors.length === 0,
+    startedAt: new Date(t0).toISOString(),
+    finishedAt: new Date().toISOString(),
     durationMs: totalMs,
     updatedSheets: updatedSheets,
     newRows: totalNewRows,
     oilRows: oilReport.rows,
+    masterRows: status.sheets.masterRows,
+    summaryCacheRows: status.sheets.summaryCacheRows,
+    tripsCacheRows: status.sheets.tripsCacheRows,
     syncErrors: syncErrors,
     errors: stepErrors,
-    status: status,
+    contractPassed: status.contract.passed,
     audit: auditResult,
     auditWarnings: auditWarnings
   };
+  saveLastDailyBatchStatus_(result);
+  return result;
 }
 
 function importAllConfiguredSheetsSilentWithReport() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var months = ['DATA(M1)', 'DATA(M2)', 'DATA(M3)', 'DATA(M4)', 'DATA(M5)', 'DATA(M6)',
                 'DATA(M7)', 'DATA(M8)', 'DATA(M9)', 'DATA(M10)', 'DATA(M11)', 'DATA(M12)'];
   var report = [];
@@ -1319,7 +1400,7 @@ function importAllConfiguredSheetsSilentWithReport() {
 // ============================================
 
 function rebuildMasterSheet() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var masterSheet = getOrCreateSheet(ss, SHEET_MASTER);
   Logger.log('[rebuildMasterSheet] Start building MASTER...');
 
@@ -1404,7 +1485,7 @@ function rebuildMasterSheet() {
 
 function rebuildCaches() {
   var t0 = new Date().getTime();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var masterSheet = ss.getSheetByName(SHEET_MASTER);
   if (!masterSheet || masterSheet.getLastRow() < 2) {
     Logger.log('MASTER sheet not found or empty');
@@ -2298,7 +2379,7 @@ function getOrCreateSheet(ss, name) {
 
 function hideSyncAuditLogSheet_(ss) {
   try {
-    var spreadsheet = ss || SpreadsheetApp.getActiveSpreadsheet();
+    var spreadsheet = ss || getDashboardSpreadsheet_();
     var sheet = spreadsheet.getSheetByName(SHEET_SYNC_AUDIT_LOG);
     if (!sheet || sheet.isSheetHidden()) return false;
     var visibleSheets = spreadsheet.getSheets().filter(function(s) {
@@ -2333,7 +2414,7 @@ function hideAuditDetailTrailingColumns_(sheet, headerCount) {
 function writeLargeJsonToSheet(sheetName, jsonStr, label) {
   var MAX_CELL = 20000;
   var COLS = 10; // 10 columns per row = 200,000 chars per row (very scalable)
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var sheet = getOrCreateSheet(ss, sheetName);
 
   sheet.clearContents();
@@ -2369,7 +2450,7 @@ function writeLargeJsonToSheet(sheetName, jsonStr, label) {
 }
 
 function readLargeJsonFromSheet(sheetName) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) return null;
 
@@ -2645,7 +2726,7 @@ function getCompareData(startA, endA, startB, endB) {
 }
 
 function getOilPriceData() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var sheet = ss.getSheetByName(SHEET_OIL_DIESEL);
   var meta = getOilServiceMeta_();
   if (!sheet) {
@@ -2701,7 +2782,7 @@ function getOilPriceData() {
 }
 
 function getRoutesList() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var master = ss.getSheetByName(SHEET_MASTER);
   if (!master || master.getLastRow() < 2) return { routes: [] };
 
@@ -2731,7 +2812,7 @@ function getRoutesList() {
 }
 
 function getCustomersList() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var master = ss.getSheetByName(SHEET_MASTER);
   if (!master || master.getLastRow() < 2) return { customers: [] };
 
@@ -2818,6 +2899,13 @@ function validateFrontendApiContract() {
     warnings.push('Source months not configured: ' + meta.missingMonths.join(', '));
   }
 
+  if (typeof EXPECTED_DASHBOARD_SPREADSHEET_ID !== 'undefined' && EXPECTED_DASHBOARD_SPREADSHEET_ID) {
+    var activeId = getDashboardSpreadsheet_().getId();
+    if (activeId !== EXPECTED_DASHBOARD_SPREADSHEET_ID) {
+      warnings.push('Active spreadsheet ID does not match EXPECTED_DASHBOARD_SPREADSHEET_ID');
+    }
+  }
+
   return {
     passed: errors.length === 0,
     errors: errors,
@@ -2883,7 +2971,7 @@ function testSystemIntegrity() {
   }
 
   // 4. Verify sheet names exist
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var requiredSheets = [SHEET_MASTER, SHEET_SUMMARY_CACHE, SHEET_TRIPS_CACHE];
   for (var i = 0; i < requiredSheets.length; i++) {
     var sheet = ss.getSheetByName(requiredSheets[i]);
@@ -2941,10 +3029,10 @@ function testSystemIntegrity() {
 
   if (errors.length === 0) {
     Logger.log('=== SYSTEM READY FOR DEPLOYMENT ===');
-    SpreadsheetApp.getActiveSpreadsheet().toast('System integrity check passed', 'Ready to Deploy', 5);
+    getDashboardSpreadsheet_().toast('System integrity check passed', 'Ready to Deploy', 5);
   } else {
     Logger.log('=== FIX ERRORS BEFORE DEPLOYING ===');
-    SpreadsheetApp.getActiveSpreadsheet().toast('Found ' + errors.length + ' errors', 'Fix before Deploy', 10);
+    getDashboardSpreadsheet_().toast('Found ' + errors.length + ' errors', 'Fix before Deploy', 10);
   }
 
   return { passed: errors.length === 0, errors: errors, warnings: warnings };
@@ -2995,7 +3083,7 @@ function testOptimization() {
   }
 
   // 5. Verify MASTER has data
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var master = ss.getSheetByName(SHEET_MASTER);
   if (!master || master.getLastRow() < 2) {
     errors.push('MASTER is empty');
@@ -3009,13 +3097,13 @@ function testOptimization() {
 
   if (errors.length === 0) {
     Logger.log('=== ALL TESTS PASSED ===');
-    SpreadsheetApp.getActiveSpreadsheet().toast('Optimization test passed in ' + totalTime + 'ms', 'Regression Test', 5);
+    getDashboardSpreadsheet_().toast('Optimization test passed in ' + totalTime + 'ms', 'Regression Test', 5);
   } else {
     Logger.log('=== TEST FAILURES ===');
     for (var i = 0; i < errors.length; i++) {
       Logger.log('FAIL: ' + errors[i]);
     }
-    SpreadsheetApp.getActiveSpreadsheet().toast('Test failed: ' + errors.length + ' errors', 'Regression Test', 10);
+    getDashboardSpreadsheet_().toast('Test failed: ' + errors.length + ' errors', 'Regression Test', 10);
   }
 
   return { passed: errors.length === 0, errors: errors, timeMs: totalTime };
@@ -3186,7 +3274,7 @@ function runBackendQaSuite() {
 
   Logger.log('=== BACKEND QA SUITE ===');
   Logger.log(JSON.stringify(report));
-  SpreadsheetApp.getActiveSpreadsheet().toast(
+  getDashboardSpreadsheet_().toast(
     report.ok ? 'Backend QA: PASS' : ('Backend QA: FAIL (' + report.errors.length + ' errors)'),
     'QA Suite',
     report.ok ? 5 : 10
@@ -3231,7 +3319,7 @@ function testSyncAuditReadiness() {
   };
 
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = getDashboardSpreadsheet_();
     var includeContract = false; // keep this readiness test lightweight and stable
 
     // 1) Build snapshot from current MASTER
@@ -3298,7 +3386,7 @@ function testSyncAuditReadiness() {
 
   Logger.log('=== SYNC AUDIT READINESS TEST ===');
   Logger.log(JSON.stringify(report));
-  SpreadsheetApp.getActiveSpreadsheet().toast(
+  getDashboardSpreadsheet_().toast(
     report.ok ? 'Sync Audit Readiness: PASS' : ('Sync Audit Readiness: FAIL (' + report.errors.length + ')'),
     'Audit Test',
     report.ok ? 5 : 10
@@ -3335,7 +3423,7 @@ function testSyncAuditReadinessFull() {
   report.finishedAt = new Date().toISOString();
   Logger.log('=== SYNC AUDIT READINESS FULL TEST ===');
   Logger.log(JSON.stringify(report));
-  SpreadsheetApp.getActiveSpreadsheet().toast(
+  getDashboardSpreadsheet_().toast(
     report.ok ? 'Sync Audit Full: PASS' : ('Sync Audit Full: FAIL (' + report.errors.length + ')'),
     'Audit Test',
     report.ok ? 5 : 10
@@ -3381,7 +3469,7 @@ function testPttorDieselSource() {
 
   Logger.log('=== TEST PTTOR DIESEL SOURCE ===');
   Logger.log(JSON.stringify(report));
-  SpreadsheetApp.getActiveSpreadsheet().toast(
+  getDashboardSpreadsheet_().toast(
     report.ok ? 'PTTOR Diesel Source: PASS' : 'PTTOR Diesel Source: FAIL',
     'Oil Source Test',
     report.ok ? 5 : 10
@@ -3408,7 +3496,7 @@ function refreshOilDataNow() {
   };
   Logger.log('=== REFRESH OIL DATA NOW ===');
   Logger.log(JSON.stringify(report));
-  SpreadsheetApp.getActiveSpreadsheet().toast(
+  getDashboardSpreadsheet_().toast(
     'Oil refresh done: rows=' + report.rows + ', updated=' + report.updatedRows,
     'Oil Refresh',
     5
@@ -3512,7 +3600,7 @@ function debugSourceData() {
 }
 
 function debugMasterData() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var master = ss.getSheetByName(SHEET_MASTER);
   if (!master) {
     Logger.log('MASTER sheet not found!');
@@ -3542,7 +3630,7 @@ function debugMasterData() {
 
 function debugCacheData() {
   // Check SUMMARY_CACHE
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getDashboardSpreadsheet_();
   var summaryCache = ss.getSheetByName(SHEET_SUMMARY_CACHE);
   if (summaryCache) {
     var lastRow = summaryCache.getLastRow();
@@ -3610,4 +3698,5 @@ function debugCacheData() {
 
   Logger.log('=== debugCacheData COMPLETE ===');
 }
+
 

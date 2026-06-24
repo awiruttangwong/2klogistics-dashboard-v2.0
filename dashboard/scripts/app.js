@@ -9,6 +9,13 @@ const COLORS = ['#3b82f6', '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4'
 let DATA = null, currentPage = 0;
 const DASHBOARD_API_CONFIG = window.DASHBOARD_API_CONFIG || {};
 const API_BASE_URL = String(DASHBOARD_API_CONFIG.baseUrl || '').trim();
+const SUPABASE_API_URL = String(DASHBOARD_API_CONFIG.supabaseApiUrl || '').trim();
+const API_MODE = String(DASHBOARD_API_CONFIG.apiMode || 'apps-script').trim();
+const EAGER_TRIPS_ON_STARTUP = DASHBOARD_API_CONFIG.eagerTripsOnStartup !== undefined
+  ? DASHBOARD_API_CONFIG.eagerTripsOnStartup === true
+  : API_MODE === 'apps-script';
+const BACKGROUND_TRIP_PRELOAD_ENABLED = DASHBOARD_API_CONFIG.backgroundTripPreload === true;
+const BACKGROUND_TRIP_PRELOAD_DELAY_MS = readPositiveNumber(DASHBOARD_API_CONFIG.backgroundTripPreloadDelayMs, 6000);
 const API_TIMEOUT_MS = readPositiveNumber(DASHBOARD_API_CONFIG.timeoutMs, 20000);
 const API_SUMMARY_TIMEOUT_MS = readPositiveNumber(DASHBOARD_API_CONFIG.summaryTimeoutMs, 30000);
 const API_SUMMARY_RETRY_TIMEOUT_MS = readPositiveNumber(DASHBOARD_API_CONFIG.summaryRetryTimeoutMs, 12000);
@@ -22,8 +29,11 @@ const FLATPICKR_LOCALE_SCRIPT_SRC = String(DASHBOARD_API_CONFIG.flatpickrLocaleS
 const FLATPICKR_CSS_HREF = String(DASHBOARD_API_CONFIG.flatpickrCssHref || 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css').trim();
 const FLATPICKR_THEME_CSS_HREF = String(DASHBOARD_API_CONFIG.flatpickrThemeCssHref || 'https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css').trim();
 const API_CACHE = { summary: null, trips: null, oil: null };
+const TRIP_CACHE_BY_KEY = new Map();
+const TRIP_CACHE_LOADED_RANGES = [];
 const LEGACY_SCRIPT_PROMISES = {};
 let TRIPS_READY = false;
+let TRIPS_FULLY_LOADED = false;
 let TRIPS_LOADING_PROMISE = null;
 const DATA_SOURCE_STATE = {
   summary: 'pending',
@@ -31,6 +41,9 @@ const DATA_SOURCE_STATE = {
   oil: 'pending',
   notes: []
 };
+if (typeof window !== 'undefined') {
+  window.DATA_SOURCE_STATE = DATA_SOURCE_STATE;
+}
 const PERF_TELEMETRY_ENABLED = DASHBOARD_API_CONFIG.perfTelemetry !== false;
 const PERF_MARKS = [];
 if (typeof window !== 'undefined') {
@@ -38,7 +51,20 @@ if (typeof window !== 'undefined') {
 }
 
 function isApiEnabled() {
-  return API_BASE_URL.length > 0;
+  return getApiSourceConfigs().length > 0;
+}
+
+function getApiSourceConfigs() {
+  if (API_MODE === 'supabase') {
+    return SUPABASE_API_URL ? [{ name: 'supabase', url: SUPABASE_API_URL }] : [];
+  }
+  if (API_MODE === 'supabase-with-fallback') {
+    return [
+      SUPABASE_API_URL ? { name: 'supabase', url: SUPABASE_API_URL } : null,
+      API_BASE_URL ? { name: 'apps-script', url: API_BASE_URL } : null,
+    ].filter(Boolean);
+  }
+  return API_BASE_URL ? [{ name: 'apps-script', url: API_BASE_URL }] : [];
 }
 
 function readPositiveNumber(value, fallback) {
@@ -339,16 +365,80 @@ async function fetchJsonWithTimeout(url, timeoutMs = API_TIMEOUT_MS) {
 
 async function apiGet(action, params = {}, timeoutMs = API_TIMEOUT_MS) {
   if (!isApiEnabled()) return null;
-  const url = new URL(API_BASE_URL, window.location.href);
-  url.searchParams.set('action', action);
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      url.searchParams.set(key, value);
+  return apiGetFromSources(getApiSourceConfigs(), action, params, timeoutMs);
+}
+
+async function apiGetSupabase(action, params = {}, timeoutMs = API_TIMEOUT_MS) {
+  if (!SUPABASE_API_URL) throw new Error('Supabase API is not configured');
+  return apiGetFromSources([{ name: 'supabase', url: SUPABASE_API_URL }], action, params, timeoutMs);
+}
+
+async function apiGetSupabaseWithRetry(action, params = {}, timeoutMs = API_TIMEOUT_MS, attempts = 2, retryDelayMs = 700) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await apiGetSupabase(action, params, timeoutMs);
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= attempts - 1 || isNonRetriableHttpError(err)) break;
+      await sleep(retryDelayMs * (attempt + 1));
     }
-  });
-  const payload = await fetchJsonWithTimeout(url.toString(), timeoutMs);
-  if (payload && payload.error) throw new Error(payload.error);
-  return payload;
+  }
+  throw lastErr || new Error(`${action} supabase api failed`);
+}
+
+async function apiGetFromSources(sources, action, params = {}, timeoutMs = API_TIMEOUT_MS) {
+  let lastErr = null;
+
+  for (let index = 0; index < sources.length; index++) {
+    const source = sources[index];
+    const url = new URL(source.url, window.location.href);
+    url.searchParams.set('action', action);
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        url.searchParams.set(key, value);
+      }
+    });
+
+    try {
+      const payload = await fetchJsonWithTimeout(url.toString(), timeoutMs);
+      if (payload && payload.error) throw new Error(payload.error);
+      if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+        payload.__source = source.name;
+      }
+      return payload;
+    } catch (err) {
+      lastErr = err;
+      if (index < sources.length - 1) {
+        console.warn(`${action} ${source.name} API fallback:`, err.message);
+        continue;
+      }
+    }
+  }
+
+  throw lastErr || new Error(`${action} api failed`);
+}
+
+function parseIsoDateLocal(iso) {
+  const parts = String(iso || '').split('-').map(Number);
+  if (parts.length !== 3 || parts.some(v => !Number.isFinite(v))) return null;
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+function formatIsoDateLocal(dateObj) {
+  if (!(dateObj instanceof Date) || isNaN(dateObj.getTime())) return '';
+  const yyyy = dateObj.getFullYear();
+  const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const dd = String(dateObj.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function addDaysToIso(iso, days) {
+  const base = parseIsoDateLocal(iso);
+  if (!base) return '';
+  const next = new Date(base.getTime());
+  next.setDate(next.getDate() + days);
+  return formatIsoDateLocal(next);
 }
 
 async function apiGetWithRetry(action, params = {}, timeouts = [API_TIMEOUT_MS], retryDelayMs = API_RETRY_DELAY_MS) {
@@ -4474,8 +4564,13 @@ function buildDailyCompare(data) {
   }
 
   // defaults
-  const d1def = defaultAnalysisDate;
-  const d2def = findRefDate(d1def, 3) || [...allDates].reverse().find(date => date < d1def) || allDates[0] || '';
+  const pendingCompareRanges = (typeof window !== 'undefined' && window.DC_PENDING_COMPARE_RANGES)
+    ? window.DC_PENDING_COMPARE_RANGES
+    : null;
+  const d1def = pendingCompareRanges?.a1 || defaultAnalysisDate;
+  const d1defEnd = pendingCompareRanges?.a2 || d1def;
+  const d2def = pendingCompareRanges?.b1 || findRefDate(d1def, 3) || [...allDates].reverse().find(date => date < d1def) || allDates[0] || '';
+  const d2defEnd = pendingCompareRanges?.b2 || d2def;
 
   function fmtDate(d) { if (!d) return ''; return d.split('-').reverse().join('/'); }
   function fmtRange(s, e) { return s === e ? fmtDate(s) : `${fmtDate(s)} – ${fmtDate(e)}`; }
@@ -4816,8 +4911,8 @@ function buildDailyCompare(data) {
           }
         };
         // flatpickr automatically applies the original input's class to the altInput
-        flatpickr("#dc_rangeA", { ...fpOpts, defaultDate: [d1def, d1def], altInputClass: "dc-date-input" });
-        flatpickr("#dc_rangeB", { ...fpOpts, defaultDate: [d2def, d2def], altInputClass: "dc-date-input period-b" });
+        flatpickr("#dc_rangeA", { ...fpOpts, defaultDate: [d1def, d1defEnd], altInputClass: "dc-date-input" });
+        flatpickr("#dc_rangeB", { ...fpOpts, defaultDate: [d2def, d2defEnd], altInputClass: "dc-date-input period-b" });
       }
     })();
 
@@ -4883,8 +4978,8 @@ function buildDailyCompare(data) {
         restoreRollingPresetBackup();
         return;
       }
-      const [a1, a2] = getRangeDates('dc_rangeA', d1def, d1def);
-      const [b1, b2] = getRangeDates('dc_rangeB', d2def, d2def);
+      const [a1, a2] = getRangeDates('dc_rangeA', d1def, d1defEnd);
+      const [b1, b2] = getRangeDates('dc_rangeB', d2def, d2defEnd);
       _rollingPresetBackup = { a1, a2, b1, b2, isSingleMode: _isSingleMode };
       const preset = getRollingSevenPreset(defaultAnalysisDate || '');
       applyCompareRanges(
@@ -5069,8 +5164,8 @@ function buildDailyCompare(data) {
     // Cascading filter updater
     window.dcUpdateFilters = function (runNow) {
       const { custF, routeF, vtypeF } = getFilters();
-      const [a1, a2] = getRangeDates('dc_rangeA', d1def, d1def);
-      const [b1, b2] = getRangeDates('dc_rangeB', d2def, d2def);
+      const [a1, a2] = getRangeDates('dc_rangeA', d1def, d1defEnd);
+      const [b1, b2] = getRangeDates('dc_rangeB', d2def, d2defEnd);
 
       const allRows = rowsForDateWindows([[a1, a2], [b1, b2]]).filter(r => {
         if (custF.length > 0 && !custF.includes(r.customer || '-')) return false;
@@ -5123,11 +5218,42 @@ function buildDailyCompare(data) {
       if (txt) txt.textContent = 'กำลังตรวจสอบ...';
       if (spin) spin.style.display = 'block';
 
-      setTimeout(() => {
+      setTimeout(async () => {
         if (runToken !== _compareRunToken) return;
         const compareStartedAt = perfNow();
-        const [a1, a2] = getRangeDates('dc_rangeA', d1def, d1def);
-        const [b1, b2] = getRangeDates('dc_rangeB', d2def, d2def);
+        const [a1, a2] = getRangeDates('dc_rangeA', d1def, d1defEnd);
+        const [b1, b2] = getRangeDates('dc_rangeB', d2def, d2defEnd);
+        const addLoadWindow = (windows, start, end) => {
+          if (!start || !end) return;
+          if (typeof isTripRangeLoaded === 'function' && isTripRangeLoaded(start, end)) return;
+          windows.push([start, end]);
+        };
+        const rangeLoadWindows = [];
+        if (_isSingleMode) {
+          addLoadWindow(rangeLoadWindows, addDaysToIso(a1, -3), a2);
+        } else {
+          addLoadWindow(rangeLoadWindows, a1, a2);
+          addLoadWindow(rangeLoadWindows, b1, b2);
+        }
+        if (rangeLoadWindows.length > 0 && typeof loadTripsRange === 'function') {
+          const rangeLoadStartedAt = perfNow();
+          if (txt) txt.textContent = 'โหลดข้อมูลช่วงวันที่...';
+          try {
+            await Promise.all(rangeLoadWindows.map(([start, end]) => loadTripsRange(start, end)));
+            perfLog('dcLoadCompareRanges', rangeLoadStartedAt, {
+              windows: rangeLoadWindows.map(([start, end]) => `${start}:${end}`).join(','),
+              rows: Array.isArray(window.FRAUD_DATA) ? window.FRAUD_DATA.length : 0
+            });
+            if (runToken !== _compareRunToken) return;
+            if (typeof showPage === 'function') {
+              window.DC_PENDING_COMPARE_RANGES = { a1, a2, b1, b2, single: _isSingleMode };
+              showPage(1);
+              return;
+            }
+          } catch (err) {
+            console.warn('Compare range load failed:', err.message);
+          }
+        }
         const rollingPreset = getRollingSevenPreset(defaultAnalysisDate || '');
         const rollingPresetMatches =
           a1 === rollingPreset.aStart && a2 === rollingPreset.aEnd &&
@@ -7058,15 +7184,11 @@ function buildDailyCompare(data) {
           key
         }));
         ws1Data.push([]);
-        ws1Data.push([cCell('สรุปเชิงภาพ', { bold: true, sz: 11, color: '111827' }), cCell(''), cCell(''), cCell(''), cCell('')]);
-        ws1Data.push([cCell('สรุปตามสถานะ/tag ที่ตรวจพบ เพื่อใช้ตรวจเทียบกับชีทแยกและคอลัมน์ความผิดปกติในไฟล์เดียวกัน', { color: '6B7280', sz: 9, wrap: true }), cCell(''), cCell(''), cCell(''), cCell('')]);
         pushVisualStatusBlock(
           'สัดส่วนต่อเที่ยวทั้งหมด',
           statusVisualRows,
           totalForPct
         );
-        ws1Data.push([]);
-        ws1Data.push([cCell('หมายเหตุการอ่านกราฟ: สัดส่วนอาจรวมเกิน 100% ได้ เพราะ 1 เที่ยวอาจพบได้มากกว่า 1 สถานะ', { color: '6B7280', sz: 9, wrap: true }), cCell(''), cCell(''), cCell(''), cCell('')]);
         ws1Data.push([]);
         ws1Data.push([cCell('สรุปการตรวจสอบ', { bold: true, sz: 11, color: '111827' }), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell('')]);
         ws1Data.push([cCell(qaSummaryExplanationText, { color: '6B7280', sz: 9, wrap: false }), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell(''), cCell('')]);
@@ -7183,29 +7305,17 @@ function buildDailyCompare(data) {
         { s: { r: 0, c: 0 }, e: { r: 0, c: ws1ColumnCount - 1 } }
       ];
       if (_isSingleMode) {
-        const overlapNoteRow = ws1Data.findIndex(row =>
-          String(row?.[0]?.v || row?.[0] || '').includes('1 เที่ยวอาจพบได้มากกว่า 1 สถานะ')
-        );
-        if (overlapNoteRow >= 0) {
-          ws1Merges.push({ s: { r: overlapNoteRow, c: 0 }, e: { r: overlapNoteRow, c: ws1ColumnCount - 1 } });
-          ws1['!rows'][overlapNoteRow] = { hpt: 18 };
-        }
         ws1Data.forEach((row, idx) => {
           const firstText = String(row?.[0]?.v || row?.[0] || '');
           const shouldMergeVisualRow =
-            firstText.startsWith('สรุปเชิงภาพ') ||
-            firstText.startsWith('สรุปตามสถานะ') ||
             firstText.startsWith('สัดส่วนต่อเที่ยวทั้งหมด') ||
-            firstText.startsWith('หมายเหตุการอ่านกราฟ') ||
             firstText.startsWith('สรุปการตรวจสอบ') ||
             firstText.startsWith('นิยาม:') ||
             firstText.startsWith('ภาพรวมการตรวจสอบ') ||
             firstText.startsWith('สรุปเหตุผลที่ผู้ตรวจระบุ');
           if (!shouldMergeVisualRow) return;
           ws1Merges.push({ s: { r: idx, c: 0 }, e: { r: idx, c: ws1ColumnCount - 1 } });
-          ws1['!rows'][idx] = firstText.startsWith('หมายเหตุการอ่านกราฟ')
-            ? { hpt: 24 }
-            : { hpt: 20 };
+          ws1['!rows'][idx] = { hpt: 20 };
         });
         ws1Merges.push({ s: { r: 4, c: 1 }, e: { r: 4, c: ws1ColumnCount - 1 } });
       }
@@ -9357,8 +9467,9 @@ function buildDailyCompare(data) {
 
     document.getElementById('dc_compare_btn')?.addEventListener('click', dcRunCompare);
     // Start in single/normal mode by default.
-    window.dcSetMode('single', true);
+    window.dcSetMode(pendingCompareRanges?.single === false ? 'compare' : 'single', true);
     dcRunCompare();
+    if (pendingCompareRanges && typeof window !== 'undefined') window.DC_PENDING_COMPARE_RANGES = null;
   }, 50);
 
   // Animation: add visible class after small delay
@@ -9978,6 +10089,22 @@ function showPage(idx) {
   if (sidebarBackdrop) sidebarBackdrop.hidden = true;
   document.getElementById('sidebarMobileToggle')?.setAttribute('aria-expanded', 'false');
   const builders = [buildMasterDashboard, buildDailyCompare, buildOilPricePage];
+  if (idx === 1 && !TRIPS_READY) {
+    c.innerHTML = `${renderDataSourceNotice()}${renderTripsDeferredState()}`;
+    c.scrollTop = 0;
+    preloadInitialCompareTrips()
+      .then(() => {
+        if (currentPage === 1) showPage(1);
+      })
+      .catch(err => {
+        console.error('Trip data load failed for compare page:', err);
+        if (currentPage === 1) {
+          c.innerHTML = `${renderDataSourceNotice()}<div class="kpi"><div class="kpi-value red">โหลดข้อมูลเที่ยววิ่งไม่สำเร็จ</div><div class="kpi-sub">${esc(describeCompareTripLoadError(err))}</div></div>`;
+        }
+      });
+    perfLog('showPage', pageStartedAt, { page: PAGES[idx]?.id || idx, deferredTrips: true });
+    return;
+  }
   c.innerHTML = `${renderDataSourceNotice()}${builders[idx](DATA)}`;
   c.scrollTop = 0;
 
@@ -9991,6 +10118,26 @@ function showPage(idx) {
     });
   }
   perfLog('showPage', pageStartedAt, { page: PAGES[idx]?.id || idx });
+}
+
+function renderTripsDeferredState() {
+  return `
+    <section class="loading-screen" style="min-height:420px;">
+      <div class="loader-wrap">
+        <div class="loader-ring"></div>
+        <div class="loader-ring"></div>
+      </div>
+      <div class="loader-text">กำลังโหลดข้อมูลเที่ยววิ่ง<span class="loader-dots"></span></div>
+      <div class="loader-sub">กำลังเตรียมข้อมูลสำหรับหน้าเปรียบเทียบและส่งออก XLSX</div>
+    </section>`;
+}
+
+function describeCompareTripLoadError(err) {
+  const msg = describeDataLoadError(err, 'Supabase trips API');
+  if (/HTTP 404|not found/i.test(msg)) {
+    return 'ไม่พบ Supabase API Function สำหรับหน้าเปรียบเทียบ กรุณาเปิดระบบผ่าน Netlify deploy หรือ local server ที่รองรับ /.netlify/functions/supabase-api';
+  }
+  return msg;
 }
 
 function renderDataSourceNotice() {
@@ -10048,7 +10195,7 @@ async function loadTripsSource() {
   if (API_CACHE.trips) return deepClone(API_CACHE.trips);
   if (isApiEnabled()) {
     try {
-      const fields = 'date,customer,route,routeKey,routeCore,routeVehicle,routePrefix,routeGroup,isFlashRoute,routeDesc,vtype,driver,plate,payee,recv,pay,oil,margin';
+      const fields = 'rowIdentityKey,date,customer,route,routeKey,routeCore,routeVehicle,routePrefix,routeGroup,isFlashRoute,routeDesc,vtype,driver,plate,payee,recv,pay,oil,margin';
       const pageSize = 5000;
       const maxPages = 100;
       let page = 0;
@@ -10105,6 +10252,7 @@ async function loadTripsSource() {
         console.warn(`Trips pagination reached safety cap (${maxPages} pages).`);
       }
       API_CACHE.trips = trips;
+      TRIPS_FULLY_LOADED = true;
       noteDataSource('trips', 'api');
       return deepClone(trips);
     } catch (err) {
@@ -10113,24 +10261,136 @@ async function loadTripsSource() {
     }
   }
   if (!isApiEnabled()) noteDataSource('trips', 'static');
-  return loadLegacyTripsData();
+  const legacyTrips = await loadLegacyTripsData();
+  TRIPS_FULLY_LOADED = true;
+  return legacyTrips;
 }
 
 async function ensureTripsReady() {
-  if (TRIPS_READY) return window.FRAUD_DATA || [];
+  if (TRIPS_FULLY_LOADED && TRIPS_READY) return window.FRAUD_DATA || [];
   if (TRIPS_LOADING_PROMISE) return TRIPS_LOADING_PROMISE;
 
   TRIPS_LOADING_PROMISE = (async () => {
+    const tripsStartedAt = perfNow();
     const tripsSource = await loadTripsSource();
     const normalized = Array.isArray(tripsSource) ? tripsSource.map(canonicalizeTripRow) : [];
-    window.FRAUD_DATA = normalized;
+    rememberTripRows(normalized);
+    TRIPS_FULLY_LOADED = true;
+    if (DATA && normalized.length > 0) {
+      const alignStartedAt = perfNow();
+      const aligned = alignDashboardData(DATA, normalized, {
+        rebuildDerived: DATA_SOURCE_STATE.summary === 'api' && DATA_SOURCE_STATE.trips === 'api'
+      });
+      DATA = aligned.data;
+      window.FRAUD_DATA = aligned.trips;
+      perfLog('alignTripsAfterLazyLoad', alignStartedAt, {
+        rebuildDerived: DATA_SOURCE_STATE.summary === 'api' && DATA_SOURCE_STATE.trips === 'api',
+        tripRows: aligned.trips.length
+      });
+    }
     TRIPS_READY = true;
-    return normalized;
+    perfLog('lazyLoadTripsSource', tripsStartedAt, {
+      source: DATA_SOURCE_STATE.trips,
+      rows: window.FRAUD_DATA.length
+    });
+    return window.FRAUD_DATA;
   })().finally(() => {
     TRIPS_LOADING_PROMISE = null;
   });
 
   return TRIPS_LOADING_PROMISE;
+}
+
+async function loadDatesSource() {
+  const payload = await apiGetSupabaseWithRetry('dates', {}, API_TIMEOUT_MS, 2);
+  if (payload?.excludedDatesCount) {
+    console.warn(`Supabase dates ignored ${payload.excludedDatesCount} date group(s) before ${payload.minOperationalDate || 'minimum operational date'}.`);
+  }
+  return payload;
+}
+
+function rememberTripRows(rows) {
+  let fallbackOrdinal = TRIP_CACHE_BY_KEY.size;
+  (rows || []).forEach(raw => {
+    const row = canonicalizeTripRow(raw);
+    const key = row.rowIdentityKey || row.row_identity_key || [
+      row.date || '',
+      row.customer || '',
+      row.routeKey || routeIdentityKey(row),
+      row.driver || '',
+      row.plate || '',
+      row.payee || '',
+      row.recv || 0,
+      row.pay || 0,
+      row.oil || 0,
+      row.margin || 0,
+      fallbackOrdinal++
+    ].join('\u001f');
+    TRIP_CACHE_BY_KEY.set(key, row);
+  });
+  window.FRAUD_DATA = Array.from(TRIP_CACHE_BY_KEY.values()).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || routeIdentityKey(a).localeCompare(routeIdentityKey(b)));
+  TRIPS_READY = window.FRAUD_DATA.length > 0;
+  return window.FRAUD_DATA;
+}
+
+function rangeContains(outerStart, outerEnd, innerStart, innerEnd) {
+  return outerStart <= innerStart && outerEnd >= innerEnd;
+}
+
+function isTripRangeLoaded(start, end) {
+  return TRIP_CACHE_LOADED_RANGES.some(range => rangeContains(range.start, range.end, start, end));
+}
+
+async function loadTripsRange(start, end) {
+  if (!start || !end) return [];
+  if (isTripRangeLoaded(start, end)) {
+    return (window.FRAUD_DATA || []).filter(row => row.date >= start && row.date <= end);
+  }
+  if (!isApiEnabled()) {
+    const rows = await loadTripsSource();
+    rememberTripRows(rows);
+    TRIP_CACHE_LOADED_RANGES.push({ start: '0000-01-01', end: '9999-12-31' });
+    return (window.FRAUD_DATA || []).filter(row => row.date >= start && row.date <= end);
+  }
+
+  const fields = 'rowIdentityKey,date,customer,route,routeKey,routeCore,routeVehicle,routePrefix,routeGroup,isFlashRoute,routeDesc,vtype,driver,plate,payee,recv,pay,oil,margin';
+  const pageSize = 5000;
+  let page = 0;
+  let hasMore = true;
+  const rows = [];
+  while (hasMore && page < 100) {
+    const payload = await apiGetSupabaseWithRetry('trips', { start, end, page, limit: pageSize, fields }, API_TRIPS_TIMEOUT_MS, 2);
+    const batch = Array.isArray(payload?.trips) ? payload.trips : [];
+    rows.push(...batch);
+    hasMore = Boolean(payload?.hasMore) && batch.length > 0;
+    page += 1;
+  }
+  TRIP_CACHE_LOADED_RANGES.push({ start, end });
+  rememberTripRows(rows);
+  return rows;
+}
+
+async function preloadInitialCompareTrips() {
+  const datesPayload = await loadDatesSource();
+  const dates = Array.isArray(datesPayload?.dates) ? datesPayload.dates.filter(Boolean).sort() : [];
+  if (!dates.length) throw new Error('Supabase dates API returned no available trip dates');
+  const latest = dates[dates.length - 1];
+  const start = addDaysToIso(latest, -3);
+  const startedAt = perfNow();
+  const rows = await loadTripsRange(start, latest);
+  perfLog('preloadInitialCompareTrips', startedAt, { start, end: latest, rows: rows.length });
+  return rows;
+}
+
+function preloadTripsInBackground() {
+  if (!BACKGROUND_TRIP_PRELOAD_ENABLED) return;
+  if (TRIPS_READY || TRIPS_LOADING_PROMISE) return;
+  window.setTimeout(() => {
+    preloadInitialCompareTrips().catch(err => {
+      console.warn('Background trip preload failed:', err.message);
+      noteDataSource('trips', 'pending', `trip preload fallback: ${describeDataLoadError(err, 'trips API')}`);
+    });
+  }, BACKGROUND_TRIP_PRELOAD_DELAY_MS);
 }
 
 async function loadOilSource() {
@@ -10263,18 +10523,27 @@ async function init() {
     perfLog('loadSummarySource', summaryStartedAt, { source: DATA_SOURCE_STATE.summary });
   }
 
-  setLoadingStatus('โหลดข้อมูลเที่ยววิ่ง...');
-  await sleep(80);
   let tripsSource = [];
-  const tripsStartedAt = perfNow();
-  try {
-    tripsSource = await loadTripsSource();
-  } catch (err) {
-    console.error('Trip data load failed:', err);
-  } finally {
-    perfLog('loadTripsSource', tripsStartedAt, {
+  if (EAGER_TRIPS_ON_STARTUP) {
+    setLoadingStatus('โหลดข้อมูลเที่ยววิ่ง...');
+    await sleep(80);
+    const tripsStartedAt = perfNow();
+    try {
+      tripsSource = await loadTripsSource();
+    } catch (err) {
+      console.error('Trip data load failed:', err);
+    } finally {
+      perfLog('loadTripsSource', tripsStartedAt, {
+        source: DATA_SOURCE_STATE.trips,
+        rows: Array.isArray(tripsSource) ? tripsSource.length : 0
+      });
+    }
+  } else {
+    DATA_SOURCE_STATE.trips = 'deferred';
+    perfLog('loadTripsSource', perfNow(), {
       source: DATA_SOURCE_STATE.trips,
-      rows: Array.isArray(tripsSource) ? tripsSource.length : 0
+      rows: 0,
+      deferred: true
     });
   }
 
@@ -10310,6 +10579,7 @@ async function init() {
   updateSidebarMeta();
   initNav();
   showPage(0);
+  if (!EAGER_TRIPS_ON_STARTUP) preloadTripsInBackground();
   perfLog('dashboardInit', initStartedAt, {
     summary: DATA_SOURCE_STATE.summary,
     trips: DATA_SOURCE_STATE.trips,

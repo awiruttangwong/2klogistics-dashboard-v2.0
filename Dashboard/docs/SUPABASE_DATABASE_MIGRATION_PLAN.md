@@ -113,6 +113,26 @@ Google Sheet ต้นทาง
   -> เมื่อผลตรงกันแล้วค่อยเปลี่ยน frontend ทีละ endpoint
 ```
 
+## V3 Safety Amendment
+
+หลังทบทวนเทียบกับ `Dashboard/API/Code.gs` แล้ว แผน V3 ต้องใช้แนวทาง staging-first และต้องไม่แก้/ไม่ deploy `Code.gs` ของ production เดิม:
+
+- `Code.gs` production เดิมเป็น source/fallback แบบ read-only เท่านั้น
+- phase แรกให้ sync service ของ V3 ดึง payload จาก Apps Script API เดิม (`action=trips`, `summary`, `oil`) แล้วเขียนเข้า Supabase staging
+- ถ้าจำเป็นต้องใช้ Apps Script เป็น importer ต้องสร้าง Apps Script project/deployment แยกสำหรับ V3 เท่านั้น ห้าม deploy ทับ project เดิม
+- Supabase phase แรกห้ามคำนวณ `route_key`, `pay = 0`, anomaly หรือ KPI เอง
+- ทุก trip ที่ส่งไป Supabase ต้องมี `rowIdentityKey` และ `payloadHash`; `sourceMonth` ใช้เมื่อ source ให้มาเท่านั้น
+- แยก `rowIdentityKey` ออกจาก `payloadHash`
+- sync เข้าตาราง `trips_staging` ก่อนเสมอ
+- promote เข้า `trips_active` ได้เฉพาะหลัง parity report ผ่าน
+- frontend ห้ามอ่าน Supabase จริงจนกว่า `trips_active` และ `summary_snapshots.is_active` ผ่าน validation
+
+ไฟล์ schema หลักของ V3:
+
+```text
+supabase/migrations/20260623000100_shadow_schema.sql
+```
+
 ## Target Architecture
 
 ช่วงเปลี่ยนผ่าน:
@@ -150,6 +170,20 @@ Google Sheet ต้นทาง
 
 ## Supabase Schema Plan
 
+Schema V3 ใช้ staging-first ไม่เขียน production read table โดยตรง:
+
+```text
+sync_runs
+  -> source_month_imports
+  -> trips_staging
+  -> parity_reports
+  -> promote_sync_run()
+  -> trips_active
+  -> summary_snapshots active
+```
+
+API ใหม่ต้องอ่านจาก `trips_active` และ `summary_snapshots` ที่ active เท่านั้น ไม่อ่านจาก `trips_staging` โดยตรง
+
 ### 1) sync_runs
 
 เก็บประวัติการ sync แต่ละครั้ง เพื่อ audit และ rollback
@@ -170,15 +204,18 @@ create table sync_runs (
 );
 ```
 
-### 2) trips
+### 2) trips_staging / trips_active
 
-ตารางหลักแทน `TRIPS_CACHE`
+ตารางหลักแทน `TRIPS_CACHE` ต้องแยก staging และ active
 
 ```sql
-create table trips (
+create table trips_staging (
   id uuid primary key default gen_random_uuid(),
-  row_hash text not null unique,
-  sync_run_id uuid references sync_runs(id),
+  sync_run_id uuid not null references sync_runs(id),
+  row_identity_key text not null,
+  identity_base_key text not null,
+  identity_ordinal integer not null default 1,
+  payload_hash text not null,
   source_month text,
 
   date date not null,
@@ -209,18 +246,21 @@ create table trips (
 
   raw_payload jsonb,
   imported_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  unique (sync_run_id, row_identity_key)
 );
 ```
+
+`trips_active` ใช้ column หลักชุดเดียวกัน แต่มี unique `row_identity_key` และเป็น read model ที่ API ใหม่ใช้จริงหลัง promote เท่านั้น
 
 Recommended indexes:
 
 ```sql
-create index trips_date_idx on trips(date);
-create index trips_customer_idx on trips(customer);
-create index trips_route_key_idx on trips(route_key);
-create index trips_vtype_idx on trips(vtype);
-create index trips_date_route_key_idx on trips(date, route_key);
+create index trips_active_date_idx on trips_active(date);
+create index trips_active_customer_idx on trips_active(customer);
+create index trips_active_route_key_idx on trips_active(route_key);
+create index trips_active_vtype_idx on trips_active(vtype);
+create index trips_active_date_route_key_idx on trips_active(date, route_key);
 ```
 
 ### 3) oil_prices
@@ -260,7 +300,7 @@ create table sync_audit_changes (
   id uuid primary key default gen_random_uuid(),
   sync_run_id uuid references sync_runs(id),
   change_type text not null,
-  row_hash text,
+  row_identity_key text,
   before_data jsonb,
   after_data jsonb,
   changed_fields jsonb,
@@ -290,82 +330,95 @@ create table source_month_imports (
 
 ## Row Identity And Duplicate Protection
 
-ต้องมี `row_hash` เพื่อกันข้อมูลซ้ำเมื่อ sync ซ้ำ
+ต้องมีทั้ง `rowIdentityKey` และ `payloadHash`
 
-แนะนำให้ hash จาก normalized fields ไม่ใช่ raw row ทั้งก้อน:
+### rowIdentityKey
+
+ใช้กัน duplicate และใช้ upsert/promote identity ต้อง stable แม้ยอดเงินเปลี่ยน:
 
 ```text
 date
 customer
 vtype
-route_key
+routeKey
 route
-route_desc
+routeDesc
 driver
 plate
 payee
-oil
-recv
-pay
-margin
-source_month
+sourceMonth ถ้ามี
+duplicate ordinal
+```
+
+`duplicate ordinal` ใช้กรณีมีแถวซ้ำ identity เดียวกันจริง ๆ โดยเรียงตาม order ที่ API เดิมส่งกลับมา
+
+### payloadHash
+
+ใช้ตรวจการเปลี่ยนแปลงของข้อมูลในแถวเดิม:
+
+```text
+date, customer, vtype, routeDesc, route, routeKey, routeCore,
+routeVehicle, routePrefix, routeGroup, isFlashRoute, driver, plate,
+payee, oil, recv, pay, margin, pct, sourceMonth ถ้ามี, anomalies
 ```
 
 เหตุผล:
 
-- ถ้า Apps Script รันซ้ำ ข้อมูลเดิมต้อง upsert ทับ ไม่ insert เพิ่ม
-- ถ้าต้นทางแก้ราคา/พขร./ทะเบียน ระบบจะรู้ว่า row เปลี่ยน
+- ถ้า Apps Script รันซ้ำ ข้อมูลเดิมต้องไม่เพิ่มซ้ำ
+- ถ้าต้นทางแก้ราคา/พขร./ทะเบียน ระบบต้องเห็นเป็น changed row ไม่ใช่ inserted row
 - ใช้ทำ audit diff ได้
 
 ## Sync Strategy
 
-### Option A: Keep Apps Script As Importer
+### Option A: V3 Mirror Service Pulls From Existing Apps Script API
 
-เหมาะกับช่วงแรกที่สุด
+เหมาะกับช่วงแรกที่สุด เพราะไม่แตะ `Code.gs` production เดิม
 
 ```text
-Code.gs dailyBatchJob()
-  -> importAllConfiguredSheetsSilentWithReport()
-  -> rebuildMasterSheet()
-  -> rebuildCaches()
-  -> syncSupabaseTrips_(tripsWithAnomalies)
-  -> syncSupabaseSummary_(summary)
-  -> syncSupabaseOil_(oil)
+V3 scheduled sync service
+  -> call Apps Script action=trips/action=summary/action=oil
+  -> compute rowIdentityKey/payloadHash in V3 service
+  -> upsert trips_staging / summary_snapshots / oil_prices
+  -> run parity report against the same Apps Script payload
+  -> promote only if parity passed
 ```
 
 ข้อดี:
 
-- Logic เดิมยังอยู่ครบ
-- ความเสี่ยงต่ำ
+- ไม่ deploy `Code.gs` เดิม
+- Logic เดิมยังอยู่ครบเพราะอ่าน payload จาก API เดิม
+- ความเสี่ยงต่อ production ต่ำที่สุด
 - Frontend เดิมไม่พัง
 - เทียบข้อมูลได้ง่าย
 
 ข้อเสีย:
 
-- Apps Script ยังเป็นตัวกลางในการเขียนข้อมูล
-- ต้องจัดการ batch size และ timeout
+- ยังขึ้นกับ Apps Script API response
+- ถ้า Apps Script API timeout, sync ก็ timeout
+- `sourceMonth` อาจไม่มีใน payload เดิม ต้องถือเป็น optional
 
-### Option B: Netlify Function Pulls From Apps Script
+### Option B: V3 Apps Script Project As Importer
+
+ใช้ได้เฉพาะถ้าสร้าง Apps Script project/deployment ใหม่สำหรับ V3 เท่านั้น ห้าม deploy ทับ project เดิม
 
 ```text
-Netlify scheduled function
-  -> call Apps Script action=trips/action=summary
-  -> upsert Supabase
+V3 Apps Script Code.gs copy
+  -> import/normalize เหมือนเดิม
+  -> syncSupabaseTripsStaging_(tripsWithAnomalies)
+  -> run parity report
 ```
 
 ข้อดี:
 
-- Key อยู่ใน Netlify env
-- ลดภาระ Apps Script เฉพาะส่วนเขียน Supabase
+- ได้ `sourceMonth` และ normalized pipeline ครบกว่า
+- ใกล้ logic เดิมที่สุด
 
 ข้อเสีย:
 
-- ยังขึ้นกับ Apps Script API response
-- ถ้า Apps Script timeout, sync ก็ timeout
+- ต้องดูแล Apps Script project ใหม่
+- ถ้าเผลอ deploy เข้า project เดิมจะกระทบ production
 
 ### Option C: Rebuild Importer Outside Apps Script
-
-ระยะยาวเท่านั้น
 
 ```text
 Server-side sync service
@@ -658,28 +711,50 @@ git ls-remote v2
 ### Phase 1: Supabase Project Setup
 
 - สร้าง Supabase project
-- สร้าง tables
+- รัน `supabase/migrations/20260623000100_shadow_schema.sql`
 - เปิด RLS
 - ตั้ง indexes
 - ตั้ง service keys ใน server-side environment
 
 ### Phase 2: Shadow Sync
 
-- เพิ่ม Apps Script function สำหรับส่ง `tripsWithAnomalies` เข้า Supabase
-- ใช้ batch upsert
+- เพิ่ม V3 sync service ที่ดึง `action=trips`, `action=summary`, `action=oil` จาก Apps Script API เดิม
+  - implementation: `supabase/sync/sync-apps-script-to-supabase.mjs`
+  - dry-run command: `npm run supabase:sync -- --dry-run`
+  - staging command: `npm run supabase:sync`
+  - promote command หลังตรวจ report แล้วเท่านั้น: `npm run supabase:sync -- --promote`
+- สร้าง `rowIdentityKey` และ `payloadHash` ใน V3 sync service
+- ส่ง payload เข้า `trips_staging`
+- ใช้ batch upsert โดย conflict ที่ `(sync_run_id, row_identity_key)`
 - เขียน `sync_runs`
-- เขียน `source_month_imports`
+- เขียน `summary_snapshots`, `oil_prices`, `parity_reports`
+- ตั้งค่า secrets เฉพาะฝั่ง server-side ของ V3 sync service:
+
+```text
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<server-side service role key>
+APPS_SCRIPT_API_URL=<existing Apps Script Web App URL>
+SUPABASE_SYNC_BATCH_SIZE=500
+APPS_SCRIPT_PAGE_LIMIT=5000
+SYNC_REQUEST_TIMEOUT_MS=60000
+```
+
 - ยังไม่เปลี่ยน frontend
+- default mode ไม่ promote เข้า `trips_active`; ต้องใส่ `--promote` เองและ parity ต้องผ่าน
 
 ### Phase 3: Parity Reports
 
 - เพิ่ม report เทียบ Apps Script cache กับ Supabase
 - ตรวจ row count, financial totals, daily totals, route totals
-- ถ้าไม่ตรง ให้ diff ตาม `row_hash`
+- ถ้าไม่ตรง ให้ diff ตาม `rowIdentityKey` และ `payloadHash`
+- ถ้าตรง ให้บันทึก `parity_reports.ok = true`
+- promote ด้วย `promote_sync_run(sync_run_id)` เท่านั้น
+- dry-run ล่าสุดแบบ read-only จาก Apps Script ผ่าน: `tripsRead=42611`, `stagingRows=42611`, `contractErrorCount=0`
 
 ### Phase 4: API Compatibility Layer
 
 - ทำ API ใหม่บน Netlify Function หรือ Supabase Edge Function
+- endpoint ใหม่ต้องอ่านจาก `trips_active` และ active `summary_snapshots` เท่านั้น
 - endpoint ใหม่ต้องคืน payload เดิม
 - เพิ่ม contract test
 
@@ -712,12 +787,46 @@ git ls-remote v2
 - frontend ทุกหน้าใช้งานได้
 - export XLSX ใช้งานได้
 - มี rollback path กลับ Apps Script
+- ไม่มีการ deploy `Code.gs` ไปทับ Apps Script production เดิม
 - production เดิมไม่ถูกกระทบระหว่างพัฒนา
 
 ## Immediate Next Actions
 
-1. Commit เอกสารนี้
-2. เพิ่ม remote `v2`
-3. Push `main` ปัจจุบันไป repo `2klogistics-dashboard-v2.0`
-4. เริ่มสร้าง Supabase schema ใน branch/commit ถัดไป
-5. ยังไม่แก้ production site เดิมจนกว่า shadow sync ผ่าน
+1. ผู้ใช้สร้าง/เชื่อม Supabase project สำหรับ V3 เท่านั้น
+2. รัน `supabase/migrations/20260623000100_shadow_schema.sql` ใน Supabase SQL Editor หรือ migration runner
+3. สร้าง `.env` จาก `.env.example` และใส่ค่า server-side: `SUPABASE_PROJECT_REF`, `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `APPS_SCRIPT_API_URL`
+4. เชื่อม local repo กับ Supabase project: `npm run supabase:link`
+5. ตรวจ migration แบบ dry-run: `npm run supabase:db:push:dry-run`
+6. ถ้า dry-run ผ่าน ให้ push schema: `npm run supabase:db:push`
+7. ทดสอบ read-only ก่อน: `npm run supabase:sync -- --dry-run`
+8. ถ้า dry-run ผ่าน ให้ sync เข้า staging: `npm run supabase:sync`
+9. ตรวจ `sync_runs` และ `parity_reports`; ถ้า `ok=true` เท่านั้นจึงค่อยรัน `npm run supabase:sync -- --promote`
+10. ยังไม่เปลี่ยน frontend และยังไม่ deploy `Dashboard/API/Code.gs` จนกว่า shadow sync + parity + promote ผ่าน
+
+## Frontend Supabase Fallback Mode
+
+หลัง schema และ promoted sync ผ่านแล้ว frontend สามารถเปิดอ่าน Supabase API ผ่าน Netlify Function โดยไม่เปิดเผย service role key:
+
+```text
+Dashboard/scripts/api-config.js
+  apiMode: 'supabase-with-fallback'
+  supabaseApiUrl: '/.netlify/functions/supabase-api'
+  baseUrl: '<existing Apps Script Web App URL>'
+```
+
+โหมดนี้เรียก Supabase ก่อน ถ้า function, network, หรือ Supabase error จะ fallback กลับ Apps Script เดิมโดยอัตโนมัติ
+
+ต้องตั้งค่า environment variables ใน Netlify:
+
+```text
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+```
+
+และตั้งค่า GitHub Actions secrets สำหรับ scheduled sync:
+
+```text
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+APPS_SCRIPT_API_URL
+```

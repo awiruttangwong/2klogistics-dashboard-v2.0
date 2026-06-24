@@ -1,2 +1,5 @@
 [build]
-  publish = "dashboard"
+  publish = "Dashboard"
+
+[functions]
+  directory = "netlify/functions"

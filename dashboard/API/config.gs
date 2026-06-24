@@ -133,6 +133,18 @@ var ENFORCE_DOMAIN_RESTRICTION = false;
 var ALLOWED_DOMAIN = '2klogistics.co.th';
 var API_DEBUG_ERRORS = false;
 
+// Migration guardrails for the new Google account/project.
+// This spreadsheet is the bound "Database Daily EXPRESS" dashboard workbook.
+var EXPECTED_DASHBOARD_SPREADSHEET_ID = '1z84ZlRsonSpaqIZbwKNTaqtai-UzCUPzp2-GGHALrQU';
+var APPS_SCRIPT_PROJECT_ID = '16QJOnTBs-lLAzM3w36Iqm5jX7BSrG7XigTzWlsYNv94L2ISa4tAEjWgx';
+
+// Daily source refresh schedule.
+// Code.gs refreshes Google Sheet/GAS caches first; Supabase sync should run after
+// this window so it reads the freshly rebuilt SUMMARY_CACHE/TRIPS_CACHE.
+var DAILY_BATCH_TRIGGER_TIMEZONE = 'Asia/Bangkok';
+var DAILY_BATCH_TRIGGER_HOUR = 8;
+var DAILY_BATCH_TRIGGER_NEAR_MINUTE = 0;
+
 // -------------------------------------------------------------------------
 // API Response Helper
 // -------------------------------------------------------------------------

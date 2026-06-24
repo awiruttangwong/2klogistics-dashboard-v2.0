@@ -90,9 +90,9 @@ Severity: Blocker
 - missing vehicle type / BTS normalization คนละจุด
 - company trip logic `pay = 0` ไม่เหมือนเดิม
 
-การป้องกัน:
-
-- ช่วงแรกให้ `Code.gs` เป็นตัว normalize เหมือนเดิม แล้วค่อยส่ง normalized object เข้า Supabase
+- ช่วงแรกให้ Apps Script API เดิมเป็น source read-only แล้วให้ V3 sync service ดึง payload ที่ normalize แล้วเข้า Supabase
+- ห้ามแก้หรือ deploy `Code.gs` production เดิมเพื่อเพิ่ม Supabase sync
+- ถ้าต้องใช้ Apps Script importer ต้องสร้าง Apps Script project/deployment ใหม่สำหรับ V3 เท่านั้น
 - ห้ามให้ Supabase คิด route key เองใน phase แรก
 - ทำ parity report ทุก sync
 
@@ -120,28 +120,26 @@ Severity: Blocker
 
 การป้องกัน:
 
-- ต้องมี `row_hash unique`
-- ใช้ upsert แทน insert
-- hash จาก normalized identity ไม่ใช่จาก raw display text ที่เปลี่ยนง่าย
-
-แนะนำ hash fields:
+- ต้องแยก `rowIdentityKey` ออกจาก `payloadHash`
+- ใช้ `rowIdentityKey` สำหรับ upsert/promote identity
+- ใช้ `payloadHash` สำหรับตรวจ changed row
+- ห้ามใส่ `recv/pay/oil/margin` เป็นส่วนหนึ่งของ unique identity เพราะถ้าต้นทางแก้ยอดเงินจะกลายเป็นแถวใหม่
 
 ```text
 date
 customer
 vtype
-route_key
+routeKey
 route
-route_desc
+routeDesc
 driver
 plate
 payee
-oil
-recv
-pay
-margin
-source_month
+sourceMonth
+duplicate ordinal
 ```
+
+`payloadHash` ต้องครอบคลุมค่าเงิน, route identity, pct, sourceMonth และ anomalies เพื่อ parity/diff ได้ครบ
 
 ### 3) API contract drift
 
@@ -238,7 +236,14 @@ is_active boolean
 sync_run_id
 ```
 
-แต่ phase แรกอาจเริ่มด้วย direct upsert ได้ ถ้ายังไม่ให้ frontend อ่าน Supabase จริง
+สำหรับ V3 ที่ต้องการความแม่นยำสูง ห้ามเริ่มด้วย direct upsert เข้า active table แม้ frontend ยังไม่อ่าน Supabase จริง ให้ใช้ staging-first ตั้งแต่ phase แรก:
+
+```text
+trips_staging
+  -> parity_reports.ok = true
+  -> promote_sync_run()
+  -> trips_active
+```
 
 ### 7) Security/key leakage
 
@@ -403,24 +408,68 @@ merge เข้า `main` เฉพาะเมื่อ:
 ### Step 1: Prepare project
 
 - สร้าง Supabase project
-- สร้าง tables ตาม `SUPABASE_DATABASE_MIGRATION_PLAN.md`
+- รัน `supabase/migrations/20260623000100_shadow_schema.sql`
 - เปิด RLS
 - ตั้ง indexes
 - เก็บ keys ใน server-side env เท่านั้น
 
 ### Step 2: Add shadow sync
 
-เพิ่มใน `Code.gs` หรือ service แยก:
+เพิ่มใน V3 sync service แยกจาก production Apps Script:
 
 ```text
 syncSupabaseStartRun_()
-syncSupabaseTrips_(tripsWithAnomalies)
+fetchAppsScriptTrips_()
+buildRowIdentityKey_()
+buildPayloadHash_()
+syncSupabaseTripsStaging_()
 syncSupabaseSummary_(summary)
 syncSupabaseOil_(oilPayload)
+runSupabaseParityReport_()
 syncSupabaseFinishRun_()
 ```
 
+Secrets ต้องอยู่ฝั่ง server-side/local migration environment เท่านั้น:
+
+```text
+SUPABASE_PROJECT_REF=<project-ref>
+SUPABASE_ACCESS_TOKEN=<personal access token>
+SUPABASE_DB_PASSWORD=<database password>
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<server-side service role key>
+APPS_SCRIPT_API_URL=<existing Apps Script Web App URL>
+SUPABASE_SYNC_BATCH_SIZE=500
+APPS_SCRIPT_PAGE_LIMIT=5000
+SYNC_REQUEST_TIMEOUT_MS=60000
+```
+
+คำสั่ง Supabase CLI local:
+
+```text
+npm run supabase:link
+npm run supabase:db:push:dry-run
+npm run supabase:db:push
+```
+
+ห้าม deploy logic นี้เข้า Apps Script project production เดิม
+
 ยังไม่เปลี่ยน frontend
+
+V3 sync service ที่เพิ่มแล้ว:
+
+```text
+supabase/sync/sync-apps-script-to-supabase.mjs
+```
+
+คำสั่งใช้งาน:
+
+```text
+npm run supabase:sync -- --dry-run
+npm run supabase:sync
+npm run supabase:sync -- --promote
+```
+
+ค่า default จะเขียนแค่ staging/snapshot/oil/parity และไม่ promote เข้า `trips_active` ถ้าไม่ได้ใส่ `--promote`
 
 ### Step 3: Add parity reports
 
@@ -519,6 +568,7 @@ apiMode = supabase
 ห้ามทำสิ่งเหล่านี้ในช่วงแรก:
 
 - ห้ามลบ Apps Script API เดิม
+- ห้าม deploy `Dashboard/API/Code.gs` จาก V3 ไปทับ Apps Script production เดิม
 - ห้ามเปลี่ยน production Netlify เดิม
 - ห้ามให้ frontend อ่าน Supabase ตรงด้วย service role
 - ห้าม rewrite route logic ใหม่ทั้งหมดตั้งแต่ต้น
@@ -537,14 +587,27 @@ Create Supabase schema SQL + local documentation only
 งานที่สอง:
 
 ```text
-Add shadow sync writer behind feature flag
+Create V3 sync service that reads Apps Script API without changing Code.gs
 ```
 
 งานที่สาม:
 
 ```text
+Add rowIdentityKey/payloadHash builder in V3 sync service
+```
+
+งานที่สี่:
+
+```text
 Run parity report without changing frontend
 ```
+
+สถานะล่าสุด:
+
+- `supabase/sync/sync-apps-script-to-supabase.mjs` ถูกเพิ่มแล้ว
+- dry-run แบบ read-only อ่าน Apps Script ได้ `42611` trips และเตรียม staging ได้ `42611` rows
+- contract errors จาก dry-run = `0`
+- ยังไม่มีการแก้หรือ deploy `Dashboard/API/Code.gs`
 
 ## Final Verdict
 

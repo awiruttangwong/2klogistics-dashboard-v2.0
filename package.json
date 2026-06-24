@@ -1,9 +1,21 @@
 {
+  "scripts": {
+    "dashboard:dev": "node scripts/serve-dashboard-local.mjs",
+    "supabase:link": "node supabase/cli/run-supabase-cli.mjs link",
+    "supabase:db:push:dry-run": "node supabase/cli/run-supabase-cli.mjs db push --dry-run",
+    "supabase:db:push": "node supabase/cli/run-supabase-cli.mjs db push",
+    "supabase:sync": "node supabase/sync/sync-apps-script-to-supabase.mjs",
+    "apps-script:health": "node scripts/check-apps-script-health.mjs",
+    "production:health": "node scripts/check-production-health.mjs"
+  },
   "dependencies": {
     "dotenv": "^17.4.2",
     "jsdom": "^29.1.1",
     "playwright": "^1.60.0",
     "xlsx": "^0.18.5",
     "xlsx-js-style": "^1.2.0"
+  },
+  "devDependencies": {
+    "supabase": "^2.107.0"
   }
 }

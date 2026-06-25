@@ -6,6 +6,15 @@ on:
     # 08:45 Asia/Bangkok (UTC+7) = 01:45 UTC.
     # Code.gs dailyBatchJob refreshes Google Sheet caches at 08:00 first.
     - cron: "45 1 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/supabase-sync.yml"
+      - "supabase/**"
+      - "scripts/check-production-health.mjs"
+      - "package.json"
+      - "package-lock.json"
 
 jobs:
   sync:

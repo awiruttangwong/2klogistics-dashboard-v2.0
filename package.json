@@ -1,4 +1,6 @@
 {
+  "name": "2klogistics-dashboard-v2",
+  "private": true,
   "scripts": {
     "dashboard:dev": "node scripts/serve-dashboard-local.mjs",
     "supabase:link": "node supabase/cli/run-supabase-cli.mjs link",

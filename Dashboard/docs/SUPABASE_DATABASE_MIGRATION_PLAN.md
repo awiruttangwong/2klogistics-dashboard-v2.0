@@ -1,5 +1,10 @@
 # Supabase Database Migration Plan
 
+> Status: historical migration planning note. For the current production source
+> of truth, use `README.md` in the repository root. Current GitHub repo is
+> `awiruttangwong/2klogistics-dashboard-v2.0`; current Netlify site is
+> `2klogistics-dashboard`; deploys are handled by GitHub Actions.
+
 Last updated: 2026-06-23
 
 ## Purpose

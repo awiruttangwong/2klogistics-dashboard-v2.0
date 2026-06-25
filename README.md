@@ -1,4 +1,23 @@
-# Logistics-Profitability-Dashboard
+# 2K Logistics Dashboard V2
+
+## Production Identity
+
+Use these names as the source of truth:
+
+```text
+Local workspace folder: Data sum Daily express 4 month V3
+GitHub repository: awiruttangwong/2klogistics-dashboard-v2.0
+Netlify site: 2klogistics-dashboard
+Production URL: https://2klogistics-dashboard.netlify.app
+Netlify publish directory: dashboard
+Apps Script project: DASHBOARD-DAILY-QA
+Google Sheet: Database Daily EXPRESS
+```
+
+The local folder name is only a Windows workspace label. Netlify does not deploy
+from that folder name; production deploys from the GitHub Actions workflow in
+`awiruttangwong/2klogistics-dashboard-v2.0`, publishing the `dashboard` directory
+to the Netlify site `2klogistics-dashboard`.
 
 ## Supabase V3 Local Setup
 

@@ -1,6 +1,6 @@
 # Netlify Manual Production Deploy
 
-Last updated: 2026-06-19
+Last updated: 2026-06-25
 
 ## Purpose
 
@@ -15,11 +15,12 @@ new Netlify account on 2026-06-19.
 
 ## Project references
 
-- GitHub repo: `https://github.com/awiruttangwong/2klogistics-dashboard.git`
+- GitHub repo: `https://github.com/awiruttangwong/2klogistics-dashboard-v2.0.git`
 - Netlify site: `https://2klogistics-dashboard.netlify.app/`
 - Netlify project id: `e2eb9250-8a5e-42b0-ba7f-c2acc6b877e4`
 - Netlify account/team: `awiruttangwong`
 - Publish directory: `dashboard`
+- Local workspace folder: `Data sum Daily express 4 month V3`
 
 ## Current production ownership
 
@@ -42,9 +43,9 @@ Important:
 - `git push origin main` may succeed even when Netlify does not update production.
 - When Netlify shows errors like `Skipped due to account credit usage exceeded`, auto deploy from GitHub can fail.
 - In that case, production can still be updated by uploading the local `dashboard` folder as a manual draft deploy, then restoring that deploy to production.
-- after the 2026-06-19 site cutover, production is correct on the new Netlify
-  account even if Git-based auto deploy is not yet fully reconnected in the
-  Netlify UI
+- after the 2026-06-25 automation closeout, production deploys from GitHub
+  Actions in `awiruttangwong/2klogistics-dashboard-v2.0`; Netlify's direct Git
+  repo linkage is intentionally empty to avoid deploying from the wrong repo
 
 ## Required checks before deploy
 
@@ -185,18 +186,19 @@ Action:
 
 This is expected in the blocked-credit scenario above.
 
-### 4) Production is on the new Netlify account, but Git auto deploy is still not active
+### 4) Netlify direct Git linkage is empty
 
 Likely cause:
 
-- the site name and production URL were moved successfully, but Git provider
-  linkage was not fully rebuilt in Netlify UI yet
+- this is intentional after the 2026-06-25 closeout; production deploys through
+  `.github/workflows/netlify-production-deploy.yml` from
+  `awiruttangwong/2klogistics-dashboard-v2.0`
 
 Action:
 
-- continue using the manual CLI deploy flow in this document
-- if needed later, reconnect the GitHub repo
-  `awiruttangwong/2klogistics-dashboard` from the Netlify UI of the new account
+- verify the GitHub Actions workflow `Netlify Production Deploy`
+- do not reconnect `awiruttangwong/2klogistics-dashboard` or any
+  `github.com/2klogistics/*` repository
 
 ## Release log template for manual production deploy
 

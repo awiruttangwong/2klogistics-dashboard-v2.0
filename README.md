@@ -10,6 +10,7 @@ GitHub repository: awiruttangwong/2klogistics-dashboard-v2.0
 Netlify site: 2klogistics-dashboard
 Production URL: https://2klogistics-dashboard.netlify.app
 Netlify publish directory: dashboard
+Apps Script source directory: dashboard/API
 Apps Script project: DASHBOARD-DAILY-QA
 Google Sheet: Database Daily EXPRESS
 ```
@@ -18,6 +19,10 @@ The local folder name is only a Windows workspace label. Netlify does not deploy
 from that folder name; production deploys from the GitHub Actions workflow in
 `awiruttangwong/2klogistics-dashboard-v2.0`, publishing the `dashboard` directory
 to the Netlify site `2klogistics-dashboard`.
+
+Use lowercase `dashboard/` as the active source directory. The uppercase
+`Dashboard/` tree is retained only for historical docs/notes and must not be
+used as the Netlify publish directory.
 
 ## Supabase V3 Local Setup
 
@@ -50,7 +55,7 @@ npm.cmd run supabase:sync
 npm.cmd run supabase:sync -- --promote
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY` is server-side only. Never put it in `Dashboard/scripts/*` or any frontend bundle.
+`SUPABASE_SERVICE_ROLE_KEY` is server-side only. Never put it in `dashboard/scripts/*` or any frontend bundle.
 
 ## Frontend Supabase API
 

@@ -536,7 +536,7 @@ const esc = s => String(s || '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
-// Customer alias map — keep in sync with Dashboard/API/config.gs
+// Customer alias map - keep in sync with dashboard/API/config.gs
 const CUSTOMER_ALIAS = {
   kerry: 'KEX',
   fash: 'FLASH'

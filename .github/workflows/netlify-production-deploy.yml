@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - "Dashboard/**"
+      - "dashboard/**"
       - "netlify/**"
       - "netlify.toml"
       - "package.json"
@@ -24,7 +24,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Deploy production site to Netlify
-        run: npx --yes netlify-cli deploy --prod --dir Dashboard --functions netlify/functions --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN" --message "GitHub Actions ${GITHUB_SHA}"
+        run: npx --yes netlify-cli deploy --prod --dir dashboard --functions netlify/functions --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN" --message "GitHub Actions ${GITHUB_SHA}"
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}

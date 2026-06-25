@@ -1,0 +1,30 @@
+name: Netlify Production Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "Dashboard/**"
+      - "netlify/**"
+      - "netlify.toml"
+      - "package.json"
+      - "package-lock.json"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Deploy production site to Netlify
+        run: npx --yes netlify-cli deploy --prod --dir Dashboard --functions netlify/functions --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN" --message "GitHub Actions ${GITHUB_SHA}"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}

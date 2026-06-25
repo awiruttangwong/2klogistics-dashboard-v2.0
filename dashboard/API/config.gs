@@ -135,8 +135,8 @@ var API_DEBUG_ERRORS = false;
 
 // Migration guardrails for the new Google account/project.
 // This spreadsheet is the bound "Database Daily EXPRESS" dashboard workbook.
-var EXPECTED_DASHBOARD_SPREADSHEET_ID = '1z84ZlRsonSpaqIZbwKNTaqtai-UzCUPzp2-GGHALrQU';
-var APPS_SCRIPT_PROJECT_ID = '16QJOnTBs-lLAzM3w36Iqm5jX7BSrG7XigTzWlsYNv94L2ISa4tAEjWgx';
+var EXPECTED_DASHBOARD_SPREADSHEET_ID = '1gjrRvgNrU6_hB4XaeHC1Z6MoLK0X11ci3LzYQDRa8Pw';
+var APPS_SCRIPT_PROJECT_ID = '1FGsRlFbWgI_rzRRVoXXF-TpGUKlhvl6kXlcH8lUit2PfEsb9bayayZ7e';
 
 // Daily source refresh schedule.
 // Code.gs refreshes Google Sheet/GAS caches first; Supabase sync should run after

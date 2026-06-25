@@ -3,9 +3,9 @@ name: Supabase Shadow Sync
 on:
   workflow_dispatch:
   schedule:
-    # 08:45 Asia/Bangkok (UTC+7) = 01:45 UTC.
+    # 08:30 Asia/Bangkok (UTC+7) = 01:30 UTC.
     # Code.gs dailyBatchJob refreshes Google Sheet caches at 08:00 first.
-    - cron: "45 1 * * *"
+    - cron: "30 1 * * *"
   push:
     branches:
       - main

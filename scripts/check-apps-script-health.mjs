@@ -1,4 +1,4 @@
-const DEFAULT_EXPECTED_SPREADSHEET_ID = '1z84ZlRsonSpaqIZbwKNTaqtai-UzCUPzp2-GGHALrQU';
+const DEFAULT_EXPECTED_SPREADSHEET_ID = '1gjrRvgNrU6_hB4XaeHC1Z6MoLK0X11ci3LzYQDRa8Pw';
 
 const appsScriptUrl = process.env.APPS_SCRIPT_API_URL || process.argv[2] || '';
 const expectedSpreadsheetId = process.env.EXPECTED_DASHBOARD_SPREADSHEET_ID || DEFAULT_EXPECTED_SPREADSHEET_ID;

@@ -11,7 +11,7 @@ Last updated: 2026-05-17
 
 ## Target environments
 
-- GitHub repository: `https://github.com/2klogistics/Logistics-Profitability-Dashboard.git`
+- GitHub repository: `https://github.com/awiruttangwong/2klogistics-dashboard-v2.0.git`
 - Netlify production: `https://2klogistics-dashboard.netlify.app/`
 
 ## What to do after frontend changes are finished

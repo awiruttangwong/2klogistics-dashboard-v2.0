@@ -5,6 +5,9 @@ import { resolve } from 'node:path';
 const DEFAULT_BATCH_SIZE = 500;
 const DEFAULT_PAGE_LIMIT = 5000;
 const DEFAULT_TIMEOUT_MS = 60000;
+const DEFAULT_FETCH_RETRY_ATTEMPTS = 8;
+const DEFAULT_FETCH_RETRY_DELAY_MS = 2000;
+const DEFAULT_RETENTION_RUNS = 2;
 const CENT_TOLERANCE = 0.01;
 
 const REQUIRED_ENV = [
@@ -44,10 +47,20 @@ async function main() {
     batchSize: positiveInt(process.env.SUPABASE_SYNC_BATCH_SIZE, DEFAULT_BATCH_SIZE),
     pageLimit: Math.min(positiveInt(process.env.APPS_SCRIPT_PAGE_LIMIT, DEFAULT_PAGE_LIMIT), 5000),
     timeoutMs: positiveInt(process.env.SYNC_REQUEST_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
+    fetchRetryAttempts: positiveInt(process.env.SYNC_FETCH_RETRY_ATTEMPTS, DEFAULT_FETCH_RETRY_ATTEMPTS),
+    fetchRetryDelayMs: positiveInt(process.env.SYNC_FETCH_RETRY_DELAY_MS, DEFAULT_FETCH_RETRY_DELAY_MS),
+    retentionRuns: positiveInt(process.env.SYNC_RETENTION_RUNS, DEFAULT_RETENTION_RUNS),
   };
 
   console.log('[supabase-sync] mode:', options.dryRun ? 'dry-run' : 'write-staging');
   console.log('[supabase-sync] promote:', options.promote ? 'yes' : 'no');
+  console.log('[supabase-sync] inactive sync retention:', config.retentionRuns);
+
+  if (!options.dryRun) {
+    await pruneInactiveSyncRuns(config, 'before-sync').catch(error => {
+      console.warn(`[supabase-sync] pre-sync retention cleanup skipped: ${error.message}`);
+    });
+  }
 
   const startedAt = new Date().toISOString();
   const [summaryPayload, oilPayload, trips] = await Promise.all([
@@ -126,6 +139,9 @@ async function main() {
       }
       await rpc(config, 'promote_sync_run', { p_sync_run_id: syncRun.id });
       console.log(`[supabase-sync] promoted sync_run_id: ${syncRun.id}`);
+      await pruneInactiveSyncRuns(config, 'after-promote').catch(error => {
+        console.warn(`[supabase-sync] post-promote retention cleanup skipped: ${error.message}`);
+      });
     } else {
       console.log('[supabase-sync] staging only. Re-run with --promote after reviewing parity if you want to activate this run.');
     }
@@ -169,6 +185,9 @@ Environment:
   SUPABASE_SYNC_BATCH_SIZE=500
   APPS_SCRIPT_PAGE_LIMIT=5000
   SYNC_REQUEST_TIMEOUT_MS=60000
+  SYNC_FETCH_RETRY_ATTEMPTS=8
+  SYNC_FETCH_RETRY_DELAY_MS=2000
+  SYNC_RETENTION_RUNS=2
 
 Notes:
   - Default mode writes only trips_staging, summary_snapshots, oil_prices, sync_runs, and parity_reports.
@@ -435,6 +454,38 @@ async function insertParityReport(config, report) {
   });
 }
 
+async function pruneInactiveSyncRuns(config, phase) {
+  const keep = Math.max(0, config.retentionRuns);
+  const runs = await supabaseRest(config, '/rest/v1/sync_runs', {
+    method: 'GET',
+    query: {
+      select: 'id,status,started_at,rows_written',
+      is_active: 'eq.false',
+      order: 'started_at.desc',
+      limit: '100',
+    },
+  });
+
+  if (!Array.isArray(runs) || runs.length <= keep) {
+    console.log(`[supabase-sync] ${phase} retention cleanup: nothing to prune (inactive=${Array.isArray(runs) ? runs.length : 0}, keep=${keep})`);
+    return;
+  }
+
+  const staleRuns = runs.slice(keep).reverse();
+  console.log(`[supabase-sync] ${phase} retention cleanup: pruning ${staleRuns.length} inactive sync run(s), keeping ${keep}`);
+  for (const run of staleRuns) {
+    await supabaseRest(config, '/rest/v1/sync_runs', {
+      method: 'DELETE',
+      query: {
+        id: `eq.${run.id}`,
+        is_active: 'eq.false',
+      },
+      prefer: 'return=minimal',
+    });
+    console.log(`[supabase-sync] pruned inactive sync_run_id: ${run.id} (${run.status}, rows_written=${run.rows_written || 0})`);
+  }
+}
+
 async function rpc(config, name, payload) {
   return supabaseRest(config, `/rest/v1/rpc/${name}`, {
     method: 'POST',
@@ -460,6 +511,8 @@ async function supabaseRest(config, path, { method, query = {}, body, prefer }) 
   }, {
     timeoutMs: config.timeoutMs,
     label: `Supabase ${method} ${path}`,
+    attempts: config.fetchRetryAttempts,
+    retryDelayMs: config.fetchRetryDelayMs,
   });
 
   if (!ok) {
@@ -468,7 +521,7 @@ async function supabaseRest(config, path, { method, query = {}, body, prefer }) 
   return text ? JSON.parse(text) : null;
 }
 
-async function fetchTextWithRetry(url, init, { timeoutMs, label, attempts = 5 }) {
+async function fetchTextWithRetry(url, init, { timeoutMs, label, attempts = 5, retryDelayMs = 750 }) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const controller = new AbortController();
@@ -478,14 +531,16 @@ async function fetchTextWithRetry(url, init, { timeoutMs, label, attempts = 5 })
       const text = await response.text();
       if (!response.ok && shouldRetryHttp(response.status) && attempt < attempts) {
         lastError = new Error(`${label} HTTP ${response.status}: ${trimMessage(text)}`);
-        await sleep(750 * attempt);
+        console.warn(`[supabase-sync] retry ${attempt}/${attempts} after ${lastError.message}`);
+        await sleep(retryDelayMs * attempt);
         continue;
       }
       return { status: response.status, ok: response.ok, text };
     } catch (error) {
       lastError = error;
       if (attempt === attempts) break;
-      await sleep(750 * attempt);
+      console.warn(`[supabase-sync] retry ${attempt}/${attempts} after ${label} error: ${error.message}`);
+      await sleep(retryDelayMs * attempt);
     } finally {
       clearTimeout(timer);
     }

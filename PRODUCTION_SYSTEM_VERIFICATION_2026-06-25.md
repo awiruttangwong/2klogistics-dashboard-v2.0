@@ -63,7 +63,9 @@
 
 ### 2. GitHub Actions Sync จาก Apps Script เข้า Supabase
 
-Workflow ที่ใช้จริง: `.github/workflows/supabase-sync.yml`
+Workflow ที่ใช้จริงสำหรับ schedule: `.github/workflows/production-sync-watchdog.yml`
+
+Workflow `.github/workflows/supabase-sync.yml` ยังมีไว้สำหรับ manual emergency sync ผ่าน `workflow_dispatch` เท่านั้น ไม่รันอัตโนมัติแบบ blind write
 
 Schedule:
 
@@ -71,29 +73,36 @@ Schedule:
 cron: "30 1 * * *"
 cron: "45 1 * * *"
 cron: "0 2 * * *"
+cron: "10 2 * * *"
+cron: "30 2 * * *"
+cron: "0 3 * * *"
 ```
 
-เวลานี้เท่ากับ `08:30`, `08:45` และ `09:00 Asia/Bangkok` เพื่อให้ Apps Script ที่รัน `08:00` มีเวลาสร้าง cache ก่อน Supabase sync เริ่มทำงาน และมี backup window หาก GitHub scheduled workflow delay หรือไม่ถูก queue ในรอบแรก
+เวลานี้เท่ากับ `08:30`, `08:45`, `09:00`, `09:10`, `09:30` และ `10:00 Asia/Bangkok` เพื่อให้ Apps Script ที่รัน `08:00` มีเวลาสร้าง cache ก่อน watchdog ตรวจและ sync เฉพาะเมื่อจำเป็น
 
 Sync flow:
 
-1. GitHub Actions เรียก `npm run supabase:sync -- --promote`
-2. Script อ่านจาก Apps Script endpoint:
+1. GitHub Actions เรียก `npm run production:watchdog`
+2. Watchdog อ่าน Apps Script health/tripsTotal และ production Supabase health
+3. ถ้า production health ไม่พร้อม จะ fail fast และไม่เขียนข้อมูลซ้ำลง DB
+4. ถ้า Supabase ยังไม่ใช่ข้อมูลรอบวันนี้ หรือจำนวน rows ไม่ตรงกับ Apps Script จึงเรียก `npm run supabase:sync -- --promote`
+5. Sync script อ่านจาก Apps Script endpoint:
    - `summary`
    - `oil`
    - `trips` แบบ pagination
-3. เตรียมข้อมูลเป็น staging rows
-4. ตรวจ contract และ local parity
-5. เขียน Supabase tables:
+6. เตรียมข้อมูลเป็น staging rows
+7. ตรวจ contract และ local parity
+8. เขียน Supabase tables:
    - `sync_runs`
    - `summary_snapshots`
    - `oil_prices`
    - `trips_staging`
    - `parity_reports`
-6. เรียก RPC `get_staging_parity_summary`
-7. ถ้า parity ผ่าน จึงเรียก RPC `promote_sync_run`
-8. Promote แล้วข้อมูลจริงจะถูกย้ายเข้า `trips_active`
-9. Production health ตรวจว่า active run เป็น `promoted`, rows ตรงกัน และ sync ไม่ stale
+9. เรียก RPC `get_staging_parity_summary`
+10. ถ้า parity ผ่าน จึงเรียก RPC `promote_sync_run`
+11. Promote แล้วข้อมูลจริงจะถูกย้ายเข้า `trips_active`
+12. Retention cleanup ลบ inactive sync history เก่า โดยเก็บไว้ 2 รอบล่าสุด เพื่อลดการใช้ Supabase storage
+13. Production health ตรวจว่า active run เป็น `promoted`, rows ตรงกัน และ sync ไม่ stale
 
 ผลตรวจ GitHub Actions ล่าสุด:
 
@@ -128,6 +137,8 @@ Supabase ใช้แนวทาง staging-first:
    - `active_dates_summary`
 6. `summary_snapshots` เก็บ summary payload ที่ frontend ใช้เปิดหน้าแรกเร็วขึ้น
 7. `oil_prices` เก็บราคาน้ำมันสำหรับ dashboard
+
+ระบบ sync ตั้ง `SYNC_RETENTION_RUNS=2` เพื่อให้ staging/history ไม่สะสมจนกินพื้นที่ฐานข้อมูลมากเกินไป ทุก sync จะพยายาม prune inactive `sync_runs` ทั้งก่อนเริ่มรอบใหม่และหลัง promote สำเร็จ โดยลบทีละ run ผ่าน cascade แทนการลบก้อนใหญ่ครั้งเดียว
 
 ผลตรวจ production health ล่าสุด:
 
@@ -204,6 +215,34 @@ backgroundTripPreload: false
 
 ## Deployment Flow
 
+### Production Sync Watchdog
+
+Workflow: `.github/workflows/production-sync-watchdog.yml`
+
+Schedule:
+
+```yaml
+cron: "30 1 * * *"
+cron: "45 1 * * *"
+cron: "0 2 * * *"
+cron: "10 2 * * *"
+cron: "30 2 * * *"
+cron: "0 3 * * *"
+```
+
+เวลานี้เท่ากับ `08:30`, `08:45`, `09:00`, `09:10`, `09:30` และ `10:00 Asia/Bangkok`
+
+Watchdog flow:
+
+1. อ่าน Apps Script health และ `tripsTotal`
+2. อ่าน production Supabase health
+3. ถ้า production health ไม่พร้อม ให้ fail เพื่อไม่เขียนข้อมูลซ้ำลง DB ที่กำลังมีปัญหา
+4. ถ้า Supabase rows ไม่ตรงกับ Apps Script หรือ latest promotion ยังไม่ใช่หลัง `08:00 Asia/Bangkok` ของวันนั้น ให้รัน `npm run supabase:sync -- --promote`
+5. หลัง sync ตรวจ production health ซ้ำ
+6. ถ้ายัง stale หลัง sync ให้ workflow fail เพื่อให้เห็นปัญหาใน GitHub Actions
+
+Watchdog มี retry ทั้งก้อนผ่าน `WATCHDOG_SYNC_ATTEMPTS=3` และ sync service มี HTTP retry สำหรับ Supabase transient errors ผ่าน `SYNC_FETCH_RETRY_ATTEMPTS=8`
+
 ### Netlify Production Deploy
 
 Workflow: `.github/workflows/netlify-production-deploy.yml`
@@ -248,7 +287,9 @@ Netlify metadata ล่าสุด:
 | Git tracked source | มี `dashboard/API/Code.gs`, `dashboard/API/config.gs`, `dashboard/API/appsscript.json` |
 | Netlify publish path | `netlify.toml` กำหนด `publish = "dashboard"` |
 | Netlify deploy workflow | ใช้ `--dir dashboard` และ `--functions netlify/functions` |
-| Supabase sync workflow | ตั้ง schedule `08:30`, `08:45`, `09:00 Asia/Bangkok` |
+| Supabase sync workflow | manual emergency sync เท่านั้น |
+| Production sync watchdog | ตั้ง schedule `08:30`, `08:45`, `09:00`, `09:10`, `09:30`, `10:00 Asia/Bangkok` |
+| Sync retention cleanup | เก็บ inactive sync history 2 รอบล่าสุด |
 | Frontend config | `supabase-with-fallback`, lazy trips enabled |
 | JavaScript syntax | `dashboard/scripts/app.js` ผ่าน `node --check` |
 | Netlify Function syntax | `netlify/functions/supabase-api.mjs` ผ่าน `node --check` |

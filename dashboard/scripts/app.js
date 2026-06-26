@@ -54,6 +54,10 @@ function isApiEnabled() {
   return getApiSourceConfigs().length > 0;
 }
 
+function isSupabaseApiEnabled() {
+  return Boolean(SUPABASE_API_URL && (API_MODE === 'supabase' || API_MODE === 'supabase-with-fallback'));
+}
+
 function getApiSourceConfigs() {
   if (API_MODE === 'supabase') {
     return SUPABASE_API_URL ? [{ name: 'supabase', url: SUPABASE_API_URL }] : [];
@@ -10302,11 +10306,28 @@ async function ensureTripsReady() {
 }
 
 async function loadDatesSource() {
-  const payload = await apiGetSupabaseWithRetry('dates', {}, API_TIMEOUT_MS, 2);
-  if (payload?.excludedDatesCount) {
-    console.warn(`Supabase dates ignored ${payload.excludedDatesCount} date group(s) before ${payload.minOperationalDate || 'minimum operational date'}.`);
+  if (isSupabaseApiEnabled()) {
+    try {
+      const payload = await apiGetSupabaseWithRetry('dates', {}, API_TIMEOUT_MS, 2);
+      if (payload?.excludedDatesCount) {
+        console.warn(`Supabase dates ignored ${payload.excludedDatesCount} date group(s) before ${payload.minOperationalDate || 'minimum operational date'}.`);
+      }
+      return payload;
+    } catch (err) {
+      console.warn('Supabase dates fallback to trip rows:', err.message);
+      noteDataSource('trips', DATA_SOURCE_STATE.trips, `dates fallback: ${describeDataLoadError(err, 'dates API')}`);
+    }
   }
-  return payload;
+  const rows = await loadTripsSource();
+  const dates = [...new Set((rows || []).map(row => row.date).filter(Boolean))].sort();
+  return {
+    dates,
+    rows: dates.map(date => ({
+      date,
+      trips: (rows || []).filter(row => row.date === date).length
+    })),
+    source: DATA_SOURCE_STATE.trips === 'api' ? 'apps-script' : DATA_SOURCE_STATE.trips,
+  };
 }
 
 function rememberTripRows(rows) {
@@ -10346,7 +10367,7 @@ async function loadTripsRange(start, end) {
   if (isTripRangeLoaded(start, end)) {
     return (window.FRAUD_DATA || []).filter(row => row.date >= start && row.date <= end);
   }
-  if (!isApiEnabled()) {
+  if (!isSupabaseApiEnabled()) {
     const rows = await loadTripsSource();
     rememberTripRows(rows);
     TRIP_CACHE_LOADED_RANGES.push({ start: '0000-01-01', end: '9999-12-31' });
@@ -10358,12 +10379,21 @@ async function loadTripsRange(start, end) {
   let page = 0;
   let hasMore = true;
   const rows = [];
-  while (hasMore && page < 100) {
-    const payload = await apiGetSupabaseWithRetry('trips', { start, end, page, limit: pageSize, fields }, API_TRIPS_TIMEOUT_MS, 2);
-    const batch = Array.isArray(payload?.trips) ? payload.trips : [];
-    rows.push(...batch);
-    hasMore = Boolean(payload?.hasMore) && batch.length > 0;
-    page += 1;
+  try {
+    while (hasMore && page < 100) {
+      const payload = await apiGetSupabaseWithRetry('trips', { start, end, page, limit: pageSize, fields }, API_TRIPS_TIMEOUT_MS, 2);
+      const batch = Array.isArray(payload?.trips) ? payload.trips : [];
+      rows.push(...batch);
+      hasMore = Boolean(payload?.hasMore) && batch.length > 0;
+      page += 1;
+    }
+  } catch (err) {
+    console.warn('Supabase trip range fallback to full trip source:', err.message);
+    noteDataSource('trips', DATA_SOURCE_STATE.trips, `range fallback: ${describeDataLoadError(err, 'trips range API')}`);
+    const fallbackRows = await loadTripsSource();
+    rememberTripRows(fallbackRows);
+    TRIP_CACHE_LOADED_RANGES.push({ start: '0000-01-01', end: '9999-12-31' });
+    return (window.FRAUD_DATA || []).filter(row => row.date >= start && row.date <= end);
   }
   TRIP_CACHE_LOADED_RANGES.push({ start, end });
   rememberTripRows(rows);

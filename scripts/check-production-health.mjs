@@ -1,7 +1,14 @@
-const DEFAULT_HEALTH_URL = 'https://2klogistics-dashboard.netlify.app/.netlify/functions/supabase-api?action=health';
-const MAX_SYNC_AGE_HOURS = Number.parseFloat(process.env.MAX_SYNC_AGE_HOURS || '36');
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
+const DEFAULT_HEALTH_URL = 'https://2klogistics-dashboard.netlify.app/.netlify/functions/supabase-api?action=health';
+
+loadDotEnvFile();
+
+const MAX_SYNC_AGE_HOURS = Number.parseFloat(process.env.MAX_SYNC_AGE_HOURS || '36');
 const healthUrl = process.env.DASHBOARD_HEALTH_URL || DEFAULT_HEALTH_URL;
+const attempts = positiveInt(process.env.HEALTH_CHECK_ATTEMPTS, 3);
+const retryDelayMs = positiveInt(process.env.HEALTH_CHECK_RETRY_DELAY_MS, 2000);
 
 main().catch(error => {
   console.error(`[production-health] failed: ${error.stack || error.message}`);
@@ -10,12 +17,12 @@ main().catch(error => {
 
 async function main() {
   const startedAt = Date.now();
-  const response = await fetch(healthUrl, {
+  const response = await fetchWithRetry(healthUrl, {
     headers: {
       'Cache-Control': 'no-cache',
       Pragma: 'no-cache',
     },
-  });
+  }, { label: 'Health endpoint', attempts, retryDelayMs });
   const text = await response.text();
   if (!response.ok) {
     throw new Error(`Health endpoint HTTP ${response.status}: ${trim(text)}`);
@@ -61,4 +68,50 @@ async function main() {
 function trim(value) {
   const text = String(value || '');
   return text.length > 500 ? `${text.slice(0, 500)}...` : text;
+}
+
+async function fetchWithRetry(url, init, { label, attempts, retryDelayMs }) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, init);
+      if (response.ok || response.status < 500 || attempt === attempts) return response;
+      const text = await response.text().catch(() => '');
+      lastError = new Error(`${label} HTTP ${response.status}: ${trim(text)}`);
+      console.warn(`[production-health] ${lastError.message}; retrying ${attempt}/${attempts}`);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts) throw error;
+      console.warn(`[production-health] ${label} fetch failed: ${error.message}; retrying ${attempt}/${attempts}`);
+    }
+    await sleep(retryDelayMs * attempt);
+  }
+  throw lastError || new Error(`${label} failed`);
+}
+
+function positiveInt(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function loadDotEnvFile(filePath = '.env') {
+  const resolved = resolve(process.cwd(), filePath);
+  if (!existsSync(resolved)) return;
+  const text = readFileSync(resolved, 'utf8');
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (!process.env[key]) process.env[key] = value;
+  }
 }

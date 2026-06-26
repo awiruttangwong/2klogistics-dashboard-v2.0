@@ -8,6 +8,8 @@ const DEFAULT_MIN_ROW_DELTA_TO_SYNC = 1;
 const DEFAULT_SYNC_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_SYNC_ATTEMPTS = 3;
 const DEFAULT_SYNC_RETRY_DELAY_MS = 30000;
+const DEFAULT_HEALTH_RETRY_ATTEMPTS = 5;
+const DEFAULT_HEALTH_RETRY_DELAY_MS = 5000;
 
 const argv = new Set(process.argv.slice(2));
 const options = {
@@ -36,7 +38,7 @@ async function main() {
 
   const [appsScript, production] = await Promise.all([
     getAppsScriptState(appsScriptUrl),
-    fetchJson(dashboardHealthUrl, 'production health'),
+    getProductionState(dashboardHealthUrl),
   ]);
 
   const decision = decideSync({
@@ -55,6 +57,10 @@ async function main() {
     return;
   }
 
+  if (decision.blocked && !options.forceSync) {
+    throw new Error(`Production cannot be self-healed safely: ${decision.reasons.join('; ')}`);
+  }
+
   if (options.checkOnly) {
     console.log('[production-sync-watchdog] check-only mode; sync required but not executed.');
     return;
@@ -63,7 +69,7 @@ async function main() {
   ensureSyncEnv();
   runSupabaseSync();
 
-  const afterProduction = await fetchJson(dashboardHealthUrl, 'production health after sync');
+  const afterProduction = await getProductionState(dashboardHealthUrl);
   const afterDecision = decideSync({
     appsScript,
     production: afterProduction,
@@ -106,6 +112,7 @@ async function getAppsScriptState(appsScriptUrl) {
 
 function decideSync({ appsScript, production, minPromotedHour, minRowDelta, forceSync }) {
   const reasons = [];
+  const blocked = Boolean(production?.unavailable);
   const prodRows = Number(production?.supabase?.tripsRows || 0);
   const rowsWritten = Number(production?.latestSyncRun?.rows_written || 0);
   const sourceRows = Number(appsScript?.tripsTotal || 0);
@@ -120,6 +127,21 @@ function decideSync({ appsScript, production, minPromotedHour, minRowDelta, forc
   );
 
   if (forceSync) reasons.push('force-sync requested');
+  if (production?.unavailable) {
+    reasons.push(`production health unavailable: ${production.error || 'unknown error'}`);
+    return {
+      shouldSync: true,
+      blocked,
+      reasons,
+      rowDelta,
+      promotedAt,
+      promotedBangkok,
+      nowBangkok,
+      sourceRows,
+      prodRows: null,
+      rowsWritten: null,
+    };
+  }
   if (!production?.ok) reasons.push('production health is not ok');
   if (production?.latestSyncRun?.status !== 'promoted') reasons.push(`latest sync status is ${production?.latestSyncRun?.status || 'missing'}`);
   if (prodRows <= 0) reasons.push('production active trips row count is zero');
@@ -135,6 +157,7 @@ function decideSync({ appsScript, production, minPromotedHour, minRowDelta, forc
 
   return {
     shouldSync: reasons.length > 0,
+    blocked,
     reasons,
     rowDelta,
     promotedAt,
@@ -157,6 +180,8 @@ function buildReport({ appsScript, production, decision }) {
     },
     production: {
       ok: production?.ok ?? null,
+      unavailable: production?.unavailable ?? false,
+      error: production?.error ?? null,
       tripsRows: production?.supabase?.tripsRows ?? null,
       syncStatus: production?.latestSyncRun?.status ?? null,
       rowsWritten: production?.latestSyncRun?.rows_written ?? null,
@@ -214,13 +239,32 @@ async function fetchAppsScriptAction(appsScriptUrl, action, params = {}) {
   return fetchJson(url, `Apps Script action=${action}`);
 }
 
+async function getProductionState(dashboardHealthUrl) {
+  try {
+    return await fetchJson(dashboardHealthUrl, 'production health');
+  } catch (error) {
+    return {
+      ok: false,
+      unavailable: true,
+      error: trim(error.message),
+      latestSyncRun: null,
+      supabase: { tripsRows: 0 },
+      sync: null,
+      dates: null,
+      checks: null,
+    };
+  }
+}
+
 async function fetchJson(urlLike, label) {
-  const response = await fetch(urlLike, {
+  const attempts = positiveInt(process.env.WATCHDOG_HEALTH_RETRY_ATTEMPTS, DEFAULT_HEALTH_RETRY_ATTEMPTS);
+  const retryDelayMs = positiveInt(process.env.WATCHDOG_HEALTH_RETRY_DELAY_MS, DEFAULT_HEALTH_RETRY_DELAY_MS);
+  const response = await fetchWithRetry(urlLike, {
     headers: {
       'Cache-Control': 'no-cache',
       Pragma: 'no-cache',
     },
-  });
+  }, { label, attempts, retryDelayMs });
   const text = await response.text();
   if (!response.ok) throw new Error(`${label} HTTP ${response.status}: ${trim(text)}`);
   try {
@@ -228,6 +272,25 @@ async function fetchJson(urlLike, label) {
   } catch (error) {
     throw new Error(`${label} returned invalid JSON: ${trim(text)}`);
   }
+}
+
+async function fetchWithRetry(urlLike, init, { label, attempts, retryDelayMs }) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(urlLike, init);
+      if (response.ok || response.status < 500 || attempt === attempts) return response;
+      const text = await response.text().catch(() => '');
+      lastError = new Error(`${label} HTTP ${response.status}: ${trim(text)}`);
+      console.warn(`[production-sync-watchdog] ${lastError.message}; retrying ${attempt}/${attempts}`);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts) throw error;
+      console.warn(`[production-sync-watchdog] ${label} fetch failed: ${error.message}; retrying ${attempt}/${attempts}`);
+    }
+    await sleep(retryDelayMs * attempt);
+  }
+  throw lastError || new Error(`${label} failed`);
 }
 
 function getBangkokParts(isoString) {
@@ -289,6 +352,10 @@ function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function printHelp() {
   console.log(`
 Usage:
@@ -310,5 +377,7 @@ Environment:
   WATCHDOG_SYNC_TIMEOUT_MS=1800000
   WATCHDOG_SYNC_ATTEMPTS=3
   WATCHDOG_SYNC_RETRY_DELAY_MS=30000
+  WATCHDOG_HEALTH_RETRY_ATTEMPTS=5
+  WATCHDOG_HEALTH_RETRY_DELAY_MS=5000
 `.trim());
 }

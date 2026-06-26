@@ -1,4 +1,9 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 const DEFAULT_EXPECTED_SPREADSHEET_ID = '1gjrRvgNrU6_hB4XaeHC1Z6MoLK0X11ci3LzYQDRa8Pw';
+
+loadDotEnvFile();
 
 const appsScriptUrl = process.env.APPS_SCRIPT_API_URL || process.argv[2] || '';
 const expectedSpreadsheetId = process.env.EXPECTED_DASHBOARD_SPREADSHEET_ID || DEFAULT_EXPECTED_SPREADSHEET_ID;
@@ -64,4 +69,22 @@ async function fetchAction(action, params = {}) {
 function trim(value) {
   const text = String(value || '');
   return text.length > 500 ? `${text.slice(0, 500)}...` : text;
+}
+
+function loadDotEnvFile(filePath = '.env') {
+  const resolved = resolve(process.cwd(), filePath);
+  if (!existsSync(resolved)) return;
+  const text = readFileSync(resolved, 'utf8');
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (!process.env[key]) process.env[key] = value;
+  }
 }

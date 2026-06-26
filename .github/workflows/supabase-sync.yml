@@ -35,3 +35,5 @@ jobs:
         env:
           DASHBOARD_HEALTH_URL: https://2klogistics-dashboard.netlify.app/.netlify/functions/supabase-api?action=health
           MAX_SYNC_AGE_HOURS: "36"
+          HEALTH_CHECK_ATTEMPTS: "5"
+          HEALTH_CHECK_RETRY_DELAY_MS: "5000"

@@ -13,6 +13,7 @@ Netlify publish directory: dashboard
 Apps Script source directory: dashboard/API
 Apps Script project: DASHBOARD-DAILY-QA
 Google Sheet: Database Daily EXPRESS
+Active Supabase read model: cghcyuuyzahpzzbyxrgo (compact backend)
 ```
 
 The local folder name is only a Windows workspace label. Netlify does not deploy
@@ -66,6 +67,11 @@ apiMode: 'apps-script' | 'supabase-with-fallback' | 'supabase'
 ```
 
 The default is `supabase-with-fallback`: the browser calls `/.netlify/functions/supabase-api` first and falls back to the existing Apps Script URL if Supabase is unavailable.
+
+Production currently uses the compact Supabase backend `cghcyuuyzahpzzbyxrgo`.
+The previous project `juzkxljnyonckjkmttzq` is not used for production reads
+because its 2 GB database disk filled during the first full-snapshot migration
+design. Do not point Netlify or GitHub Actions back to that project.
 
 `eagerTripsOnStartup: false` keeps the first dashboard screen fast by rendering from `summary_snapshots` first. Full trip rows are loaded lazily when the compare/export workflows need them.
 

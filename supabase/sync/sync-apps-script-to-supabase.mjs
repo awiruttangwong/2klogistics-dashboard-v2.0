@@ -115,6 +115,7 @@ async function main() {
   let rowsWritten = 0;
 
   try {
+    await resetSyncStaging(config);
     await upsertSummarySnapshot(config, syncRun.id, summaryHash, summaryPayload);
     await upsertOilPrices(config, oilPayload);
     const stagingRows = prepared.rows.map(row => ({ ...row, sync_run_id: syncRun.id }));
@@ -491,6 +492,23 @@ async function pruneInactiveSyncRuns(config, phase) {
       prefer: 'return=minimal',
     });
     console.log(`[supabase-sync] pruned inactive sync_run_id: ${run.id} (${run.status}, rows_written=${run.rows_written || 0})`);
+  }
+}
+
+async function resetSyncStaging(config) {
+  try {
+    await rpc(config, 'reset_sync_staging', {});
+    console.log('[supabase-sync] reset compact staging table');
+  } catch (error) {
+    console.warn(`[supabase-sync] reset_sync_staging RPC unavailable; falling back to DELETE (${error.message})`);
+    await supabaseRest(config, '/rest/v1/trips_staging', {
+      method: 'DELETE',
+      query: {
+        id: 'not.is.null',
+      },
+      prefer: 'return=minimal',
+    });
+    console.log('[supabase-sync] reset staging table via DELETE fallback');
   }
 }
 

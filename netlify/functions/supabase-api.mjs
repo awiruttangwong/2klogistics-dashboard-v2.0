@@ -27,7 +27,6 @@ const TRIP_COLUMNS = [
   'pct',
   'reason',
   'anomalies',
-  'raw_payload',
 ];
 
 const FIELD_MAP = {
@@ -408,7 +407,6 @@ function mapTripRow(row) {
     pct: row.pct == null ? null : Number(row.pct),
     reason: row.reason,
     anomalies: Array.isArray(row.anomalies) ? row.anomalies : [],
-    rawPayload: row.raw_payload,
   };
 }
 

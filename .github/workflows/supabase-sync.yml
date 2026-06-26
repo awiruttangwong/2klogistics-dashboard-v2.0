@@ -29,7 +29,8 @@ jobs:
           SYNC_REQUEST_TIMEOUT_MS: "60000"
           SYNC_FETCH_RETRY_ATTEMPTS: "8"
           SYNC_FETCH_RETRY_DELAY_MS: "2000"
-          SYNC_RETENTION_RUNS: "2"
+          SYNC_RETENTION_RUNS: "0"
+          SYNC_KEEP_PROMOTED_STAGING: "false"
       - name: Verify production Supabase API health
         run: npm run production:health
         env:

@@ -7,7 +7,8 @@ const DEFAULT_PAGE_LIMIT = 5000;
 const DEFAULT_TIMEOUT_MS = 60000;
 const DEFAULT_FETCH_RETRY_ATTEMPTS = 8;
 const DEFAULT_FETCH_RETRY_DELAY_MS = 2000;
-const DEFAULT_RETENTION_RUNS = 2;
+const DEFAULT_RETENTION_RUNS = 0;
+const DEFAULT_KEEP_PROMOTED_STAGING = false;
 const CENT_TOLERANCE = 0.01;
 
 const REQUIRED_ENV = [
@@ -49,12 +50,14 @@ async function main() {
     timeoutMs: positiveInt(process.env.SYNC_REQUEST_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
     fetchRetryAttempts: positiveInt(process.env.SYNC_FETCH_RETRY_ATTEMPTS, DEFAULT_FETCH_RETRY_ATTEMPTS),
     fetchRetryDelayMs: positiveInt(process.env.SYNC_FETCH_RETRY_DELAY_MS, DEFAULT_FETCH_RETRY_DELAY_MS),
-    retentionRuns: positiveInt(process.env.SYNC_RETENTION_RUNS, DEFAULT_RETENTION_RUNS),
+    retentionRuns: nonNegativeInt(process.env.SYNC_RETENTION_RUNS, DEFAULT_RETENTION_RUNS),
+    keepPromotedStaging: booleanEnv(process.env.SYNC_KEEP_PROMOTED_STAGING, DEFAULT_KEEP_PROMOTED_STAGING),
   };
 
   console.log('[supabase-sync] mode:', options.dryRun ? 'dry-run' : 'write-staging');
   console.log('[supabase-sync] promote:', options.promote ? 'yes' : 'no');
   console.log('[supabase-sync] inactive sync retention:', config.retentionRuns);
+  console.log('[supabase-sync] keep promoted staging:', config.keepPromotedStaging ? 'yes' : 'no');
 
   if (!options.dryRun) {
     await pruneInactiveSyncRuns(config, 'before-sync').catch(error => {
@@ -139,6 +142,11 @@ async function main() {
       }
       await rpc(config, 'promote_sync_run', { p_sync_run_id: syncRun.id });
       console.log(`[supabase-sync] promoted sync_run_id: ${syncRun.id}`);
+      if (!config.keepPromotedStaging) {
+        await prunePromotedStaging(config, syncRun.id).catch(error => {
+          console.warn(`[supabase-sync] promoted staging cleanup skipped: ${error.message}`);
+        });
+      }
       await pruneInactiveSyncRuns(config, 'after-promote').catch(error => {
         console.warn(`[supabase-sync] post-promote retention cleanup skipped: ${error.message}`);
       });
@@ -187,7 +195,8 @@ Environment:
   SYNC_REQUEST_TIMEOUT_MS=60000
   SYNC_FETCH_RETRY_ATTEMPTS=8
   SYNC_FETCH_RETRY_DELAY_MS=2000
-  SYNC_RETENTION_RUNS=2
+  SYNC_RETENTION_RUNS=0
+  SYNC_KEEP_PROMOTED_STAGING=false
 
 Notes:
   - Default mode writes only trips_staging, summary_snapshots, oil_prices, sync_runs, and parity_reports.
@@ -338,7 +347,6 @@ function prepareTrips(trips) {
         pct: nullableNumber(trip.pct),
         reason: textOrNull(trip.reason),
         anomalies: Array.isArray(trip.anomalies) ? trip.anomalies : [],
-        raw_payload: trip && typeof trip === 'object' ? trip : {},
       });
     } catch (error) {
       contractErrors.push({
@@ -484,6 +492,17 @@ async function pruneInactiveSyncRuns(config, phase) {
     });
     console.log(`[supabase-sync] pruned inactive sync_run_id: ${run.id} (${run.status}, rows_written=${run.rows_written || 0})`);
   }
+}
+
+async function prunePromotedStaging(config, syncRunId) {
+  await supabaseRest(config, '/rest/v1/trips_staging', {
+    method: 'DELETE',
+    query: {
+      sync_run_id: `eq.${syncRunId}`,
+    },
+    prefer: 'return=minimal',
+  });
+  console.log(`[supabase-sync] pruned promoted staging rows for sync_run_id: ${syncRunId}`);
 }
 
 async function rpc(config, name, payload) {
@@ -832,6 +851,16 @@ function textOrNull(value) {
 function positiveInt(value, fallback) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function nonNegativeInt(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function booleanEnv(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
 }
 
 function pad2(value) {

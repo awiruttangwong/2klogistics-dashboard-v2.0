@@ -69,9 +69,11 @@ Schedule:
 
 ```yaml
 cron: "30 1 * * *"
+cron: "45 1 * * *"
+cron: "0 2 * * *"
 ```
 
-เวลานี้เท่ากับ `08:30 Asia/Bangkok` เพื่อให้ Apps Script ที่รัน `08:00` มีเวลาสร้าง cache ก่อน Supabase sync เริ่มทำงาน
+เวลานี้เท่ากับ `08:30`, `08:45` และ `09:00 Asia/Bangkok` เพื่อให้ Apps Script ที่รัน `08:00` มีเวลาสร้าง cache ก่อน Supabase sync เริ่มทำงาน และมี backup window หาก GitHub scheduled workflow delay หรือไม่ถูก queue ในรอบแรก
 
 Sync flow:
 
@@ -98,7 +100,7 @@ Sync flow:
 | Workflow | Run | Commit | สถานะ |
 | --- | --- | --- | --- |
 | Netlify Production Deploy | `28152788708` | `200dccc` | success |
-| Supabase Shadow Sync | `28150710857` | `fc42b60` | success |
+| Supabase Shadow Sync | `28211636273` | `67e0ec1` | success |
 
 Secrets ที่ repo มีครบตามชื่อ:
 
@@ -246,7 +248,7 @@ Netlify metadata ล่าสุด:
 | Git tracked source | มี `dashboard/API/Code.gs`, `dashboard/API/config.gs`, `dashboard/API/appsscript.json` |
 | Netlify publish path | `netlify.toml` กำหนด `publish = "dashboard"` |
 | Netlify deploy workflow | ใช้ `--dir dashboard` และ `--functions netlify/functions` |
-| Supabase sync workflow | ตั้ง schedule `08:30 Asia/Bangkok` |
+| Supabase sync workflow | ตั้ง schedule `08:30`, `08:45`, `09:00 Asia/Bangkok` |
 | Frontend config | `supabase-with-fallback`, lazy trips enabled |
 | JavaScript syntax | `dashboard/scripts/app.js` ผ่าน `node --check` |
 | Netlify Function syntax | `netlify/functions/supabase-api.mjs` ผ่าน `node --check` |

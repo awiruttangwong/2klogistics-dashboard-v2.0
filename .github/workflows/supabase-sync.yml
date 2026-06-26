@@ -3,9 +3,13 @@ name: Supabase Shadow Sync
 on:
   workflow_dispatch:
   schedule:
-    # 08:30 Asia/Bangkok (UTC+7) = 01:30 UTC.
-    # Code.gs dailyBatchJob refreshes Google Sheet caches at 08:00 first.
+    # Code.gs dailyBatchJob refreshes Google Sheet caches at 08:00 Asia/Bangkok first.
+    # GitHub scheduled workflows can be delayed or occasionally dropped, so keep
+    # two backup windows after the primary 08:30 sync.
+    # 08:30, 08:45, 09:00 Asia/Bangkok (UTC+7).
     - cron: "30 1 * * *"
+    - cron: "45 1 * * *"
+    - cron: "0 2 * * *"
   push:
     branches:
       - main
@@ -15,6 +19,10 @@ on:
       - "scripts/check-production-health.mjs"
       - "package.json"
       - "package-lock.json"
+
+concurrency:
+  group: supabase-shadow-sync-main
+  cancel-in-progress: false
 
 jobs:
   sync:

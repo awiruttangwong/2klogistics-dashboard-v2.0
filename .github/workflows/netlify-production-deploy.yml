@@ -9,10 +9,13 @@ on:
       - "dashboard/**"
       - "netlify/**"
       - "netlify.toml"
+      - "supabase/sync/**"
       - "package.json"
       - "package-lock.json"
       - "scripts/check-production-health.mjs"
       - "scripts/netlify-release.mjs"
+      - "scripts/test-daily-sync-readiness.mjs"
+      - "scripts/test-pre-nine-recovery.mjs"
       - ".github/workflows/netlify-production-deploy.yml"
 
 jobs:
@@ -26,6 +29,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Verify deadline recovery contracts
+        run: |
+          npm run test:daily-sync-readiness
+          npm run test:pre-nine-recovery
+          npm run test:supabase-cli-guard
       - name: Create draft deploy
         id: draft
         shell: bash

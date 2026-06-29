@@ -41,6 +41,13 @@ const DATA_SOURCE_STATE = {
   oil: 'pending',
   notes: []
 };
+const API_FRESHNESS_STATE = {
+  checked: false,
+  preferAppsScript: false,
+  sourceReady: false,
+  productionCurrent: false,
+  checkedAt: null,
+};
 if (typeof window !== 'undefined') {
   window.DATA_SOURCE_STATE = DATA_SOURCE_STATE;
 }
@@ -63,12 +70,40 @@ function getApiSourceConfigs() {
     return SUPABASE_API_URL ? [{ name: 'supabase', url: SUPABASE_API_URL }] : [];
   }
   if (API_MODE === 'supabase-with-fallback') {
-    return [
-      SUPABASE_API_URL ? { name: 'supabase', url: SUPABASE_API_URL } : null,
-      API_BASE_URL ? { name: 'apps-script', url: API_BASE_URL } : null,
-    ].filter(Boolean);
+    const supabase = SUPABASE_API_URL ? { name: 'supabase', url: SUPABASE_API_URL } : null;
+    const appsScript = API_BASE_URL ? { name: 'apps-script', url: API_BASE_URL } : null;
+    return (API_FRESHNESS_STATE.preferAppsScript
+      ? [appsScript, supabase]
+      : [supabase, appsScript]
+    ).filter(Boolean);
   }
   return API_BASE_URL ? [{ name: 'apps-script', url: API_BASE_URL }] : [];
+}
+
+function shouldUseSupabaseForTrips() {
+  return isSupabaseApiEnabled() && !API_FRESHNESS_STATE.preferAppsScript;
+}
+
+async function initializeApiFreshnessRouting() {
+  API_FRESHNESS_STATE.checked = false;
+  API_FRESHNESS_STATE.preferAppsScript = false;
+  if (API_MODE !== 'supabase-with-fallback' || !SUPABASE_API_URL || !API_BASE_URL) return;
+
+  const url = new URL(SUPABASE_API_URL, window.location.href);
+  url.searchParams.set('action', 'freshness');
+  try {
+    const payload = await fetchJsonWithTimeout(url.toString(), Math.min(API_TIMEOUT_MS, 15_000));
+    API_FRESHNESS_STATE.checked = true;
+    API_FRESHNESS_STATE.preferAppsScript = payload?.preferAppsScript === true;
+    API_FRESHNESS_STATE.sourceReady = payload?.sourceReady === true;
+    API_FRESHNESS_STATE.productionCurrent = payload?.productionCurrent === true;
+    API_FRESHNESS_STATE.checkedAt = payload?.checkedAt || new Date().toISOString();
+    if (API_FRESHNESS_STATE.preferAppsScript) {
+      noteDataSource(null, null, 'Supabase ยังไม่ใช่ข้อมูลรอบล่าสุด ระบบกำลังใช้ Apps Script สำรอง');
+    }
+  } catch (err) {
+    console.warn('Freshness check unavailable; retaining normal API fallback order:', err.message);
+  }
 }
 
 function readPositiveNumber(value, fallback) {
@@ -10306,7 +10341,7 @@ async function ensureTripsReady() {
 }
 
 async function loadDatesSource() {
-  if (isSupabaseApiEnabled()) {
+  if (shouldUseSupabaseForTrips()) {
     try {
       const payload = await apiGetSupabaseWithRetry('dates', {}, API_TIMEOUT_MS, 2);
       if (payload?.excludedDatesCount) {
@@ -10367,7 +10402,7 @@ async function loadTripsRange(start, end) {
   if (isTripRangeLoaded(start, end)) {
     return (window.FRAUD_DATA || []).filter(row => row.date >= start && row.date <= end);
   }
-  if (!isSupabaseApiEnabled()) {
+  if (!shouldUseSupabaseForTrips()) {
     const rows = await loadTripsSource();
     rememberTripRows(rows);
     TRIP_CACHE_LOADED_RANGES.push({ start: '0000-01-01', end: '9999-12-31' });
@@ -10539,6 +10574,8 @@ async function init() {
   setShellLoadingState(true);
   renderLoadingScreen('เริ่มต้น...');
   await sleep(80);
+
+  await initializeApiFreshnessRouting();
 
   setLoadingStatus('โหลดข้อมูลสรุป...');
   await sleep(80);

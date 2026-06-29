@@ -24,6 +24,7 @@ var SHEET_SOURCES = {
   'DATA(M12)': ''
 };
 
+
 // ชื่อชีทต้นทางในแต่ละไฟล์
 var SOURCE_SHEET_NAMES = {
   'DATA(M1)': 'SUM',
@@ -144,6 +145,11 @@ var APPS_SCRIPT_PROJECT_ID = '1FGsRlFbWgI_rzRRVoXXF-TpGUKlhvl6kXlcH8lUit2PfEsb9b
 var DAILY_BATCH_TRIGGER_TIMEZONE = 'Asia/Bangkok';
 var DAILY_BATCH_TRIGGER_HOUR = 8;
 var DAILY_BATCH_TRIGGER_NEAR_MINUTE = 0;
+
+// Event-driven Supabase sync. The secret value belongs in Script Properties
+// under SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY and must never be committed.
+var SUPABASE_SYNC_WEBHOOK_URL = 'https://2klogistics-dashboard.netlify.app/.netlify/functions/supabase-sync-background';
+var SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY = 'NETLIFY_SYNC_TRIGGER_SECRET';
 
 // -------------------------------------------------------------------------
 // API Response Helper

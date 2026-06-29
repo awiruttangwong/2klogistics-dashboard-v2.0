@@ -1,3 +1,8 @@
+import {
+  productionContainsBatch,
+  sourceBatchReadyToday,
+} from '../../supabase/sync/daily-sync-readiness.mjs';
+
 const DEFAULT_LIMIT = 1000;
 const MAX_LIMIT = 5000;
 const REST_PAGE_SIZE = 1000;
@@ -64,6 +69,7 @@ export async function handler(event) {
 
     if (action === 'meta') return response(200, await getMeta(), { cache: 'no-store' });
     if (action === 'health') return response(200, await getHealth(), { cache: 'no-store' });
+    if (action === 'freshness') return response(200, await getFreshness(), { cache: 'no-store' });
     if (action === 'summary') return response(200, await getSummary());
     if (action === 'trips') return response(200, await getTrips(params));
     if (action === 'oil') return response(200, await getOil());
@@ -76,6 +82,57 @@ export async function handler(event) {
   } catch (error) {
     console.error('[supabase-api]', error);
     return response(error.status || 500, { error: error.message || 'Supabase API failed' });
+  }
+}
+
+async function getFreshness() {
+  const appsScriptUrl = requireEnv('APPS_SCRIPT_API_URL');
+  const [sourceHealth, sourceTrips, production] = await Promise.all([
+    fetchAppsScriptJson(appsScriptUrl, 'health'),
+    fetchAppsScriptJson(appsScriptUrl, 'trips', { page: '0', limit: '1', fields: 'date' }),
+    getHealth(),
+  ]);
+  const source = {
+    lastDailyBatchJob: sourceHealth?.lastDailyBatchJob || null,
+    tripsTotal: Number(sourceTrips?.total || 0),
+  };
+  const sourceReady = sourceBatchReadyToday(source);
+  const productionCurrent = sourceReady && productionContainsBatch(source, production);
+
+  return {
+    ok: true,
+    checkedAt: new Date().toISOString(),
+    sourceReady,
+    productionCurrent,
+    preferAppsScript: sourceReady && !productionCurrent,
+    source: {
+      tripsRows: source.tripsTotal,
+      batchFinishedAt: source.lastDailyBatchJob?.finishedAt || null,
+    },
+    production: {
+      tripsRows: Number(production?.supabase?.tripsRows || 0),
+      promotedAt: production?.latestSyncRun?.promoted_at || null,
+      status: production?.latestSyncRun?.status || null,
+    },
+  };
+}
+
+async function fetchAppsScriptJson(baseUrl, action, params = {}) {
+  const url = new URL(baseUrl);
+  url.searchParams.set('action', action);
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+    });
+    const text = await res.text();
+    if (!res.ok) throw statusError(res.status, `Apps Script ${action} HTTP ${res.status}: ${trimMessage(text)}`);
+    return text ? JSON.parse(text) : null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

@@ -5,7 +5,7 @@ const API_ATTEMPTS = 3;
 const API_TIMEOUT_MS = 20_000;
 const EXPECTED_SCHEDULE = Object.freeze({
   name: 'schedule-supabase-sync',
-  cron: '30 1 * * *',
+  cron: '20,30,40,50 1 * * *',
 });
 
 const [command, deployId] = process.argv.slice(2);

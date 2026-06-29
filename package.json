@@ -10,7 +10,9 @@
     "production:watchdog": "node scripts/watchdog-production-sync.mjs",
     "apps-script:health": "node scripts/check-apps-script-health.mjs",
     "production:health": "node scripts/check-production-health.mjs",
-    "test:daily-sync-readiness": "node scripts/test-daily-sync-readiness.mjs"
+    "test:daily-sync-readiness": "node scripts/test-daily-sync-readiness.mjs",
+    "test:pre-nine-recovery": "node scripts/test-pre-nine-recovery.mjs",
+    "test:supabase-cli-guard": "node scripts/test-supabase-cli-guard.mjs"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

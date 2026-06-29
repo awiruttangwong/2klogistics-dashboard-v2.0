@@ -30,7 +30,11 @@ export default async function handler(request) {
     productionPromotedAt: before?.latestSyncRun?.promoted_at ?? null,
   }));
 
-  await runSupabaseSync({ dryRun: false, promote: true, verbose: false });
+  const syncResult = await runSupabaseSync({ dryRun: false, promote: true, verbose: false });
+  if (syncResult?.status === 'skipped-locked') {
+    console.log('[netlify-background-sync] another recovery worker is already syncing this batch');
+    return;
+  }
 
   const after = await fetchProductionHealth();
   if (!productionContainsBatch(source, after)) {

@@ -72,10 +72,21 @@ function assertRequiredEnv(commandName, prepared) {
     console.error('[supabase-cli] Copy .env.example to .env and fill local server-side values.');
     process.exit(1);
   }
+
+  const explicitRef = String(process.env.SUPABASE_PROJECT_REF || '').trim();
+  const urlRef = getUrlProjectRef();
+  if (explicitRef && urlRef && explicitRef !== urlRef) {
+    console.error('[supabase-cli] SUPABASE_PROJECT_REF does not match SUPABASE_URL. Refusing remote command.');
+    process.exit(1);
+  }
 }
 
 function getProjectRef() {
   if (!isBlankOrPlaceholder(process.env.SUPABASE_PROJECT_REF)) return process.env.SUPABASE_PROJECT_REF.trim();
+  return getUrlProjectRef();
+}
+
+function getUrlProjectRef() {
   const url = process.env.SUPABASE_URL || '';
   const match = url.match(/^https:\/\/([a-z0-9-]+)\.supabase\.co\/?$/i);
   return match ? match[1] : '';
@@ -91,6 +102,9 @@ function loadDotEnvFile(filePath = '.env') {
   if (!existsSync(resolved)) return;
 
   const text = readFileSync(resolved, 'utf8');
+  const entries = [];
+  const seen = new Set();
+  const duplicates = new Set();
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#')) continue;
@@ -98,6 +112,8 @@ function loadDotEnvFile(filePath = '.env') {
     if (eq <= 0) continue;
 
     const key = line.slice(0, eq).trim();
+    if (seen.has(key)) duplicates.add(key);
+    seen.add(key);
     let value = line.slice(eq + 1).trim();
     const commentAt = value.indexOf(' #');
     if (commentAt >= 0) value = value.slice(0, commentAt).trim();
@@ -105,6 +121,14 @@ function loadDotEnvFile(filePath = '.env') {
       value = value.slice(1, -1);
     }
 
+    entries.push([key, value]);
+  }
+
+  if (duplicates.size > 0) {
+    throw new Error(`[supabase-cli] duplicate .env keys are not allowed: ${[...duplicates].join(', ')}`);
+  }
+
+  for (const [key, value] of entries) {
     if (!process.env[key]) process.env[key] = value;
   }
 }

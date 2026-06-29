@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +10,8 @@ const DEFAULT_FETCH_RETRY_ATTEMPTS = 8;
 const DEFAULT_FETCH_RETRY_DELAY_MS = 2000;
 const DEFAULT_RETENTION_RUNS = 0;
 const DEFAULT_KEEP_PROMOTED_STAGING = false;
+const DEFAULT_SYNC_LEASE_NAME = 'daily-sync';
+const DEFAULT_SYNC_LEASE_TTL_SECONDS = 2400;
 const CENT_TOLERANCE = 0.01;
 
 const REQUIRED_ENV = [
@@ -66,18 +68,14 @@ async function main(options) {
     fetchRetryDelayMs: positiveInt(process.env.SYNC_FETCH_RETRY_DELAY_MS, DEFAULT_FETCH_RETRY_DELAY_MS),
     retentionRuns: nonNegativeInt(process.env.SYNC_RETENTION_RUNS, DEFAULT_RETENTION_RUNS),
     keepPromotedStaging: booleanEnv(process.env.SYNC_KEEP_PROMOTED_STAGING, DEFAULT_KEEP_PROMOTED_STAGING),
+    syncLeaseName: String(process.env.SYNC_LEASE_NAME || DEFAULT_SYNC_LEASE_NAME).trim(),
+    syncLeaseTtlSeconds: positiveInt(process.env.SYNC_LEASE_TTL_SECONDS, DEFAULT_SYNC_LEASE_TTL_SECONDS),
   };
 
   console.log('[supabase-sync] mode:', options.dryRun ? 'dry-run' : 'write-staging');
   console.log('[supabase-sync] promote:', options.promote ? 'yes' : 'no');
   console.log('[supabase-sync] inactive sync retention:', config.retentionRuns);
   console.log('[supabase-sync] keep promoted staging:', config.keepPromotedStaging ? 'yes' : 'no');
-
-  if (!options.dryRun) {
-    await pruneInactiveSyncRuns(config, 'before-sync').catch(error => {
-      console.warn(`[supabase-sync] pre-sync retention cleanup skipped: ${error.message}`);
-    });
-  }
 
   const startedAt = new Date().toISOString();
   const [summaryPayload, oilPayload, trips] = await Promise.all([
@@ -112,23 +110,35 @@ async function main(options) {
       contractErrors: contractErrors.slice(0, 20),
       ...(options.verbose ? { localParity } : {}),
     }, null, 2));
-    return;
+    return { status: 'dry-run', rowsRead: trips.length, rowsPrepared: prepared.rows.length };
   }
 
-  const syncRun = await createSyncRun(config, {
-    started_at: startedAt,
-    status: 'running',
-    source_months: sourceMonths,
-    rows_read: trips.length,
-    rows_written: 0,
-    rows_failed: tripContractErrors.length,
-    app_version: 'v3-shadow-sync',
-  });
-
-  let finalStatus = 'failed';
-  let rowsWritten = 0;
+  const leaseOwnerId = randomUUID();
+  const leaseAcquired = await acquireSyncLease(config, leaseOwnerId);
+  if (!leaseAcquired) {
+    console.log(`[supabase-sync] another worker owns lease ${config.syncLeaseName}; skipping this recovery attempt`);
+    return { status: 'skipped-locked', rowsRead: trips.length, rowsPrepared: prepared.rows.length };
+  }
 
   try {
+    await pruneInactiveSyncRuns(config, 'before-sync').catch(error => {
+      console.warn(`[supabase-sync] pre-sync retention cleanup skipped: ${error.message}`);
+    });
+
+    const syncRun = await createSyncRun(config, {
+      started_at: startedAt,
+      status: 'running',
+      source_months: sourceMonths,
+      rows_read: trips.length,
+      rows_written: 0,
+      rows_failed: tripContractErrors.length,
+      app_version: 'v3-deadline-sync',
+    });
+
+    let finalStatus = 'failed';
+    let rowsWritten = 0;
+
+    try {
     await resetSyncStaging(config);
     await upsertSummarySnapshot(config, syncRun.id, summaryHash, summaryPayload);
     await upsertOilPrices(config, oilPayload);
@@ -168,17 +178,28 @@ async function main(options) {
     } else {
       console.log('[supabase-sync] staging only. Re-run with --promote after reviewing parity if you want to activate this run.');
     }
-  } catch (error) {
-    await updateSyncRun(config, syncRun.id, {
-      status: finalStatus === 'parity_failed' ? 'parity_failed' : 'failed',
-      finished_at: new Date().toISOString(),
-      rows_written: rowsWritten,
-      rows_failed: Math.max(tripContractErrors.length, trips.length - rowsWritten),
-      error_message: trimMessage(error.message),
-    }).catch(updateError => {
-      console.error(`[supabase-sync] failed to update sync_runs after error: ${updateError.message}`);
+      return {
+        status: options.promote ? 'promoted' : finalStatus,
+        syncRunId: syncRun.id,
+        rowsRead: trips.length,
+        rowsWritten,
+      };
+    } catch (error) {
+      await updateSyncRun(config, syncRun.id, {
+        status: finalStatus === 'parity_failed' ? 'parity_failed' : 'failed',
+        finished_at: new Date().toISOString(),
+        rows_written: rowsWritten,
+        rows_failed: Math.max(tripContractErrors.length, trips.length - rowsWritten),
+        error_message: trimMessage(error.message),
+      }).catch(updateError => {
+        console.error(`[supabase-sync] failed to update sync_runs after error: ${updateError.message}`);
+      });
+      throw error;
+    }
+  } finally {
+    await releaseSyncLease(config, leaseOwnerId).catch(error => {
+      console.error(`[supabase-sync] failed to release lease ${config.syncLeaseName}: ${error.message}`);
     });
-    throw error;
   }
 }
 
@@ -212,6 +233,8 @@ Environment:
   SYNC_FETCH_RETRY_DELAY_MS=2000
   SYNC_RETENTION_RUNS=0
   SYNC_KEEP_PROMOTED_STAGING=false
+  SYNC_LEASE_NAME=daily-sync
+  SYNC_LEASE_TTL_SECONDS=2400
 
 Notes:
   - Default mode writes only trips_staging, summary_snapshots, oil_prices, sync_runs, and parity_reports.
@@ -542,6 +565,26 @@ async function rpc(config, name, payload) {
     method: 'POST',
     body: payload,
   });
+}
+
+async function acquireSyncLease(config, ownerId) {
+  const acquired = await rpc(config, 'acquire_sync_lease', {
+    p_name: config.syncLeaseName,
+    p_owner_id: ownerId,
+    p_ttl_seconds: config.syncLeaseTtlSeconds,
+  });
+  return acquired === true;
+}
+
+async function releaseSyncLease(config, ownerId) {
+  const released = await rpc(config, 'release_sync_lease', {
+    p_name: config.syncLeaseName,
+    p_owner_id: ownerId,
+  });
+  if (released !== true) {
+    console.warn(`[supabase-sync] lease ${config.syncLeaseName} was no longer owned by this worker`);
+  }
+  return released;
 }
 
 async function supabaseRest(config, path, { method, query = {}, body, prefer }) {

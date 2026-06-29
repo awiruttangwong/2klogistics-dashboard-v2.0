@@ -25,24 +25,31 @@ duplicated database storage, indexes, WAL, and bloat.
 ## Production Flow
 
 1. Apps Script refreshes Google Sheet cache at 08:00 Asia/Bangkok.
-2. Netlify Scheduled Function runs at 08:30 Asia/Bangkok.
-3. A protected Netlify Background Function waits until today's Apps Script
+2. When `dailyBatchJob` finishes successfully, Apps Script can call the
+   protected Netlify Background Function immediately.
+3. Netlify Scheduled Function also runs at 08:20, 08:30, 08:40, and 08:50
+   Asia/Bangkok as pre-deadline recovery.
+4. A protected Netlify Background Function waits until today's Apps Script
    `dailyBatchJob` reports success, then checks whether production already
    contains that exact completed batch.
-4. Sync service reads `summary`, `oil`, and paginated `trips` from Apps Script.
-5. `reset_sync_staging()` truncates `trips_staging`.
-6. Sync writes one normalized candidate snapshot into `trips_staging`.
-7. Parity is checked against local totals from the same Apps Script payload.
-8. `promote_sync_run()` truncates and replaces `trips_active`.
-9. `promote_sync_run()` truncates `trips_staging` immediately after promotion.
-10. The background function verifies row parity and a promotion timestamp after
+5. Each sync worker must acquire `public.sync_leases` before mutating staging,
+   so repeated recovery attempts do not write duplicate snapshots.
+6. Sync service reads `summary`, `oil`, and paginated `trips` from Apps Script.
+7. `reset_sync_staging()` truncates `trips_staging`.
+8. Sync writes one normalized candidate snapshot into `trips_staging`.
+9. Parity is checked against local totals from the same Apps Script payload.
+10. `promote_sync_run()` truncates and replaces `trips_active`.
+11. `promote_sync_run()` truncates `trips_staging` immediately after promotion.
+12. The background function verifies row parity and a promotion timestamp after
     the Apps Script batch completion time.
-11. Frontend reads only active read-model tables through Netlify functions.
+13. Frontend reads active read-model tables through Netlify functions. If the
+    source batch is ready but Supabase is still behind, the frontend temporarily
+    prefers Apps Script until Supabase catches up.
 
-GitHub Actions runs one backup watchdog at 10:17 Asia/Bangkok and remains
-available for manual recovery. It is not the primary timing mechanism because
-GitHub scheduled events can be delayed. Both paths refuse to sync until today's
-Apps Script batch reports successful completion.
+GitHub Actions runs a backup watchdog at 08:47 Asia/Bangkok and a late recovery
+at 10:17 Asia/Bangkok. It is not the primary timing mechanism because GitHub
+scheduled events can be delayed. All paths refuse to sync until today's Apps
+Script batch reports successful completion.
 
 ## Storage Rules
 
@@ -60,9 +67,26 @@ cmd /c node --check netlify\functions\supabase-api.mjs
 cmd /c node --check netlify\functions\supabase-sync-background.mjs
 cmd /c node --check netlify\functions\schedule-supabase-sync.mjs
 cmd /c npm run test:daily-sync-readiness
+cmd /c npm run test:pre-nine-recovery
+cmd /c npm run test:supabase-cli-guard
 cmd /c npm run supabase:sync -- --dry-run
 cmd /c npm run apps-script:health
 ```
+
+## Deadline Controls
+
+The operating target is that production has the completed daily batch before
+09:00 Asia/Bangkok when the upstream Apps Script batch finishes normally.
+
+- Apps Script trigger: 08:00 Asia/Bangkok.
+- Event-driven sync: immediately after a successful `dailyBatchJob`, once the
+  Apps Script project has `NETLIFY_SYNC_TRIGGER_SECRET` configured.
+- Netlify pre-deadline recovery: 08:20, 08:30, 08:40, and 08:50 Asia/Bangkok.
+- GitHub pre-deadline watchdog: 08:47 Asia/Bangkok.
+- GitHub late recovery: 10:17 Asia/Bangkok.
+- Supabase lease TTL: 2,400 seconds, shared by all write paths.
+- Browser freshness fallback: use Apps Script for trip/date data if today's
+  source batch is ready but Supabase production is still on an older promotion.
 
 ## Current Recovery Note
 

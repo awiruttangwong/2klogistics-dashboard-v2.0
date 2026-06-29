@@ -1165,6 +1165,10 @@ function systemStatusReport() {
       appsScriptProjectId: typeof APPS_SCRIPT_PROJECT_ID !== 'undefined' ? APPS_SCRIPT_PROJECT_ID : null
     },
     lastDailyBatchJob: getLastDailyBatchStatus_(),
+    supabaseSyncWebhook: {
+      configured: isSupabaseSyncWebhookConfigured_(),
+      url: typeof SUPABASE_SYNC_WEBHOOK_URL !== 'undefined' ? SUPABASE_SYNC_WEBHOOK_URL : null
+    },
     sheets: {
       masterRows: sheetRowCount(SHEET_MASTER),
       summaryCacheRows: sheetRowCount(SHEET_SUMMARY_CACHE),
@@ -1344,7 +1348,67 @@ function dailyBatchJobCore_() {
     auditWarnings: auditWarnings
   };
   saveLastDailyBatchStatus_(result);
+  result.supabaseSyncRequest = requestSupabaseSyncAfterBatch_(result);
+  saveLastDailyBatchStatus_(result);
   return result;
+}
+
+function configureSupabaseSyncWebhookSecret(secret) {
+  var value = String(secret || '').trim();
+  if (value.length < 32) {
+    throw new Error('Supabase sync webhook secret must be at least 32 characters');
+  }
+  PropertiesService.getScriptProperties().setProperty(SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY, value);
+  return {
+    ok: true,
+    property: SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY,
+    configured: true,
+    checkedAt: new Date().toISOString()
+  };
+}
+
+function isSupabaseSyncWebhookConfigured_() {
+  if (typeof SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY === 'undefined') return false;
+  return Boolean(PropertiesService.getScriptProperties().getProperty(SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY));
+}
+
+function requestSupabaseSyncAfterBatch_(batchResult) {
+  if (!batchResult || batchResult.ok !== true || batchResult.contractPassed !== true) {
+    return { accepted: false, skipped: true, reason: 'source-batch-not-successful' };
+  }
+  if (typeof SUPABASE_SYNC_WEBHOOK_URL === 'undefined' || !SUPABASE_SYNC_WEBHOOK_URL) {
+    return { accepted: false, skipped: true, reason: 'webhook-url-not-configured' };
+  }
+
+  var secret = PropertiesService.getScriptProperties().getProperty(SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY);
+  if (!secret) {
+    Logger.log('[dailyBatchJob] Supabase callback skipped: webhook secret is not configured');
+    return { accepted: false, skipped: true, reason: 'webhook-secret-not-configured' };
+  }
+
+  try {
+    var response = UrlFetchApp.fetch(SUPABASE_SYNC_WEBHOOK_URL, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'X-Sync-Token': secret },
+      payload: JSON.stringify({
+        source: 'apps-script-daily-batch',
+        batchFinishedAt: batchResult.finishedAt,
+        tripsRows: batchResult.tripsCacheRows
+      }),
+      muteHttpExceptions: true
+    });
+    var status = response.getResponseCode();
+    if (status !== 202) {
+      Logger.log('[dailyBatchJob] Supabase callback failed: HTTP ' + status);
+      return { accepted: false, skipped: false, status: status, reason: 'webhook-http-error' };
+    }
+    Logger.log('[dailyBatchJob] Supabase callback accepted');
+    return { accepted: true, skipped: false, status: status, requestedAt: new Date().toISOString() };
+  } catch (err) {
+    Logger.log('[dailyBatchJob] Supabase callback error: ' + err.message);
+    return { accepted: false, skipped: false, reason: 'webhook-request-error', error: err.message };
+  }
 }
 
 function importAllConfiguredSheetsSilentWithReport() {

@@ -3,8 +3,10 @@ name: Production Sync Watchdog
 on:
   workflow_dispatch:
   schedule:
-    # Netlify is the primary 08:30 Asia/Bangkok sync path. This off-peak
-    # 10:17 backup self-heals only if Netlify did not promote today's batch.
+    # Independent pre-deadline recovery. GitHub may start late, so Netlify
+    # remains the primary recovery loop and the database lease prevents races.
+    - cron: "47 1 * * *"
+    # Late recovery remains available when an upstream outage spans 09:00.
     - cron: "17 3 * * *"
 
 concurrency:
@@ -36,6 +38,8 @@ jobs:
           SYNC_FETCH_RETRY_DELAY_MS: "2000"
           SYNC_RETENTION_RUNS: "0"
           SYNC_KEEP_PROMOTED_STAGING: "false"
+          SYNC_LEASE_NAME: "daily-sync"
+          SYNC_LEASE_TTL_SECONDS: "2400"
           WATCHDOG_MIN_PROMOTED_HOUR_BANGKOK: "8"
           WATCHDOG_MIN_ROW_DELTA_TO_SYNC: "1"
           WATCHDOG_SYNC_TIMEOUT_MS: "1800000"

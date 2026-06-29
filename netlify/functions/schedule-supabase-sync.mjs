@@ -18,7 +18,9 @@ export default async function handler(request) {
 }
 
 export const config = {
-  schedule: '30 1 * * *',
+  // 08:20, 08:30, 08:40, and 08:50 Asia/Bangkok. Every invocation is
+  // idempotent and all writers share a Supabase lease.
+  schedule: '20,30,40,50 1 * * *',
 };
 
 function requiredEnv(name) {

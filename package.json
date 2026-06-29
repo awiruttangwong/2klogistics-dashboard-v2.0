@@ -9,7 +9,8 @@
     "supabase:sync": "node supabase/sync/sync-apps-script-to-supabase.mjs",
     "production:watchdog": "node scripts/watchdog-production-sync.mjs",
     "apps-script:health": "node scripts/check-apps-script-health.mjs",
-    "production:health": "node scripts/check-production-health.mjs"
+    "production:health": "node scripts/check-production-health.mjs",
+    "test:daily-sync-readiness": "node scripts/test-daily-sync-readiness.mjs"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

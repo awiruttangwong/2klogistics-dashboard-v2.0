@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
+import { sourceBatchReadyToday } from '../supabase/sync/daily-sync-readiness.mjs';
+
 const DEFAULT_HEALTH_URL = 'https://2klogistics-dashboard.netlify.app/.netlify/functions/supabase-api?action=health';
 const DEFAULT_MIN_PROMOTED_HOUR_BANGKOK = 8;
 const DEFAULT_MIN_ROW_DELTA_TO_SYNC = 1;
@@ -107,12 +109,13 @@ async function getAppsScriptState(appsScriptUrl) {
     spreadsheetName: health?.spreadsheet?.name || null,
     trigger: health?.trigger || null,
     contract: health?.contract || null,
+    lastDailyBatchJob: health?.lastDailyBatchJob || null,
   };
 }
 
 function decideSync({ appsScript, production, minPromotedHour, minRowDelta, forceSync }) {
   const reasons = [];
-  const blocked = Boolean(production?.unavailable);
+  let blocked = Boolean(production?.unavailable);
   const prodRows = Number(production?.supabase?.tripsRows || 0);
   const rowsWritten = Number(production?.latestSyncRun?.rows_written || 0);
   const sourceRows = Number(appsScript?.tripsTotal || 0);
@@ -127,6 +130,10 @@ function decideSync({ appsScript, production, minPromotedHour, minRowDelta, forc
   );
 
   if (forceSync) reasons.push('force-sync requested');
+  if (!sourceBatchReadyToday(appsScript)) {
+    blocked = true;
+    reasons.push('today\'s Apps Script dailyBatchJob has not completed successfully');
+  }
   if (production?.unavailable) {
     reasons.push(`production health unavailable: ${production.error || 'unknown error'}`);
     return {
@@ -177,6 +184,8 @@ function buildReport({ appsScript, production, decision }) {
       spreadsheetId: appsScript.spreadsheetId,
       triggerHour: appsScript.trigger?.configuredHour ?? null,
       contractPassed: appsScript.contract?.passed ?? null,
+      lastBatchOk: appsScript.lastDailyBatchJob?.ok ?? null,
+      lastBatchFinishedAt: appsScript.lastDailyBatchJob?.finishedAt ?? null,
     },
     production: {
       ok: production?.ok ?? null,

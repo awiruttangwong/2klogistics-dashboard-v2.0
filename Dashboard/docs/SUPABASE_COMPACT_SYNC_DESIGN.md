@@ -25,14 +25,24 @@ duplicated database storage, indexes, WAL, and bloat.
 ## Production Flow
 
 1. Apps Script refreshes Google Sheet cache at 08:00 Asia/Bangkok.
-2. GitHub Actions watchdog runs after 08:30 Asia/Bangkok.
-3. Sync service reads `summary`, `oil`, and paginated `trips` from Apps Script.
-4. `reset_sync_staging()` truncates `trips_staging`.
-5. Sync writes one normalized candidate snapshot into `trips_staging`.
-6. Parity is checked against local totals from the same Apps Script payload.
-7. `promote_sync_run()` truncates and replaces `trips_active`.
-8. `promote_sync_run()` truncates `trips_staging` immediately after promotion.
-9. Frontend reads only active read-model tables through Netlify functions.
+2. Netlify Scheduled Function runs at 08:30 Asia/Bangkok.
+3. A protected Netlify Background Function waits until today's Apps Script
+   `dailyBatchJob` reports success, then checks whether production already
+   contains that exact completed batch.
+4. Sync service reads `summary`, `oil`, and paginated `trips` from Apps Script.
+5. `reset_sync_staging()` truncates `trips_staging`.
+6. Sync writes one normalized candidate snapshot into `trips_staging`.
+7. Parity is checked against local totals from the same Apps Script payload.
+8. `promote_sync_run()` truncates and replaces `trips_active`.
+9. `promote_sync_run()` truncates `trips_staging` immediately after promotion.
+10. The background function verifies row parity and a promotion timestamp after
+    the Apps Script batch completion time.
+11. Frontend reads only active read-model tables through Netlify functions.
+
+GitHub Actions runs one backup watchdog at 10:17 Asia/Bangkok and remains
+available for manual recovery. It is not the primary timing mechanism because
+GitHub scheduled events can be delayed. Both paths refuse to sync until today's
+Apps Script batch reports successful completion.
 
 ## Storage Rules
 
@@ -47,6 +57,9 @@ duplicated database storage, indexes, WAL, and bloat.
 ```powershell
 cmd /c node --check supabase\sync\sync-apps-script-to-supabase.mjs
 cmd /c node --check netlify\functions\supabase-api.mjs
+cmd /c node --check netlify\functions\supabase-sync-background.mjs
+cmd /c node --check netlify\functions\schedule-supabase-sync.mjs
+cmd /c npm run test:daily-sync-readiness
 cmd /c npm run supabase:sync -- --dry-run
 cmd /c npm run apps-script:health
 ```

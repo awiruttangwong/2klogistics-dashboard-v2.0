@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const DEFAULT_BATCH_SIZE = 500;
 const DEFAULT_PAGE_LIMIT = 5000;
@@ -18,26 +19,39 @@ const REQUIRED_ENV = [
 ];
 
 const argv = new Set(process.argv.slice(2));
-const options = {
+const cliOptions = {
   dryRun: argv.has('--dry-run'),
   promote: argv.has('--promote'),
   verbose: argv.has('--verbose'),
   help: argv.has('--help') || argv.has('-h'),
 };
 
-loadDotEnvFile();
+const isDirectExecution = Boolean(
+  process.argv[1]
+  && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))
+);
 
-if (options.help) {
-  printHelp();
-  process.exit(0);
+if (isDirectExecution) {
+  if (cliOptions.help) {
+    printHelp();
+  } else {
+    runSupabaseSync(cliOptions).catch(error => {
+      console.error(`[supabase-sync] failed: ${error.stack || error.message}`);
+      process.exitCode = 1;
+    });
+  }
 }
 
-main().catch(error => {
-  console.error(`[supabase-sync] failed: ${error.stack || error.message}`);
-  process.exitCode = 1;
-});
+export async function runSupabaseSync(runtimeOptions = {}) {
+  loadDotEnvFile();
+  return main({
+    ...cliOptions,
+    ...runtimeOptions,
+    help: false,
+  });
+}
 
-async function main() {
+async function main(options) {
   assertRuntime();
   assertEnv(options);
 

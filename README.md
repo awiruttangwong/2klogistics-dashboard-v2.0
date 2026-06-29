@@ -80,9 +80,18 @@ Set these Netlify environment variables before deploying the function:
 ```text
 SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
+APPS_SCRIPT_API_URL
+NETLIFY_SYNC_TRIGGER_SECRET
 ```
 
-Scheduled sync is defined in `.github/workflows/supabase-sync.yml`. Add these GitHub Actions secrets:
+The primary daily sync is `netlify/functions/schedule-supabase-sync.mjs` at
+08:30 Asia/Bangkok. It invokes the protected background function, waits for
+today's successful Apps Script `dailyBatchJob`, and promotes only that completed
+batch. GitHub Actions runs one recovery check at 10:17 Asia/Bangkok and remains
+available for manual recovery because GitHub scheduled events do not provide a
+strict start-time guarantee.
+
+Add these GitHub Actions secrets for the backup watchdog and manual recovery:
 
 ```text
 SUPABASE_URL

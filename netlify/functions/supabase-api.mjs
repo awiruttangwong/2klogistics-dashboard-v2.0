@@ -464,7 +464,7 @@ function response(statusCode, body, options = {}) {
   const cacheControl = options.cache === 'no-store'
     ? 'no-store'
     : statusCode === 200
-    ? 'public, max-age=60, s-maxage=900, stale-while-revalidate=3600'
+    ? 'public, max-age=30, s-maxage=60, stale-while-revalidate=120'
     : 'no-store';
   return {
     statusCode,

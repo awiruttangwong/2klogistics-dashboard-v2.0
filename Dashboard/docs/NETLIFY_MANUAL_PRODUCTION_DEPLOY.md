@@ -1,6 +1,6 @@
 # Netlify Manual Production Deploy
 
-Last updated: 2026-06-25
+Last updated: 2026-06-29
 
 ## Purpose
 
@@ -43,9 +43,13 @@ Important:
 - `git push origin main` may succeed even when Netlify does not update production.
 - When Netlify shows errors like `Skipped due to account credit usage exceeded`, auto deploy from GitHub can fail.
 - In that case, production can still be updated by uploading the local `dashboard` folder as a manual draft deploy, then restoring that deploy to production.
-- after the 2026-06-25 automation closeout, production deploys from GitHub
-  Actions in `awiruttangwong/2klogistics-dashboard-v2.0`; Netlify's direct Git
-  repo linkage is intentionally empty to avoid deploying from the wrong repo
+- after the 2026-06-29 automation closeout, GitHub Actions creates a draft
+  deploy, verifies its Supabase health and scheduled-function metadata, then
+  restores that verified deploy to production
+- if post-restore health fails, the workflow restores the previous production
+  deploy automatically
+- Netlify's direct Git repo linkage is intentionally empty to avoid deploying
+  from the wrong repo
 
 ## Required checks before deploy
 
@@ -181,6 +185,7 @@ Action:
 - do not retry `--prod` repeatedly
 - upload draft deploy
 - restore the successful draft deploy to production
+- GitHub Actions uses this draft-and-restore flow automatically
 
 ### 3) Netlify CLI deploy works for draft but not production
 

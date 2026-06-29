@@ -32,7 +32,9 @@ jobs:
         run: |
           set -euo pipefail
           alias_name="release-${GITHUB_SHA:0:12}"
-          npx --yes netlify-cli deploy --build \
+          npx --yes netlify-cli deploy \
+            --dir dashboard \
+            --functions netlify/functions \
             --alias "$alias_name" \
             --site "$NETLIFY_SITE_ID" \
             --auth "$NETLIFY_AUTH_TOKEN" \

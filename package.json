@@ -12,7 +12,8 @@
     "production:health": "node scripts/check-production-health.mjs",
     "test:daily-sync-readiness": "node scripts/test-daily-sync-readiness.mjs",
     "test:pre-nine-recovery": "node scripts/test-pre-nine-recovery.mjs",
-    "test:supabase-cli-guard": "node scripts/test-supabase-cli-guard.mjs"
+    "test:supabase-cli-guard": "node scripts/test-supabase-cli-guard.mjs",
+    "test:xlsx-reviewer-reasons": "node scripts/test-xlsx-reviewer-reasons.mjs"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

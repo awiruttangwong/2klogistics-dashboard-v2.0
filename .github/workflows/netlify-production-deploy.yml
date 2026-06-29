@@ -34,6 +34,7 @@ jobs:
           npm run test:daily-sync-readiness
           npm run test:pre-nine-recovery
           npm run test:supabase-cli-guard
+          npm run test:xlsx-reviewer-reasons
       - name: Create draft deploy
         id: draft
         shell: bash

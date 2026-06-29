@@ -48,8 +48,11 @@ Important:
   restores that verified deploy to production
 - if post-restore health fails, the workflow restores the previous production
   deploy automatically
-- Netlify's direct Git repo linkage is intentionally empty to avoid deploying
-  from the wrong repo
+- Netlify still retains legacy repository metadata for
+  `awiruttangwong/2klogistics-dashboard`, but `build_settings.stop_builds=true`
+  prevents that repository, build hooks, and the Netlify UI from creating builds
+- the only active release path is GitHub Actions from
+  `awiruttangwong/2klogistics-dashboard-v2.0`
 
 ## Required checks before deploy
 
@@ -191,17 +194,16 @@ Action:
 
 This is expected in the blocked-credit scenario above.
 
-### 4) Netlify direct Git linkage is empty
+### 4) Netlify still shows the legacy Git repository
 
 Likely cause:
 
-- this is intentional after the 2026-06-25 closeout; production deploys through
-  `.github/workflows/netlify-production-deploy.yml` from
-  `awiruttangwong/2klogistics-dashboard-v2.0`
+- Netlify retains the repository metadata even though builds are stopped
 
 Action:
 
 - verify the GitHub Actions workflow `Netlify Production Deploy`
+- verify Netlify reports `build_settings.stop_builds=true`
 - do not reconnect `awiruttangwong/2klogistics-dashboard` or any
   `github.com/2klogistics/*` repository
 

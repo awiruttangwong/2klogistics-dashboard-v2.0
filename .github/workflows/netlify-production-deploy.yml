@@ -1,0 +1,82 @@
+name: Netlify Production Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "dashboard/**"
+      - "netlify/**"
+      - "netlify.toml"
+      - "supabase/sync/**"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/check-production-health.mjs"
+      - "scripts/netlify-release.mjs"
+      - "scripts/test-daily-sync-readiness.mjs"
+      - "scripts/test-pre-nine-recovery.mjs"
+      - ".github/workflows/netlify-production-deploy.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify deadline recovery contracts
+        run: |
+          npm run test:daily-sync-readiness
+          npm run test:pre-nine-recovery
+          npm run test:supabase-cli-guard
+          npm run test:xlsx-reviewer-reasons
+      - name: Create draft deploy
+        id: draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          alias_name="release-${GITHUB_SHA:0:12}"
+          npx --yes netlify-cli deploy \
+            --dir dashboard \
+            --functions netlify/functions \
+            --alias "$alias_name" \
+            --site "$NETLIFY_SITE_ID" \
+            --auth "$NETLIFY_AUTH_TOKEN" \
+            --message "GitHub Actions ${GITHUB_SHA}" \
+            --json > netlify-deploy.json
+          node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('netlify-deploy.json','utf8'));if(!d.deploy_id||!d.deploy_url)throw new Error('Netlify draft response is incomplete');fs.appendFileSync(process.env.GITHUB_OUTPUT,'deploy_id='+d.deploy_id+'\\ndeploy_url='+d.deploy_url+'\\n')"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+      - name: Verify draft health
+        run: npm run production:health
+        env:
+          DASHBOARD_HEALTH_URL: ${{ steps.draft.outputs.deploy_url }}/.netlify/functions/supabase-api?action=health
+          HEALTH_CHECK_ATTEMPTS: "5"
+          HEALTH_CHECK_RETRY_DELAY_MS: "3000"
+
+      - name: Promote verified draft
+        id: promote
+        run: node scripts/netlify-release.mjs promote "${{ steps.draft.outputs.deploy_id }}"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+      - name: Verify production health
+        run: npm run production:health
+        env:
+          HEALTH_CHECK_ATTEMPTS: "8"
+          HEALTH_CHECK_RETRY_DELAY_MS: "3000"
+
+      - name: Roll back failed production release
+        if: failure() && steps.promote.outputs.previous_deploy_id != ''
+        run: node scripts/netlify-release.mjs rollback "${{ steps.promote.outputs.previous_deploy_id }}"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}

@@ -1,0 +1,40 @@
+name: Supabase Shadow Sync
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-shadow-sync-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Sync Apps Script data to Supabase and promote on parity pass
+        run: npm run supabase:sync -- --promote
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APPS_SCRIPT_API_URL: ${{ secrets.APPS_SCRIPT_API_URL }}
+          SUPABASE_SYNC_BATCH_SIZE: "500"
+          APPS_SCRIPT_PAGE_LIMIT: "5000"
+          SYNC_REQUEST_TIMEOUT_MS: "60000"
+          SYNC_FETCH_RETRY_ATTEMPTS: "8"
+          SYNC_FETCH_RETRY_DELAY_MS: "2000"
+          SYNC_RETENTION_RUNS: "0"
+          SYNC_KEEP_PROMOTED_STAGING: "false"
+      - name: Verify production Supabase API health
+        run: npm run production:health
+        env:
+          DASHBOARD_HEALTH_URL: https://2klogistics-dashboard.netlify.app/.netlify/functions/supabase-api?action=health
+          MAX_SYNC_AGE_HOURS: "36"
+          HEALTH_CHECK_ATTEMPTS: "5"
+          HEALTH_CHECK_RETRY_DELAY_MS: "5000"

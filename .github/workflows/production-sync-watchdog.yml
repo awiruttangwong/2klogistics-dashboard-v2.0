@@ -1,0 +1,49 @@
+name: Production Sync Watchdog
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Independent pre-deadline recovery. GitHub may start late, so Netlify
+    # remains the primary recovery loop and the database lease prevents races.
+    - cron: "47 1 * * *"
+    # Late recovery remains available when an upstream outage spans 09:00.
+    - cron: "17 3 * * *"
+
+concurrency:
+  group: production-sync-watchdog-main
+  cancel-in-progress: false
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check production freshness and self-heal if stale
+        run: npm run production:watchdog
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APPS_SCRIPT_API_URL: ${{ secrets.APPS_SCRIPT_API_URL }}
+          DASHBOARD_HEALTH_URL: https://2klogistics-dashboard.netlify.app/.netlify/functions/supabase-api?action=health
+          SUPABASE_SYNC_BATCH_SIZE: "500"
+          APPS_SCRIPT_PAGE_LIMIT: "5000"
+          SYNC_REQUEST_TIMEOUT_MS: "60000"
+          SYNC_FETCH_RETRY_ATTEMPTS: "8"
+          SYNC_FETCH_RETRY_DELAY_MS: "2000"
+          SYNC_RETENTION_RUNS: "0"
+          SYNC_KEEP_PROMOTED_STAGING: "false"
+          SYNC_LEASE_NAME: "daily-sync"
+          SYNC_LEASE_TTL_SECONDS: "2400"
+          WATCHDOG_MIN_PROMOTED_HOUR_BANGKOK: "8"
+          WATCHDOG_MIN_ROW_DELTA_TO_SYNC: "1"
+          WATCHDOG_SYNC_TIMEOUT_MS: "1800000"
+          WATCHDOG_SYNC_ATTEMPTS: "3"
+          WATCHDOG_SYNC_RETRY_DELAY_MS: "30000"
+          WATCHDOG_HEALTH_RETRY_ATTEMPTS: "5"
+          WATCHDOG_HEALTH_RETRY_DELAY_MS: "5000"

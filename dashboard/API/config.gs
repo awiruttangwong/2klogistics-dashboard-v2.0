@@ -14,7 +14,7 @@ var SHEET_SOURCES = {
   'DATA(M3)': 'https://docs.google.com/spreadsheets/d/1ohmQjk77j2HFvW9em9l_cflt8jbePlFDpA25oAFOjsE/edit?gid=1824601668#gid=1824601668',
   'DATA(M4)': 'https://docs.google.com/spreadsheets/d/1RW7EQyzgYjPREZsxyBs3_EbZ8tKOHbBeSxPDxJ3G3yU/edit?gid=1824601668#gid=1824601668',
   'DATA(M5)': 'https://docs.google.com/spreadsheets/d/1wt8x2XsfvT-gSOmrI0HnNFcS27w-OuvzEYItGP3xn48/edit?gid=1824601668#gid=1824601668',
-  'DATA(M6)': '',
+  'DATA(M6)': 'https://docs.google.com/spreadsheets/d/11xnRv1OFciOQtpAIMEL8tqMvsf1tm5NuOkVAb7vb-0c/edit?gid=1824601668#gid=1824601668',
   
   'DATA(M7)': '',
   'DATA(M8)': '',
@@ -23,6 +23,7 @@ var SHEET_SOURCES = {
   'DATA(M11)': '',
   'DATA(M12)': ''
 };
+
 
 // ชื่อชีทต้นทางในแต่ละไฟล์
 var SOURCE_SHEET_NAMES = {
@@ -132,6 +133,23 @@ var SHEET_CONFIG = 'CONFIG';
 var ENFORCE_DOMAIN_RESTRICTION = false;
 var ALLOWED_DOMAIN = '2klogistics.co.th';
 var API_DEBUG_ERRORS = false;
+
+// Migration guardrails for the new Google account/project.
+// This spreadsheet is the bound "Database Daily EXPRESS" dashboard workbook.
+var EXPECTED_DASHBOARD_SPREADSHEET_ID = '1gjrRvgNrU6_hB4XaeHC1Z6MoLK0X11ci3LzYQDRa8Pw';
+var APPS_SCRIPT_PROJECT_ID = '1FGsRlFbWgI_rzRRVoXXF-TpGUKlhvl6kXlcH8lUit2PfEsb9bayayZ7e';
+
+// Daily source refresh schedule.
+// Code.gs refreshes Google Sheet/GAS caches first; Supabase sync should run after
+// this window so it reads the freshly rebuilt SUMMARY_CACHE/TRIPS_CACHE.
+var DAILY_BATCH_TRIGGER_TIMEZONE = 'Asia/Bangkok';
+var DAILY_BATCH_TRIGGER_HOUR = 8;
+var DAILY_BATCH_TRIGGER_NEAR_MINUTE = 0;
+
+// Event-driven Supabase sync. The secret value belongs in Script Properties
+// under SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY and must never be committed.
+var SUPABASE_SYNC_WEBHOOK_URL = 'https://2klogistics-dashboard.netlify.app/.netlify/functions/supabase-sync-background';
+var SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY = 'NETLIFY_SYNC_TRIGGER_SECRET';
 
 // -------------------------------------------------------------------------
 // API Response Helper

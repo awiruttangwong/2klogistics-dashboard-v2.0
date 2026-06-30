@@ -32,6 +32,31 @@ Do not assume a frontend symptom is caused by frontend code.
 
 Do not bypass this runbook and patch production behavior blindly.
 
+## Quick start for every change
+
+Use this section as the first checklist before touching files.
+
+1. Confirm the target system:
+   - repo is `awiruttangwong/2klogistics-dashboard-v2.0`
+   - folder is `Data sum Daily express 4 month V3`
+   - production site is `https://2klogistics-dashboard.netlify.app/`
+   - Apps Script project id is
+     `1FGsRlFbWgI_rzRRVoXXF-TpGUKlhvl6kXlcH8lUit2PfEsb9bayayZ7e`
+   - spreadsheet id is `1gjrRvgNrU6_hB4XaeHC1Z6MoLK0X11ci3LzYQDRa8Pw`
+2. Classify the change as Type A, B, C, or D using the release
+   classification section below.
+3. Identify affected outputs before editing:
+   - on-screen UI
+   - Apps Script/API response
+   - Supabase read model
+   - `.xlsx` export
+   - daily trigger/sync schedule
+4. Write down the expected pass condition in one sentence.
+5. Only then edit the smallest layer that can satisfy that pass condition.
+
+If the pass condition cannot be stated clearly, stop and clarify the task
+before changing code.
+
 ## Primary operating principle
 
 This system must be treated as a pipeline, not as an isolated frontend app.
@@ -379,6 +404,23 @@ Use this sequence every time.
   - filters change results correctly
   - export works in normal and compare views
 
+Recommended command set for frontend/export changes:
+
+```powershell
+cmd /c node --check dashboard\scripts\app.js
+cmd /c npm run test:xlsx-reviewer-reasons
+cmd /c npm run test:daily-sync-readiness
+cmd /c npm run test:pre-nine-recovery
+cmd /c npm run test:supabase-cli-guard
+cmd /c npm run production:health
+cmd /c npm run apps-script:health
+git diff --check
+```
+
+Use the relevant subset only when the task is very small. For any production
+release that changes compare, export, API mode, freshness, sync, or scheduling,
+run the full set and record the result.
+
 ### Step 2: Push only intended files
 
 - commit only files related to the release
@@ -425,6 +467,24 @@ Record at minimum:
 - unresolved risks, if any
 
 Do not close work with vague statements like "should be fine now".
+
+Suggested closeout note format:
+
+```text
+Date:
+Change type:
+Commit:
+Files changed:
+Deploy path:
+Production URL checked:
+Local checks:
+Production checks:
+Affected user workflow verified:
+Known remaining risk:
+Next monthly/config action, if any:
+```
+
+If any field is unknown, the work is not ready to be called complete.
 
 ## When source data for a new month starts
 
@@ -660,6 +720,24 @@ All of these should be true:
   Apps Script data
 
 If any one of these is unknown, do not claim the system is fully healthy.
+
+## Definition of done for production work
+
+Production work is done only when all applicable items are true:
+
+- the changed layer is identified and documented
+- the code or config change is the smallest layer that solves the task
+- no old repo, old Netlify site, or old Google account was used
+- required local checks passed
+- required production checks passed
+- affected `.xlsx` exports were downloaded from production and inspected when
+  export behavior changed
+- no secrets, tokens, local settings, or unrelated dirty files were committed
+- the final answer states any known limitation plainly
+
+For frontend-only visual changes that do not affect data, export, API mode, or
+sync, the export-specific item can be marked not applicable. For anything that
+touches compare/export logic, it is mandatory.
 
 ## Recommended operating discipline going forward
 

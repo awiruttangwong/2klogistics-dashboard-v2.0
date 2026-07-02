@@ -1,10 +1,14 @@
 # Dashboard Roadmap (Current Status)
 
-Last updated: 2026-05-15
+Last updated: 2026-07-02
+
+For current production operations and release requirements, use
+`PRODUCTION_CLOSEOUT_AND_OPERATIONS_RUNBOOK.md` as the authoritative document.
 
 ## Goal
 
-Move `Dashboard` frontend to GitHub Pages and use Google Apps Script (`Code.gs` + `config.gs`) as API over Google Sheets.
+Operate the `Dashboard` frontend on Netlify, keep Google Sheets + Apps Script as
+the source of truth, and use Supabase as the compact production read model.
 
 ## Completed
 
@@ -25,7 +29,8 @@ Move `Dashboard` frontend to GitHub Pages and use Google Apps Script (`Code.gs` 
 4. Frontend switched to API-first mode
 - `index.html` uses `scripts/api-config.js` + `scripts/app.js`
 - Removed eager static data script loading from HTML
-- API base URL configured in `Dashboard/scripts/api-config.js`
+- API base URL and freshness fallback configured in `Dashboard/scripts/api-config.js`
+- Production frontend hosted at `https://2klogistics-dashboard.netlify.app/`
 
 5. Validation and runtime checks passed
 - `testSystemIntegrity`: `Errors=0`
@@ -35,32 +40,26 @@ Move `Dashboard` frontend to GitHub Pages and use Google Apps Script (`Code.gs` 
 
 ## Known Warnings (Accepted for now)
 
-1. `M6-M12` source URLs are not configured
+1. `M8-M12` source URLs are not configured
 - Expected because current operation is monthly rolling update by manual config
 - Warning remains until those months are configured
 
 2. API-only deployment warning about HTML validation skip
-- Expected and acceptable (frontend is hosted separately on GitHub Pages)
+- Expected and acceptable (frontend is hosted separately on Netlify)
 
-## Remaining Work Before Full Production Lock
+## Current Production Status
 
-1. Frontend final polish (small UI adjustments)
-- Owner requested a small additional frontend tweak before final push
-
-2. Final UI regression pass
-- Check all 3 main pages and all 6 major sections for layout/function consistency
-- Re-check no NaN/Infinity in KPI display
-- Re-check FLASH grouping and company/outsource split
-
-3. Deploy + publish workflow
-- Commit and push frontend to GitHub repository
-- Enable/verify GitHub Pages
-- Final smoke test on public Pages URL
+- `DATA(M1)` through `DATA(M7)` are configured
+- Apps Script production Web App deployment is version 20
+- `dailyBatchJob` is configured for 08:00 Asia/Bangkok
+- Netlify/Supabase recovery remains the secondary path
+- production validation on 2026-07-02 confirmed 269 trips for 2026-07-01
+  from both Apps Script and Supabase
 
 ## Operating Procedure (Ongoing)
 
 1. Daily
-- Run by trigger at 08:30 (UTC+7): `dailyBatchJob`
+- Run by trigger at 08:00 (UTC+7): `dailyBatchJob`
 
 2. Monthly (day 1)
 - Update new source in `config.gs` (`SHEET_SOURCES`) for next month
@@ -73,4 +72,5 @@ Move `Dashboard` frontend to GitHub Pages and use Google Apps Script (`Code.gs` 
 
 ## Next Action
 
-Proceed with the requested small frontend adjustments, then run a final regression checklist and publish to GitHub Pages.
+Before August starts, configure `DATA(M8)`, deploy one new Apps Script Web App
+version, and run `npm run apps-script:health`.

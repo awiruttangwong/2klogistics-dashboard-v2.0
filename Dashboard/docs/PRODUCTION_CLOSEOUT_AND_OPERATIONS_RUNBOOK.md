@@ -763,6 +763,23 @@ touches compare/export logic, it is mandatory.
 7. If production looks stale, debug the pipeline in order instead of patching the
    browser first.
 
+## Closeout record: DATA(M7) activation
+
+Date: 2026-07-02 Asia/Bangkok
+
+- change type: Type C (Apps Script/config) with production freshness verification
+- repository commit: `6e0f962`
+- source: `DATA(M7)` points to spreadsheet
+  `1sMshl7_b-dvrtnDYcl-WQt467gSnfdLw0o35rgRFJMU`, tab `SUMDATA`
+- Apps Script production deployment: existing `/exec` deployment updated from
+  version 19 to version 20; URL was preserved
+- trigger: one `dailyBatchJob` trigger at 08:00 Asia/Bangkok
+- batch result: success, 269 rows added, no sync or audit errors
+- Supabase callback: accepted with HTTP 202
+- parity check for `2026-07-01`: Apps Script 269 trips, Supabase 269 trips
+- production health: promoted, 44,698 active trips, maximum date `2026-07-01`
+- next monthly action: configure and deploy `DATA(M8)` before August starts
+
 ## Required handoff note for future developers and AI agents
 
 Before making a change, read this file completely.

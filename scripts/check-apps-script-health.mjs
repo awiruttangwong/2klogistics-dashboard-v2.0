@@ -28,12 +28,21 @@ async function main() {
 
   const failures = [];
   const warnings = [];
+  const bangkokMonth = Number(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Bangkok',
+    month: 'numeric',
+  }).format(new Date()));
+  const requiredCurrentMonth = `DATA(M${bangkokMonth})`;
+  const configuredMonths = Array.isArray(meta?.configuredMonths) ? meta.configuredMonths : [];
   if (health?.contract?.passed !== true) failures.push('health.contract.passed is not true');
   if (Number(health?.trigger?.dailyBatchJobCount || 0) !== 1) warnings.push(`dailyBatchJob trigger count is ${health?.trigger?.dailyBatchJobCount ?? 'missing'}`);
   if (health?.spreadsheet?.matchesExpected === false) failures.push(`active spreadsheet is ${health.spreadsheet.id}, expected ${expectedSpreadsheetId}`);
   if (health?.spreadsheet && health.spreadsheet.expectedId !== expectedSpreadsheetId) warnings.push(`health expectedId is ${health.spreadsheet.expectedId}, local expected is ${expectedSpreadsheetId}`);
   if (Number(trips?.total || 0) <= 0) failures.push('trips total is zero or missing');
   if (!Array.isArray(trips?.trips)) failures.push('trips payload is missing trips array');
+  if (!configuredMonths.includes(requiredCurrentMonth)) {
+    failures.push(`${requiredCurrentMonth} is not configured in the deployed Apps Script Web App`);
+  }
 
   const result = {
     ok: failures.length === 0,
@@ -41,7 +50,8 @@ async function main() {
     spreadsheet: health?.spreadsheet || null,
     trigger: health?.trigger || null,
     contract: health?.contract || null,
-    configuredMonths: meta?.configuredMonths || [],
+    requiredCurrentMonth,
+    configuredMonths,
     missingMonths: meta?.missingMonths || [],
     tripsTotal: trips?.total ?? null,
     warnings,

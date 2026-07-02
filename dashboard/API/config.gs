@@ -16,7 +16,7 @@ var SHEET_SOURCES = {
   'DATA(M5)': 'https://docs.google.com/spreadsheets/d/1wt8x2XsfvT-gSOmrI0HnNFcS27w-OuvzEYItGP3xn48/edit?gid=1824601668#gid=1824601668',
   'DATA(M6)': 'https://docs.google.com/spreadsheets/d/11xnRv1OFciOQtpAIMEL8tqMvsf1tm5NuOkVAb7vb-0c/edit?gid=1824601668#gid=1824601668',
   
-  'DATA(M7)': '',
+  'DATA(M7)': 'https://docs.google.com/spreadsheets/d/1sMshl7_b-dvrtnDYcl-WQt467gSnfdLw0o35rgRFJMU/edit?gid=1824601668#gid=1824601668',
   'DATA(M8)': '',
   'DATA(M9)': '',
   'DATA(M10)': '',

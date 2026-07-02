@@ -1,6 +1,6 @@
 # Production Closeout And Operations Runbook
 
-Last updated: 2026-06-30
+Last updated: 2026-07-02
 
 ## Purpose
 
@@ -503,15 +503,28 @@ Important behavior:
 What must be done:
 
 1. update the URL in `config.gs`
-2. save the Apps Script project
-3. for Web App/API consistency, run:
+2. commit the same URL to the repository copy of `config.gs`
+3. save the Apps Script project
+4. for Web App/API consistency, run:
    `Deploy > Manage deployments > Edit > New version > Deploy`
+5. run `npm run apps-script:health` and confirm `requiredCurrentMonth`
+   appears in `configuredMonths`
 
 Impact of that deployment:
 
 - trigger logic continues to use the latest saved code
 - the existing `/exec` web app serves the new config version
 - it should not affect other logic if no unrelated code changed
+
+Important Apps Script behavior:
+
+- an installable trigger runs the latest saved project code
+- the Web App `/exec` endpoint runs its selected deployment version
+- therefore, a trigger can import a newly configured month while `/exec?action=meta`
+  still reports the old month configuration
+
+Do not close a new-month change until the repository, saved Apps Script source,
+and deployed Web App metadata all list the same current month.
 
 ## Required verification matrix
 

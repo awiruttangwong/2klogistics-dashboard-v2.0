@@ -32,6 +32,52 @@ Do not assume a frontend symptom is caused by frontend code.
 
 Do not bypass this runbook and patch production behavior blindly.
 
+## Developer and AI agent execution contract
+
+Before making any change, state and record:
+
+```text
+Target repo/folder/site:
+Change classification:
+Smallest affected layer:
+Expected pass condition:
+Files expected to change:
+Existing dirty files that must be preserved:
+Production checks required before closeout:
+```
+
+During execution:
+
+- maintain an evidence ledger of each check, result, and what it proves
+- stop when a gate fails; do not compensate by editing an unrelated layer
+- never print, commit, or place access tokens, passwords, service-role keys, or
+  OAuth callback URLs in documentation or source files
+- stage files explicitly by path; never use a broad commit when the worktree
+  contains unrelated changes
+- do not alter old repositories, accounts, sites, deployments, or spreadsheets
+  to make a failing check appear successful
+
+At closeout:
+
+- distinguish verified facts from assumptions and unknowns
+- list every changed/committed file and deployment side effect
+- report unresolved warnings even when they are non-blocking
+- do not claim completion while a required external action or production check
+  remains pending
+
+### Evidence and document precedence
+
+When records disagree, use this order:
+
+1. live production response and provider metadata verified during the task
+2. current source on `origin/main`
+3. this runbook
+4. dated verification reports and roadmap documents
+
+Historical documents are evidence of their date, not current configuration.
+Update this runbook when verified production behavior changes. Never rewrite a
+historical report merely to make it match the present.
+
 ## Quick start for every change
 
 Use this section as the first checklist before touching files.
@@ -236,6 +282,8 @@ GitHub schedule.
 Current recovery layers:
 
 - Apps Script primary batch at 08:00
+- Apps Script recovery trigger around 08:30; it runs only if today's successful
+  batch is still missing
 - event-driven sync after successful Apps Script batch
 - Netlify scheduled recovery windows before 09:00
 - GitHub watchdog as backup, not primary timing
@@ -366,6 +414,8 @@ These assumptions are required for the system to behave correctly every day:
 
 - Apps Script trigger `dailyBatchJob` exists and remains scheduled at 08:00
   Asia/Bangkok
+- Apps Script trigger `dailyBatchRecoveryJob` exists around 08:30 Asia/Bangkok
+  and skips when the primary batch already succeeded
 - the Apps Script project is the bound script for spreadsheet
   `1gjrRvgNrU6_hB4XaeHC1Z6MoLK0X11ci3LzYQDRa8Pw`
 - `config.gs` contains the correct monthly source URLs
@@ -486,45 +536,281 @@ Next monthly/config action, if any:
 
 If any field is unknown, the work is not ready to be called complete.
 
-## When source data for a new month starts
+## Mandatory monthly roll-forward protocol
 
-Example: moving from June to July.
+Use this protocol for every new `DATA(Mx)` source, including `DATA(M8)`.
+Do not improvise a different sequence unless the source schema itself changed.
 
-`config.gs` must be updated with the new source URL:
+### Monthly change boundary
 
-- add the correct spreadsheet URL to `SHEET_SOURCES['DATA(M7)']`
+For a normal month rollover, the intended change is exactly one source URL in
+`SHEET_SOURCES` inside `dashboard/API/config.gs`.
 
-Important behavior:
+The following are already generic for `DATA(M1)` through `DATA(M12)`:
 
-- `Code.gs` already loops `DATA(M1)` to `DATA(M12)`
-- `SOURCE_SHEET_NAMES['DATA(M7)']` already exists
-- therefore, the logic does not need a code rewrite for a new month
+- source iteration in `Code.gs`
+- destination sheet creation
+- `MASTER` rebuild
+- `SUMMARY_CACHE` and `TRIPS_CACHE` rebuild
+- API date filtering
+- Supabase compact sync and promotion
+- frontend date/range filtering
 
-What must be done:
+Therefore, do not change `Code.gs`, frontend files, Supabase schema, Netlify
+functions, trigger timing, or previous month URLs for a normal rollover.
 
-1. update the URL in `config.gs`
-2. commit the same URL to the repository copy of `config.gs`
-3. save the Apps Script project
-4. for Web App/API consistency, run:
-   `Deploy > Manage deployments > Edit > New version > Deploy`
-5. run `npm run apps-script:health` and confirm `requiredCurrentMonth`
-   appears in `configuredMonths`
+Stop and reclassify the work as a larger Type C/B/D change if any of these are
+different in the new source:
 
-Impact of that deployment:
+- source tab name
+- required headers or column positions
+- date format
+- route/customer/vehicle identity rules
+- permissions or owning Google account
 
-- trigger logic continues to use the latest saved code
-- the existing `/exec` web app serves the new config version
-- it should not affect other logic if no unrelated code changed
+### Required inputs
 
-Important Apps Script behavior:
+Record these before editing anything:
 
-- an installable trigger runs the latest saved project code
-- the Web App `/exec` endpoint runs its selected deployment version
-- therefore, a trigger can import a newly configured month while `/exec?action=meta`
-  still reports the old month configuration
+```text
+Target month: DATA(M_)
+Source spreadsheet URL:
+Source spreadsheet id:
+Source tab name:
+First expected operational date:
+Expected owner/account:
+Production Apps Script deployment id:
+Previous deployment version:
+```
 
-Do not close a new-month change until the repository, saved Apps Script source,
-and deployed Web App metadata all list the same current month.
+For August, the target is `DATA(M8)` and the default source tab is `SUMDATA`.
+Never guess the URL, spreadsheet id, tab name, or account.
+
+### Phase 0: Target and workspace preflight
+
+Run:
+
+```powershell
+git remote get-url origin
+git branch --show-current
+git status --short
+cmd /c netlify status
+```
+
+Pass conditions:
+
+- origin is `awiruttangwong/2klogistics-dashboard-v2.0`
+- branch is `main` or an explicitly named monthly release branch
+- Netlify project is `2klogistics-dashboard`
+- Apps Script project id remains
+  `1FGsRlFbWgI_rzRRVoXXF-TpGUKlhvl6kXlcH8lUit2PfEsb9bayayZ7e`
+- destination spreadsheet id remains
+  `1gjrRvgNrU6_hB4XaeHC1Z6MoLK0X11ci3LzYQDRa8Pw`
+
+An unrelated dirty worktree is not permission to clean, revert, or commit those
+files. Record them and stage only the monthly config/runbook files.
+
+### Phase 1: Source acceptance gate
+
+Before changing production, inspect the new source spreadsheet and prove:
+
+- the expected tab exists with the exact name in `SOURCE_SHEET_NAMES`
+- the dashboard account can open it
+- required headers and column positions match the previous accepted month
+- the first expected date is present and parses as the intended calendar date
+- at least one valid operational row exists
+- there are no `#REF!`, permission, or formula errors in required columns
+
+If any item fails, stop. Do not deploy an empty or structurally different
+source and do not patch the frontend to hide the source failure.
+
+### Phase 2: Minimal config change
+
+1. Set only `SHEET_SOURCES['DATA(Mx)']` in `dashboard/API/config.gs`.
+2. Keep `SOURCE_SHEET_NAMES['DATA(Mx)']` unchanged unless Phase 1 proved the
+   source tab uses a different exact name.
+3. Verify the diff:
+
+```powershell
+git --no-pager diff -- dashboard/API/config.gs dashboard/API/Code.gs
+git diff --check
+```
+
+Pass condition: the diff contains only the intended month URL unless a separate
+schema change was explicitly approved.
+
+Never run `clasp push` from a workspace where `dashboard/API/Code.gs` or another
+Apps Script file has unrelated changes. `clasp push` uploads the Apps Script
+project, not just the one config line.
+
+If Apps Script files are dirty, use one of these safe paths:
+
+1. preferred: create a clean release worktree from `origin/main`, apply the one
+   config change there, and push from that clean worktree
+2. fallback: edit the same one line in the Apps Script editor, then use
+   `clasp pull` into a temporary folder and compare remote source with the repo
+
+### Phase 3: Repository and Apps Script alignment
+
+Commit and push only intended files. Then save the same config in Apps Script.
+
+Before deployment, prove all three copies agree:
+
+- repository `config.gs`
+- latest saved Apps Script source
+- intended source spreadsheet URL/tab
+
+Do not continue if any character of the spreadsheet id or tab name differs.
+
+### Phase 4: Update the existing Web App deployment
+
+Apps Script uses two code states:
+
+- installable triggers run the latest saved project code
+- `/exec` runs the version selected by the Web App deployment
+
+List deployments and identify the deployment id already used by
+`APPS_SCRIPT_API_URL`:
+
+```powershell
+npx -y @google/clasp deployments
+```
+
+Update that existing deployment to a new version. Preserve the deployment id
+and `/exec` URL. Do not create or switch to an unrelated Web App URL.
+
+After deployment:
+
+```powershell
+cmd /c npm run apps-script:health -- --month 8
+```
+
+Replace `8` with the target month number. The explicit override is mandatory
+when preparing the next month before the calendar changes. Without `--month`,
+the checker intentionally validates the current month in Asia/Bangkok.
+
+Pass conditions:
+
+- `ok` is `true`
+- `requiredCurrentMonth` equals the target `DATA(Mx)`
+- `configuredMonths` includes that exact month
+- spreadsheet/project ids match production
+- exactly one `dailyBatchJob` trigger exists at 08:00 Asia/Bangkok
+- exactly one `dailyBatchRecoveryJob` trigger exists around 08:30 Asia/Bangkok
+
+### Phase 5: Controlled import and promotion
+
+Run `dailyBatchJob` once after the source acceptance gate passes, or let the
+08:00 trigger run. Do not launch repeated overlapping batches.
+
+Required batch evidence:
+
+- `ok: true`
+- `syncErrors: []`
+- `errors: []`
+- `contractPassed: true`
+- current month reports imported rows
+- audit status is `SUCCESS`
+- Supabase callback is accepted with HTTP 202
+
+If the callback fails but Apps Script data is correct, keep the frontend
+fallback active and use the Netlify recovery path. Do not rerun the Google batch
+just to retry Supabase.
+
+### Phase 6: End-to-end parity gate
+
+Verify the first operational date through every layer:
+
+1. source sheet contains the expected rows
+2. destination `DATA(Mx)` contains that date
+3. `MASTER` contains those rows
+4. `SUMMARY_CACHE` and `TRIPS_CACHE` were rebuilt
+5. Apps Script `trips` API returns rows for that date
+6. Supabase `trips` API returns the same row count for that date
+7. production date selector exposes the date and renders its data
+
+Run the standard checks:
+
+```powershell
+cmd /c npm run test:daily-sync-readiness
+cmd /c npm run test:pre-nine-recovery
+cmd /c npm run test:supabase-cli-guard
+cmd /c npm run apps-script:health -- --month 8
+cmd /c npm run production:health
+git diff --check
+```
+
+Replace `8` with the target month number.
+
+For a config-only rollover, `.xlsx` regression is not required unless export or
+frontend code changed. If either changed, run the complete frontend/export
+checklist instead.
+
+### Phase 7: Closeout evidence
+
+Append one monthly closeout record to this runbook containing:
+
+```text
+Date and timezone:
+Target month and source spreadsheet id/tab:
+Change type:
+Commit SHA:
+Apps Script deployment id and old/new version:
+Trigger count/timezone/hour:
+Batch finishedAt and imported row count:
+Apps Script count for first operational date:
+Supabase count for the same date:
+Supabase promotion status:
+Production URL checked:
+Known warnings:
+Next month action and deadline:
+```
+
+The work is not complete if a field is unknown. Do not use `100%`, `finished`,
+or `production healthy` when parity or deployment identity was not verified.
+
+### Stop and rollback rules
+
+- source gate fails: make no production change
+- wrong URL/tab saved but not deployed: restore the config before deployment
+- wrong config deployed but batch not run: select the previous Web App version
+  or deploy the corrected config immediately using the same deployment id
+- batch fails before cache rebuild: do not promote Supabase; preserve the last
+  known-good frontend fallback
+- Apps Script and Supabase counts differ: treat Supabase as stale, keep Apps
+  Script authoritative, run recovery once, and investigate before closing
+- wrong repo/account/site detected: stop immediately; do not adapt the target
+
+Never delete previous month data, reset Supabase, change trigger schedules, or
+rewrite frontend logic as a monthly rollover rollback.
+
+### Monthly timing
+
+- three business days before month start: obtain URL/access and complete Phase 1
+- one business day before month start: complete Phases 0-4
+- first data day after source is ready: complete Phases 5-7
+- before 09:00 Asia/Bangkok: production must either serve fresh Supabase data or
+  current Apps Script data through fallback
+
+### DATA(M8) operator card
+
+Use this card for the August 2026 rollover:
+
+1. by 2026-07-29: obtain the M8 source URL, confirm access, exact `SUMDATA` tab,
+   headers, columns, and first expected date
+2. by 2026-07-31: change only `SHEET_SOURCES['DATA(M8)']`, align repo and saved
+   Apps Script source, then update the existing production deployment id
+3. verify the deployment before August starts:
+
+```powershell
+cmd /c npm run apps-script:health -- --month 8
+```
+
+4. on the first August data day: run one batch after source data is ready
+5. compare Apps Script and Supabase counts for the same first operational date
+6. append a `DATA(M8)` closeout record before declaring completion
+
+Do not copy the M7 URL, create a new Web App URL, or modify M7 while enabling M8.
 
 ## Required verification matrix
 
@@ -779,6 +1065,32 @@ Date: 2026-07-02 Asia/Bangkok
 - parity check for `2026-07-01`: Apps Script 269 trips, Supabase 269 trips
 - production health: promoted, 44,698 active trips, maximum date `2026-07-01`
 - next monthly action: configure and deploy `DATA(M8)` before August starts
+
+## Backend validation record: Google-side batch recovery
+
+Date: 2026-07-03 Asia/Bangkok
+
+- reported symptom: source data appeared not to reach the destination/cache
+  pipeline before the expected morning deadline
+- verified observation: the successful batch started at 09:12 and finished at
+  09:15 Asia/Bangkok even though the primary trigger was configured for 08:00
+- verified pipeline result: 266 new source rows were imported, Apps Script
+  completed without sync errors, and Supabase promotion succeeded
+- design gap: Netlify and GitHub recovery could retry Supabase only after an
+  Apps Script batch succeeded; they could not start a missing Google-side batch
+- fix: added `dailyBatchRecoveryJob` around 08:30; it shares the primary lock
+  and skips when a successful Bangkok-date batch already exists
+- Apps Script production deployment: existing `/exec` deployment updated from
+  version 20 to version 21; URL was preserved
+- installed triggers: `dailyBatchJob` count 1 at 08:00 and
+  `dailyBatchRecoveryJob` count 1 around 08:30
+- validation: Apps Script health passed, production health passed, recovery
+  tests passed, and Apps Script/Supabase both returned 271 trips for 2026-07-02
+- limitation: Apps Script time triggers are approximate and provider execution
+  logs were unavailable through clasp; the exact provider-side delay cause was
+  not asserted
+- release state: backend recovery work is complete; final production closeout
+  remains pending the next requested frontend change and its regression checks
 
 ## Required handoff note for future developers and AI agents
 

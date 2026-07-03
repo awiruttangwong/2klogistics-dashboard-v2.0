@@ -6,6 +6,8 @@ const githubWatchdog = await readFile('.github/workflows/production-sync-watchdo
 const releaseVerifier = await readFile('scripts/netlify-release.mjs', 'utf8');
 const syncWorker = await readFile('supabase/sync/sync-apps-script-to-supabase.mjs', 'utf8');
 const frontend = await readFile('dashboard/scripts/app.js', 'utf8');
+const appsScript = await readFile('dashboard/API/Code.gs', 'utf8');
+const appsScriptConfig = await readFile('dashboard/API/config.gs', 'utf8');
 
 assert.match(
   netlifySchedule,
@@ -46,6 +48,31 @@ assert.match(
   frontend,
   /preferAppsScript/,
   'Frontend must prefer Apps Script when today\'s Supabase snapshot is stale'
+);
+assert.match(
+  appsScriptConfig,
+  /DAILY_BATCH_RECOVERY_NEAR_MINUTE\s*=\s*30/,
+  'Apps Script must schedule a Google-side recovery around 08:30 Asia/Bangkok'
+);
+assert.match(
+  appsScript,
+  /function dailyBatchRecoveryJob\(\)/,
+  'Apps Script must expose a recovery trigger handler'
+);
+assert.match(
+  appsScript,
+  /isSuccessfulDailyBatchToday_\(lastStatus\)/,
+  'Apps Script recovery must skip when today\'s batch already succeeded'
+);
+assert.match(
+  appsScript,
+  /function dailyBatchRecoveryJob\(\)\s*{\s*return runDailyBatchWithLock_\(true\)/,
+  'Apps Script recovery must share the primary batch lock'
+);
+assert.match(
+  appsScript,
+  /ScriptApp\.newTrigger\('dailyBatchRecoveryJob'\)/,
+  'Apps Script trigger installer must create the recovery trigger'
 );
 
 console.log('[pre-nine-recovery] all deadline controls are present');

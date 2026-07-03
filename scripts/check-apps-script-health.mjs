@@ -5,8 +5,11 @@ const DEFAULT_EXPECTED_SPREADSHEET_ID = '1gjrRvgNrU6_hB4XaeHC1Z6MoLK0X11ci3LzYQD
 
 loadDotEnvFile();
 
-const appsScriptUrl = process.env.APPS_SCRIPT_API_URL || process.argv[2] || '';
+const cliArgs = process.argv.slice(2);
+const legacyUrlArg = cliArgs[0] && !cliArgs[0].startsWith('--') ? cliArgs[0] : '';
+const appsScriptUrl = readOption('--url') || process.env.APPS_SCRIPT_API_URL || legacyUrlArg;
 const expectedSpreadsheetId = process.env.EXPECTED_DASHBOARD_SPREADSHEET_ID || DEFAULT_EXPECTED_SPREADSHEET_ID;
+const requiredMonthOverride = readOption('--month') || process.env.REQUIRED_DATA_MONTH || '';
 
 main().catch(error => {
   console.error(`[apps-script-health] failed: ${error.stack || error.message}`);
@@ -32,10 +35,17 @@ async function main() {
     timeZone: 'Asia/Bangkok',
     month: 'numeric',
   }).format(new Date()));
-  const requiredCurrentMonth = `DATA(M${bangkokMonth})`;
+  const requiredMonthNumber = requiredMonthOverride ? Number(requiredMonthOverride) : bangkokMonth;
+  if (!Number.isInteger(requiredMonthNumber) || requiredMonthNumber < 1 || requiredMonthNumber > 12) {
+    throw new Error(`Invalid --month value: ${requiredMonthOverride}. Expected 1-12.`);
+  }
+  const requiredCurrentMonth = `DATA(M${requiredMonthNumber})`;
   const configuredMonths = Array.isArray(meta?.configuredMonths) ? meta.configuredMonths : [];
   if (health?.contract?.passed !== true) failures.push('health.contract.passed is not true');
   if (Number(health?.trigger?.dailyBatchJobCount || 0) !== 1) warnings.push(`dailyBatchJob trigger count is ${health?.trigger?.dailyBatchJobCount ?? 'missing'}`);
+  if (health?.trigger?.dailyBatchRecoveryJobCount !== undefined && Number(health.trigger.dailyBatchRecoveryJobCount) !== 1) {
+    failures.push(`dailyBatchRecoveryJob trigger count is ${health.trigger.dailyBatchRecoveryJobCount}`);
+  }
   if (health?.spreadsheet?.matchesExpected === false) failures.push(`active spreadsheet is ${health.spreadsheet.id}, expected ${expectedSpreadsheetId}`);
   if (health?.spreadsheet && health.spreadsheet.expectedId !== expectedSpreadsheetId) warnings.push(`health expectedId is ${health.spreadsheet.expectedId}, local expected is ${expectedSpreadsheetId}`);
   if (Number(trips?.total || 0) <= 0) failures.push('trips total is zero or missing');
@@ -59,6 +69,12 @@ async function main() {
   };
   console.log(JSON.stringify(result, null, 2));
   if (failures.length) throw new Error(`Apps Script health failed: ${failures.join('; ')}`);
+}
+
+function readOption(name) {
+  const index = cliArgs.indexOf(name);
+  if (index === -1) return '';
+  return cliArgs[index + 1] || '';
 }
 
 async function fetchAction(action, params = {}) {

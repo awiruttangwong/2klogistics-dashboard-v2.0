@@ -145,6 +145,7 @@ var APPS_SCRIPT_PROJECT_ID = '1FGsRlFbWgI_rzRRVoXXF-TpGUKlhvl6kXlcH8lUit2PfEsb9b
 var DAILY_BATCH_TRIGGER_TIMEZONE = 'Asia/Bangkok';
 var DAILY_BATCH_TRIGGER_HOUR = 8;
 var DAILY_BATCH_TRIGGER_NEAR_MINUTE = 0;
+var DAILY_BATCH_RECOVERY_NEAR_MINUTE = 30;
 
 // Event-driven Supabase sync. The secret value belongs in Script Properties
 // under SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY and must never be committed.

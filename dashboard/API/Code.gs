@@ -358,7 +358,8 @@ function getDailyBatchTriggerConfig_() {
   return {
     timezone: typeof DAILY_BATCH_TRIGGER_TIMEZONE !== 'undefined' ? DAILY_BATCH_TRIGGER_TIMEZONE : 'Asia/Bangkok',
     hour: typeof DAILY_BATCH_TRIGGER_HOUR !== 'undefined' ? DAILY_BATCH_TRIGGER_HOUR : 8,
-    nearMinute: typeof DAILY_BATCH_TRIGGER_NEAR_MINUTE !== 'undefined' ? DAILY_BATCH_TRIGGER_NEAR_MINUTE : 0
+    nearMinute: typeof DAILY_BATCH_TRIGGER_NEAR_MINUTE !== 'undefined' ? DAILY_BATCH_TRIGGER_NEAR_MINUTE : 0,
+    recoveryNearMinute: typeof DAILY_BATCH_RECOVERY_NEAR_MINUTE !== 'undefined' ? DAILY_BATCH_RECOVERY_NEAR_MINUTE : 30
   };
 }
 
@@ -393,7 +394,8 @@ function createDailyTrigger() {
   SpreadsheetApp.getUi().alert(
     'Trigger configured.\n\n' +
     '- Removed old dailyBatchJob triggers: ' + result.removed + '\n' +
-    '- Created new trigger: dailyBatchJob at ' + result.expectedWindow + '\n\n' +
+    '- Created primary trigger: dailyBatchJob at ' + result.expectedWindow + '\n' +
+    '- Created recovery trigger: dailyBatchRecoveryJob at ' + result.recoveryExpectedWindow + '\n\n' +
     'Note: Apps Script may run a few minutes around this time window.'
   );
   return result;
@@ -413,6 +415,14 @@ function removeAllTriggers() {
 // ============================================
 
 function dailyBatchJob() {
+  return runDailyBatchWithLock_(false);
+}
+
+function dailyBatchRecoveryJob() {
+  return runDailyBatchWithLock_(true);
+}
+
+function runDailyBatchWithLock_(skipIfCompletedToday) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) {
     Logger.log('[dailyBatchJob] skipped: another dailyBatchJob run is already active');
@@ -422,15 +432,41 @@ function dailyBatchJob() {
       error: 'dailyBatchJob is already running',
       checkedAt: new Date().toISOString()
     };
-    saveLastDailyBatchStatus_(skippedStatus);
+    if (!skipIfCompletedToday) saveLastDailyBatchStatus_(skippedStatus);
     return skippedStatus;
   }
   try {
+    if (skipIfCompletedToday) {
+      var lastStatus = getLastDailyBatchStatus_();
+      if (isSuccessfulDailyBatchToday_(lastStatus)) {
+        Logger.log('[dailyBatchRecoveryJob] skipped: today\'s batch already completed successfully');
+        return {
+          ok: true,
+          skipped: true,
+          reason: 'today-batch-already-successful',
+          lastFinishedAt: lastStatus.finishedAt,
+          checkedAt: new Date().toISOString()
+        };
+      }
+      Logger.log('[dailyBatchRecoveryJob] today\'s successful batch not found; starting recovery');
+    }
     // Keep the original function name for menus/triggers, but route to the safe core implementation.
     return dailyBatchJobCore_();
   } finally {
     lock.releaseLock();
   }
+}
+
+function isSuccessfulDailyBatchToday_(status) {
+  if (!status || status.ok !== true || status.contractPassed !== true || !status.finishedAt) return false;
+  if (status.errors && status.errors.length > 0) return false;
+  if (status.syncErrors && status.syncErrors.length > 0) return false;
+  var finished = new Date(status.finishedAt);
+  if (isNaN(finished.getTime())) return false;
+  var timezone = getDailyBatchTriggerConfig_().timezone;
+  var dateFormat = 'yyyy-MM-dd';
+  return Utilities.formatDate(finished, timezone, dateFormat) ===
+    Utilities.formatDate(new Date(), timezone, dateFormat);
 }
 
 function importAllConfiguredSheetsSilent() {
@@ -442,7 +478,8 @@ function createDailyTriggerCore_() {
   var triggers = ScriptApp.getProjectTriggers();
   var removed = 0;
   for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'dailyBatchJob') {
+    var handler = triggers[i].getHandlerFunction();
+    if (handler === 'dailyBatchJob' || handler === 'dailyBatchRecoveryJob') {
       ScriptApp.deleteTrigger(triggers[i]);
       removed++;
     }
@@ -456,11 +493,22 @@ function createDailyTriggerCore_() {
     .nearMinute(triggerConfig.nearMinute)
     .create();
 
+  ScriptApp.newTrigger('dailyBatchRecoveryJob')
+    .timeBased()
+    .everyDays(1)
+    .inTimezone(triggerConfig.timezone)
+    .atHour(triggerConfig.hour)
+    .nearMinute(triggerConfig.recoveryNearMinute)
+    .create();
+
   return {
     ok: true,
     removed: removed,
     expectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' +
       ('0' + triggerConfig.nearMinute).slice(-2) +
+      ' (UTC+7, ' + triggerConfig.timezone + ')',
+    recoveryExpectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' +
+      ('0' + triggerConfig.recoveryNearMinute).slice(-2) +
       ' (UTC+7, ' + triggerConfig.timezone + ')',
     checkedAt: new Date().toISOString()
   };
@@ -1138,8 +1186,12 @@ function systemStatusReport() {
     ? EXPECTED_DASHBOARD_SPREADSHEET_ID
     : '';
   var activeSpreadsheetId = ss.getId();
-  var triggers = ScriptApp.getProjectTriggers().filter(function(t) {
+  var projectTriggers = ScriptApp.getProjectTriggers();
+  var triggers = projectTriggers.filter(function(t) {
     return t.getHandlerFunction() === 'dailyBatchJob';
+  });
+  var recoveryTriggers = projectTriggers.filter(function(t) {
+    return t.getHandlerFunction() === 'dailyBatchRecoveryJob';
   });
 
   function sheetRowCount(name) {
@@ -1155,7 +1207,10 @@ function systemStatusReport() {
       configuredTimezone: triggerConfig.timezone,
       configuredHour: triggerConfig.hour,
       configuredNearMinute: triggerConfig.nearMinute,
-      expectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' + ('0' + triggerConfig.nearMinute).slice(-2) + ' ' + triggerConfig.timezone
+      expectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' + ('0' + triggerConfig.nearMinute).slice(-2) + ' ' + triggerConfig.timezone,
+      dailyBatchRecoveryJobCount: recoveryTriggers.length,
+      configuredRecoveryNearMinute: triggerConfig.recoveryNearMinute,
+      recoveryExpectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' + ('0' + triggerConfig.recoveryNearMinute).slice(-2) + ' ' + triggerConfig.timezone
     },
     spreadsheet: {
       id: activeSpreadsheetId,

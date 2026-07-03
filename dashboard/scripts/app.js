@@ -697,52 +697,34 @@ function cleanRouteDisplayText(value) {
   return text && text !== '-' ? text : '';
 }
 
-function routeDisplay(row) {
+function resolveRouteDisplayLabel(row) {
   if (typeof row === 'string' || typeof row === 'number') {
     return cleanRouteDisplayText(row) || '-';
   }
-  const desc = cleanRouteDisplayText(row?.routeDesc) || cleanRouteDisplayText(row?.desc);
   const identity = getRouteIdentity(row || {});
-  const routeDescription = cleanRouteDisplayText(identity.routeDescription);
-  const identityRouteCode = cleanRouteDisplayText(identity.displayRoute);
-  const fallbackRouteCode = cleanRouteDisplayText(row?.routeGroup) ||
-    identityRouteCode ||
+  const sourceRouteName = cleanRouteDisplayText(row?.routeDesc) || cleanRouteDisplayText(row?.desc);
+  const normalizedTimedCode = identity.isFlashRoute
+    ? cleanRouteDisplayText(identity.displayRoute)
+    : '';
+  return normalizedTimedCode ||
+    sourceRouteName ||
+    cleanRouteDisplayText(row?.routeGroup) ||
     cleanRouteDisplayText(row?.displayRoute) ||
-    cleanRouteDisplayText(row?.route);
-  const routeCode = identity.isFlashRoute
-    ? (identityRouteCode || fallbackRouteCode)
-    : fallbackRouteCode;
-  const routeKeyText = String(row?.routeKey || '');
-  const isFlashRouteLike = identity.isFlashRoute ||
-    row?.isFlashRoute ||
-    /(^|\|)(FD|LH|CPU|SHOP)-/.test(routeKeyText) ||
-    /^(FD|LH|CPU|SHOP)-[^-]+-/.test(routeCode || '');
-  if (isFlashRouteLike && routeCode) return routeCode;
-  return routeDescription ||
-    desc ||
+    cleanRouteDisplayText(identity.displayRoute) ||
     cleanRouteDisplayText(row?.displayName) ||
     cleanRouteDisplayText(row?.routeName) ||
-    routeCode ||
+    cleanRouteDisplayText(row?.routeCore) ||
+    cleanRouteDisplayText(row?.route) ||
     cleanRouteDisplayText(row?.name) ||
     '-';
 }
 
+function routeDisplay(row) {
+  return resolveRouteDisplayLabel(row);
+}
+
 function routeGroupHeaderDisplay(row) {
-  if (typeof row === 'string' || typeof row === 'number') return routeDisplay(row);
-  const identity = getRouteIdentity(row || {});
-  const identityRouteCode = cleanRouteDisplayText(identity.displayRoute);
-  const fallbackRouteCode = identityRouteCode ||
-    cleanRouteDisplayText(row?.routeGroup) ||
-    cleanRouteDisplayText(row?.displayRoute) ||
-    cleanRouteDisplayText(row?.routeCore) ||
-    cleanRouteDisplayText(row?.route);
-  const routeKeyText = String(row?.routeKey || '');
-  const isFlashRouteLike = identity.isFlashRoute ||
-    row?.isFlashRoute ||
-    /(^|\|)(FD|LH|CPU|SHOP)-/.test(routeKeyText) ||
-    /^(FD|LH|CPU|SHOP)-[^-]+-/.test(fallbackRouteCode || '');
-  if (isFlashRouteLike && fallbackRouteCode) return fallbackRouteCode;
-  return routeDisplay(row);
+  return resolveRouteDisplayLabel(row);
 }
 
 function deriveCustomerProfitFromTrips(trips) {

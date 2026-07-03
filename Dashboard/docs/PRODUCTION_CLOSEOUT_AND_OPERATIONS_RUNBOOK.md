@@ -342,6 +342,32 @@ When changing a reason header:
 Changing only the visible detail-sheet header is incomplete and can make the
 workbook appear correct while its helper formulas and summary counts are wrong.
 
+### 5) Route display contract
+
+The route identity used for grouping/comparison and the label shown to users are
+separate contracts. Do not change `routeIdentityKey` when the requirement only
+changes visible text.
+
+Current display policy:
+
+- every customer prefers `routeDesc`, which carries the code from the source
+  `ชื่อเส้นทาง` column
+- parseable FLASH/SPX timed codes retain the existing normalized form with the
+  time segment removed
+- when `routeDesc` is empty, the resolver falls back to the existing route/group
+  fields so the UI remains usable
+- frontend tables, route filters, normal-view XLSX, status sheets, and
+  `Helper_ตรวจสอบ` must all use `resolveRouteDisplayLabel` through
+  `routeDisplay` or `routeGroupHeaderDisplay`
+
+When changing this policy:
+
+1. keep route identity/grouping unchanged unless the business requirement
+   explicitly changes matching behavior
+2. update the shared resolver instead of patching individual tables or sheets
+3. run `npm run test:route-display-policy`
+4. inspect normal-view UI and XLSX route labels together before production
+
 ## Release classification
 
 Before touching code, classify the task.

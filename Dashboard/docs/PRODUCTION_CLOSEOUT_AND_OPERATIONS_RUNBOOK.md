@@ -1176,6 +1176,31 @@ after an intentional trigger configuration change, or after moving the Apps
 Script project/account. Re-running it unnecessarily deletes and recreates the
 two triggers and provides no additional reliability.
 
+## Closeout record: normal-view XLSX freeze panes
+
+Date: 2026-07-03 Asia/Bangkok
+
+- implementation commit: `5cdae8e` (`Freeze normal XLSX headers through row 3`)
+- scope: normal-view export only; rows 1 through 3 are frozen on the seven
+  detail/status sheets listed in the freeze-pane contract
+- implementation: worksheet pane state is serialized through
+  `patchWorksheetFreezeXml`; the non-persisted `!freeze` hint is not treated as
+  sufficient
+- compare-view behavior, route identity, reviewer-reason formulas, backend
+  import/sync logic, and trigger configuration were not changed
+- automated checks passed: JavaScript syntax, XLSX freeze panes, route display,
+  XLSX reviewer reasons, daily sync readiness, pre-09:00 recovery, Supabase CLI
+  guard, and `git diff --check`
+- Netlify production served cache version `20260703-xlsx-freeze-row3`; normalized
+  production/local `app.js` SHA-256 matched at
+  `e97e813ff424efeb8aaa09cd646d566bb8b54d042887448e40560445641ac490`
+- post-deploy production health passed with Supabase status `promoted` and
+  44,943 active trips
+- post-deploy Apps Script health passed against project
+  `1FGsRlFbWgI_rzRRVoXXF-TpGUKlhvl6kXlcH8lUit2PfEsb9bayayZ7e` and spreadsheet
+  `1gjrRvgNrU6_hB4XaeHC1Z6MoLK0X11ci3LzYQDRa8Pw`; primary/recovery trigger
+  counts remained 1/1
+
 ## Required handoff note for future developers and AI agents
 
 Before making a change, read this file completely.

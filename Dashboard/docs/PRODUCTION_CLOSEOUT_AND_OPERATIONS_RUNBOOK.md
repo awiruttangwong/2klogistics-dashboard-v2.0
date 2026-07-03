@@ -1,6 +1,6 @@
 # Production Closeout And Operations Runbook
 
-Last updated: 2026-07-02
+Last updated: 2026-07-03
 
 ## Purpose
 
@@ -1117,6 +1117,38 @@ Date: 2026-07-03 Asia/Bangkok
   not asserted
 - release state: backend recovery work is complete; final production closeout
   remains pending the next requested frontend change and its regression checks
+
+## Final production closeout: backend recovery and route-code display
+
+Date: 2026-07-03 Asia/Bangkok
+
+- backend commit: `233634b` (`Add Google-side daily batch recovery`)
+- frontend commit: `37dfdb5` (`Use route-name codes across dashboard exports`)
+- Apps Script production deployment: version 21 on the existing `/exec` URL
+- installed triggers: `dailyBatchJob` count 1 at 08:00 and
+  `dailyBatchRecoveryJob` count 1 around 08:30
+- latest verified batch: success, 266 new rows, no batch/sync errors, contract
+  passed, audit status `SUCCESS`, and Supabase callback accepted with HTTP 202
+- parity: Apps Script and Supabase both returned 271 trips for 2026-07-02
+- Supabase: latest production state `promoted`, 44,943 active trips
+- route display: all customers prefer the source `ชื่อเส้นทาง` code; parseable
+  FLASH/SPX timed codes retain the normalized no-time form
+- route identity/grouping was not changed
+- production frontend `app.js` SHA-256 matched the committed local file
+- automated checks passed: route display policy, XLSX reviewer reasons,
+  pre-09:00 recovery, daily sync readiness, and Supabase CLI guard
+- production XLSX acceptance: user manually verified the post-deploy normal-view
+  export `วิเคราะห์ผลการดำเนินงาน_02-07-2026.xlsx` created at 10:31 Asia/Bangkok
+- Git: local `main` matched `origin/main` at closeout
+- accepted warning: 12 date groups before 2020 remain excluded by the production
+  date picker
+- release state: complete
+
+Do not rerun `installDailyTriggerForAutomation` during normal daily operation.
+Run it only when health reports a missing/duplicate primary or recovery trigger,
+after an intentional trigger configuration change, or after moving the Apps
+Script project/account. Re-running it unnecessarily deletes and recreates the
+two triggers and provides no additional reliability.
 
 ## Required handoff note for future developers and AI agents
 

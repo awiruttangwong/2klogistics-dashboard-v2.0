@@ -1201,6 +1201,35 @@ Date: 2026-07-03 Asia/Bangkok
   `1gjrRvgNrU6_hB4XaeHC1Z6MoLK0X11ci3LzYQDRa8Pw`; primary/recovery trigger
   counts remained 1/1
 
+## Closeout record: `รถบริษัท` reviewer reason
+
+Date: 2026-07-03 Asia/Bangkok
+
+- implementation commit: `f74945c` (`Add company vehicle reviewer reason`)
+- scope: normal-view XLSX only; `รถบริษัท` is the final reviewer-reason column
+  on `ขาดทุน`, `สำรองน้ำมัน > 50%`, `ราคาจ่ายผิดปกติ`, and
+  `ราคารับผิดปกติ`
+- the shared reason mapping drives the detail columns, `Helper_ตรวจสอบ`,
+  checked-route/checked-trip formulas, and `สรุปเหตุผลที่ผู้ตรวจระบุ`
+- `รถบริษัท` appears once in the summary reason list even though it is shared by
+  four detail sheets
+- compare-view XLSX retains its previous headers and contains no `รถบริษัท`
+  reviewer reason
+- production and local `app.js` normalized SHA-256 matched at
+  `377cdba59cd35b338b482e42f526387ac5563423f60e7133c16afe21ae0b4753`
+- production normal-view XLSX was downloaded and read back successfully: all
+  four target sheets contain the header, worksheet XML contains the `☐,☑`
+  validation list, `Helper_ตรวจสอบ` and summary each contain one shared reason
+  column/row, and the workbook scan found no formula errors
+- production compare-view XLSX was downloaded and read back successfully: all
+  four target sheets contain zero `รถบริษัท` reason headers
+- automated checks passed: JavaScript syntax, reviewer reasons, route display,
+  freeze panes, daily sync readiness, pre-09:00 recovery, Supabase CLI guard,
+  and `git diff --check`
+- production health passed with Supabase status `promoted` and 44,943 active
+  trips; Apps Script health passed with the expected project/spreadsheet,
+  primary trigger count 1 at 08:00, and recovery trigger count 1 around 08:30
+
 ## Required handoff note for future developers and AI agents
 
 Before making a change, read this file completely.

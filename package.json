@@ -14,7 +14,8 @@
     "test:pre-nine-recovery": "node scripts/test-pre-nine-recovery.mjs",
     "test:route-display-policy": "node scripts/test-route-display-policy.mjs",
     "test:supabase-cli-guard": "node scripts/test-supabase-cli-guard.mjs",
-    "test:xlsx-reviewer-reasons": "node scripts/test-xlsx-reviewer-reasons.mjs"
+    "test:xlsx-reviewer-reasons": "node scripts/test-xlsx-reviewer-reasons.mjs",
+    "test:xlsx-freeze-panes": "node scripts/test-xlsx-freeze-panes.mjs"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

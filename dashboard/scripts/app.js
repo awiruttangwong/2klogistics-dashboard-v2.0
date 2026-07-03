@@ -6114,6 +6114,40 @@ function buildDailyCompare(data) {
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;');
       }
+      function patchWorksheetFreezeXml(xml, freeze = null) {
+        const ySplit = Number.parseInt(freeze?.ySplit, 10);
+        if (!xml || !Number.isInteger(ySplit) || ySplit <= 0) return xml;
+        const topLeftCell = xmlAttrEscape(freeze?.topLeftCell || `A${ySplit + 1}`);
+        const activePane = xmlAttrEscape(freeze?.activePane || 'bottomLeft');
+        const paneXml = `<pane ySplit="${ySplit}" topLeftCell="${topLeftCell}" activePane="${activePane}" state="frozen"/>`;
+        const selectionXml = `<selection pane="${activePane}" activeCell="${topLeftCell}" sqref="${topLeftCell}"/>`;
+        const cleanViewContent = content => String(content || '')
+          .replace(/<pane\b[^>]*(?:\/>|>[\s\S]*?<\/pane>)/g, '')
+          .replace(/<selection\b[^>]*(?:\/>|>[\s\S]*?<\/selection>)/g, '');
+        let out = xml;
+
+        if (/<sheetView\b[^>]*\/>/.test(out)) {
+          return out.replace(/<sheetView\b([^>]*)\/>/, `<sheetView$1>${paneXml}${selectionXml}</sheetView>`);
+        }
+        if (/<sheetView\b[^>]*>/.test(out)) {
+          return out.replace(
+            /(<sheetView\b[^>]*>)([\s\S]*?)(<\/sheetView>)/,
+            (_, open, content, close) => `${open}${paneXml}${selectionXml}${cleanViewContent(content)}${close}`
+          );
+        }
+
+        const sheetViewsXml = `<sheetViews><sheetView workbookViewId="0">${paneXml}${selectionXml}</sheetView></sheetViews>`;
+        if (/<dimension\b[^>]*\/>/.test(out)) {
+          return out.replace(/(<dimension\b[^>]*\/>)/, `$1${sheetViewsXml}`);
+        }
+        if (/<sheetPr\b[^>]*\/>/.test(out)) {
+          return out.replace(/(<sheetPr\b[^>]*\/>)/, `$1${sheetViewsXml}`);
+        }
+        if (/<\/sheetPr>/.test(out)) {
+          return out.replace(/(<\/sheetPr>)/, `$1${sheetViewsXml}`);
+        }
+        return out.replace(/(<worksheet\b[^>]*>)/, `$1${sheetViewsXml}`);
+      }
       function patchWorksheetDataValidationXml(xml, refs = []) {
         const validRefs = (refs || []).filter(Boolean);
         if (!xml || validRefs.length === 0) return xml;
@@ -6206,7 +6240,7 @@ function buildDailyCompare(data) {
         applyWorkbookPrintSettings(wb, sheetPrintOptions);
         if (typeof JSZip === 'undefined') {
           XLSX.writeFile(wb, fileName, { bookType: 'xlsx', cellStyles: true });
-          alert('ส่งออกสำเร็จ แต่ไม่พบ JSZip จึงไม่ได้ฝังค่า Page Setup และ dropdown สำหรับ checkbox');
+          alert('ส่งออกสำเร็จ แต่ไม่พบ JSZip จึงไม่ได้ฝังค่า Page Setup, Freeze Pane และ dropdown สำหรับ checkbox');
           return;
         }
 
@@ -6220,9 +6254,13 @@ function buildDailyCompare(data) {
           const ws = wb.Sheets?.[sheetName];
           const opts = {
             ...(sheetPrintOptions[sheetName] || {}),
+            freeze: Number.isInteger(sheetPrintOptions[sheetName]?.freezeRows)
+              ? { ySplit: sheetPrintOptions[sheetName].freezeRows, topLeftCell: `A${sheetPrintOptions[sheetName].freezeRows + 1}`, activePane: 'bottomLeft' }
+              : null,
             qaCheckboxValidationRefs: ws?.['!qaCheckboxValidationRefs'] || []
           };
           let patchedXml = patchWorksheetPrintXml(xml, opts);
+          patchedXml = patchWorksheetFreezeXml(patchedXml, opts.freeze);
           patchedXml = patchWorksheetDataValidationXml(patchedXml, opts.qaCheckboxValidationRefs);
           zip.file(entryName, patchedXml);
         }));
@@ -8176,6 +8214,20 @@ function buildDailyCompare(data) {
         'ข้อมูลไม่เปลี่ยนแปลง': { printTitlesRow: '1:3' },
         'ไม่มีข้อมูลเปรียบเทียบ': { printTitlesRow: '1:3' }
       };
+      const normalViewFreezeSheetNames = [
+        'รายเส้นทางที่เปรียบเทียบ',
+        'ขาดทุน',
+        'สำรองน้ำมัน > 50%',
+        'ราคาจ่ายผิดปกติ',
+        'ราคารับผิดปกติ',
+        'ข้อมูลไม่เปลี่ยนแปลง',
+        'ไม่มีข้อมูลเปรียบเทียบ'
+      ];
+      if (_isSingleMode) {
+        normalViewFreezeSheetNames.forEach(sheetName => {
+          printSettingsBySheet[sheetName].freezeRows = 3;
+        });
+      }
       if (!_isSingleMode) {
         compareStatusSheetConfigs.forEach(s => {
           printSettingsBySheet[s.name] = { printTitlesRow: '$1:$2' };

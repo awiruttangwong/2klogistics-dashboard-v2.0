@@ -368,6 +368,32 @@ When changing this policy:
 3. run `npm run test:route-display-policy`
 4. inspect normal-view UI and XLSX route labels together before production
 
+### 6) Normal-view XLSX freeze-pane contract
+
+The normal-view export must freeze rows 1 through 3 so the column headings stay
+visible while users scroll. This applies only to these sheets:
+
+- `รายเส้นทางที่เปรียบเทียบ`
+- `ขาดทุน`
+- `สำรองน้ำมัน > 50%`
+- `ราคาจ่ายผิดปกติ`
+- `ราคารับผิดปกติ`
+- `ข้อมูลไม่เปลี่ยนแปลง`
+- `ไม่มีข้อมูลเปรียบเทียบ`
+
+The contract is configured with `freezeRows: 3` in `printSettingsBySheet` and
+serialized into each worksheet XML by `patchWorksheetFreezeXml`. Do not rely on
+the worksheet `!freeze` property alone: the current SheetJS writer does not
+persist that property into the generated `.xlsx` file.
+
+When changing worksheet names, header-row counts, or the export writer:
+
+1. keep `printSettingsBySheet`, the worksheet names, and the XML patch aligned
+2. run `npm run test:xlsx-freeze-panes`
+3. run the route-display and reviewer-reason regression tests
+4. download the production workbook and verify that cell `A4` is the first
+   scrollable row on all seven sheets
+
 ## Release classification
 
 Before touching code, classify the task.

@@ -1230,6 +1230,45 @@ Date: 2026-07-03 Asia/Bangkok
   trips; Apps Script health passed with the expected project/spreadsheet,
   primary trigger count 1 at 08:00, and recovery trigger count 1 around 08:30
 
+## Closeout record: PTTOR regular Diesel selector
+
+Date: 2026-07-06 Asia/Bangkok
+
+- symptom: the dashboard displayed `50.05` for 3 July 2026 while the regular
+  PTTOR Diesel price was `37.50`
+- root cause: the PTTOR payload contains both `ดีเซล` (`37.50`) and
+  `Super Power Diesel` (`50.05`) for the same timestamp; the old selector
+  searched every value in each record, assigned both products the same score,
+  and allowed the later premium record to overwrite regular Diesel
+- fix: `getDieselRecordScore_` now reads only explicit product-name fields and
+  accepts exact regular Diesel labels; equal scores keep the first record
+- regression coverage: `npm run test:pttor-diesel-selector` replays the relevant
+  PTTOR payload and proves that B20, premium Diesel, and unrelated records are
+  rejected
+- source repair: `OIL_DIESEL_DATA` was refreshed from PTTOR; both fetched and
+  stored values for `2026-07-03` were verified as `37.50`
+- Supabase repair: `oil_prices.period_no=20260703` was corrected to `37.50` and
+  the Netlify production oil API was read back successfully
+- fallback repair: `Dashboard/data/oil-price.csv` and
+  `Dashboard/data/oil-price-data.js` now include `2026-07-03 = 37.50`
+- Apps Script production Web App and API executable deployments were both
+  updated to version 24; project and spreadsheet identities were unchanged
+- the one-time refresh route used during repair was removed before version 24;
+  production returns `Invalid action` for that route
+- trigger configuration was not recreated: primary/recovery counts remain 1/1
+  at 08:00/08:30 Asia/Bangkok
+- final acceptance: Apps Script oil API `37.50`, Netlify/Supabase oil API
+  `37.50`, Apps Script health passed, production health passed with sync status
+  `promoted`
+
+### PTTOR product-selection rule
+
+Do not identify regular Diesel by searching the complete SOAP record for the
+word `diesel`. PTTOR can return multiple products containing that word. Select
+from the product-name field only, prefer exact `ดีเซล` or `Diesel`, and keep a
+fixture containing regular Diesel, Diesel B20, and Super Power Diesel in the
+regression test.
+
 ## Required handoff note for future developers and AI agents
 
 Before making a change, read this file completely.

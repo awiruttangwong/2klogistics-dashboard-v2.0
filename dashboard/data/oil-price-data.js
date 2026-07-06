@@ -2,7 +2,7 @@
    แหล่งที่มา: PTTOR (ปตท. น้ำมันและการค้าปลีก)
    ผลิตภัณฑ์: ดีเซล 
    หน่วย: บาท/ลิตร
-   อัปเดตล่าสุด: 2026-05-08
+   อัปเดตล่าสุด: 2026-07-03
    หมายเหตุ: ข้อมูลหลักอยู่ใน oil-price.csv ไฟล์นี้เป็น fallback
    ──────────────────────────────────────────────────────────────── */
 const OIL_PRICE_DATA = {
@@ -11,7 +11,7 @@ const OIL_PRICE_DATA = {
   product: 'ดีเซล ',
   productLabel: 'ดีเซล(ราคาขายปลีกหน้าปั๊ม PTT)',
   unit: 'บาท/ลิตร',
-  lastFetch: '2026-05-08T00:00:00.000Z',
+  lastFetch: '2026-07-03T00:00:00.000Z',
   csvFile: 'oil-price.csv',
   note: 'ข้อมูลรายวันจาก PTTOR ผ่าน CSV (คุณอัปเดตเองในไฟล์ oil-price.csv)',
   prices: [
@@ -33,6 +33,7 @@ const OIL_PRICE_DATA = {
     { period_no: '20260421', period_name: '2026-04-21', year_en: 2026, update_date: '2026-04-21T00:00:00.000Z', price: 41.70 },
     { period_no: '20260424', period_name: '2026-04-24', year_en: 2026, update_date: '2026-04-24T00:00:00.000Z', price: 40.20 },
     { period_no: '20260501', period_name: '2026-05-01', year_en: 2026, update_date: '2026-05-01T00:00:00.000Z', price: 40.80 },
-    { period_no: '20260508', period_name: '2026-05-08', year_en: 2026, update_date: '2026-05-08T00:00:00.000Z', price: 39.95 }
+    { period_no: '20260508', period_name: '2026-05-08', year_en: 2026, update_date: '2026-05-08T00:00:00.000Z', price: 39.95 },
+    { period_no: '20260703', period_name: '2026-07-03', year_en: 2026, update_date: '2026-07-03T00:00:00.000Z', price: 37.50 }
   ]
 };

@@ -805,7 +805,9 @@ function selectDieselRows_(records, sourceName) {
     if (!date) {
       date = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
     }
-    if (byDateScore[date] !== undefined && byDateScore[date] > score) continue;
+    // Keep the first record when scores tie. PTTOR currently returns regular
+    // Diesel before premium Diesel, so a later ambiguous product must not win.
+    if (byDateScore[date] !== undefined && byDateScore[date] >= score) continue;
     byDateScore[date] = score;
     byDate[date] = {
       date: date,
@@ -824,27 +826,25 @@ function selectDieselRows_(records, sourceName) {
 }
 
 function getDieselRecordScore_(row) {
-  var txt = '';
-  for (var k in row) {
-    if (!row.hasOwnProperty(k)) continue;
-    txt += ' ' + String(row[k] || '').toLowerCase();
+  var productKeys = [
+    'PRODUCT', 'PRODUCT_NAME', 'PRODUCTNAME', 'OIL_NAME', 'OILNAME',
+    'FUEL_NAME', 'FUELNAME'
+  ];
+  var product = '';
+  for (var i = 0; i < productKeys.length; i++) {
+    var key = productKeys[i];
+    if (!row.hasOwnProperty(key)) continue;
+    product = String(row[key] || '').toLowerCase();
+    if (product) break;
   }
-  txt = txt.replace(/\s+/g, ' ').trim();
-  if (!txt) return 0;
+  product = product.replace(/\s+/g, ' ').trim();
+  if (!product) return 0;
 
-  // Exclude products that are not the main Diesel price shown on PTTOR page.
-  if (txt.indexOf('premium diesel') !== -1) return 0;
-  if (txt.indexOf('b20') !== -1) return 0;
-  if (txt.indexOf('gasohol') !== -1) return 0;
-  if (txt.indexOf('เบนซิน') !== -1) return 0;
-  if (txt.indexOf('benz') !== -1) return 0;
-  if (txt.indexOf('e20') !== -1 || txt.indexOf('e85') !== -1) return 0;
-  if (txt.indexOf('ซุปเปอร์พาวเวอร์') !== -1) return 0;
+  // Match the product field, not the entire record. The current PTTOR payload
+  // contains both "ดีเซล" and "Super Power Diesel" for the same timestamp.
+  if (product === 'diesel' || product === 'ดีเซล') return 100;
+  if (product === 'diesel b7' || product === 'ดีเซล b7') return 90;
 
-  if (txt === 'diesel' || txt === 'ดีเซล') return 100;
-  if (txt.indexOf(' diesel ') !== -1 || txt.indexOf('ดีเซล ') !== -1) return 95;
-  if (txt.indexOf('diesel') !== -1 || txt.indexOf('ดีเซล') !== -1) return 90;
-  if (txt.indexOf('diesel b7') !== -1 || txt.indexOf('b7') !== -1) return 70;
   return 0;
 }
 

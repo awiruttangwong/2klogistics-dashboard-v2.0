@@ -3,7 +3,8 @@
 Last updated: 2026-07-02
 
 For current production operations and release requirements, use
-`PRODUCTION_CLOSEOUT_AND_OPERATIONS_RUNBOOK.md` as the authoritative document.
+`Dashboard/docs/runbooks/PRODUCTION_CLOSEOUT_AND_OPERATIONS_RUNBOOK.md` as the
+authoritative document.
 
 ## Goal
 

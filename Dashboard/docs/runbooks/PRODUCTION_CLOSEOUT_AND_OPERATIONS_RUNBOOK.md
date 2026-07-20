@@ -1269,6 +1269,64 @@ from the product-name field only, prefer exact `ดีเซล` or `Diesel`, an
 fixture containing regular Diesel, Diesel B20, and Super Power Diesel in the
 regression test.
 
+## Closeout record: extended daily batch recovery window (08:30-10:00)
+
+Date: 2026-07-20 Asia/Bangkok
+
+- change type: Type D (sync/infra recovery schedule), touching Apps Script
+  `Code.gs`/`config.gs`
+- trigger reason: `DATA(M7)` showed zero trips for 20 days into July; root
+  cause was source-sheet payment columns (R/S/T) failing the completeness
+  filter in `processSheetData()`, not a sync/trigger bug — but investigation
+  found the single 08:30 recovery attempt gave no further automated retry for
+  any *transient* failure past that point, forcing manual runbook execution
+  every time one occurred
+- commit: `07abc27` (`Extend daily batch recovery to retry every 30 min until 10:00`)
+- files changed: `dashboard/API/Code.gs`, `dashboard/API/config.gs`,
+  `scripts/check-apps-script-health.mjs`,
+  `Dashboard/docs/runbooks/SYNC_INCIDENT_AND_MONTHLY_ROLLOVER_RUNBOOK.md`
+- Apps Script production deployment: existing `/exec` deployment
+  `AKfycbwCcI17V6ocXp_ELEJa7kjUHXV5zIchdPxIaHNT-ibNQZPksWtjNDdlxqRIcatFSQjVwQ`
+  updated from version 24 to version 25; URL preserved
+- trigger config: `DAILY_BATCH_RECOVERY_WINDOWS` in `config.gs` now defines
+  four recovery attempts (08:30, 09:00, 09:30, 10:00 Asia/Bangkok); primary
+  `dailyBatchJob` unchanged at 08:00
+- installed triggers verified live: `dailyBatchJob` count 1 at 08:00,
+  `dailyBatchRecoveryJob` count 4 matching `expectedRecoveryJobCount: 4`
+- deploy path: `clasp push` (project source) + one manual `createDailyTrigger()`
+  run from the Apps Script editor by the account owner (headless `clasp run`
+  was attempted and failed with a Google-side `403 PERMISSION_DENIED`,
+  confirmed via direct Apps Script Execution API call, not a clasp bug) +
+  `clasp deploy -i <existing deployment id>` to update `/exec`
+- local checks: `npm run apps-script:health -- --month 7` passed (`ok:true`,
+  `dailyBatchRecoveryJobCount:4` == `expectedRecoveryJobCount:4`,
+  `contract.passed:true`); `npm run production:health` passed structurally
+  (`ok:true`, Supabase `promoted`, `syncFresh:true`)
+- production checks: Netlify published deploy confirmed unchanged at commit
+  `eca17c1` (no frontend touched this change, nothing new to publish);
+  `https://2klogistics-dashboard.netlify.app/` returns HTTP 200
+- affected user workflow verified: trigger installation and health-reporting
+  only — the new 09:00/09:30/10:00 recovery attempts were not exercised by an
+  actual failure during this closeout, since today's primary batch already
+  succeeded at 08:03; behavior will be confirmed by observation the next time
+  a transient failure actually occurs
+- known remaining risk / limitation: this change does not and cannot fix a
+  batch that reports `ok:true` while the current month's source data is
+  incomplete. As of this record, `DATA(M7)` still shows zero imported rows
+  since 2026-06-30 (Supabase `dates.max` and Apps Script `trips` API both
+  confirm this) because July `SUMDATA` rows have not passed the R/S/T
+  (ราคารับ/ราคาจ่าย/ส่วนต่าง) completeness check — this is a source data-entry
+  gap, not an infra fault, and is unresolved pending the sheet owner
+  completing those columns
+- per this runbook's "Minimum validation before saying production is
+  healthy" checklist: **not all conditions are met** — "today's source sheet
+  is populated" and "destination cache sheets contain today's data" both
+  fail for `DATA(M7)`. Production is therefore not being claimed as fully
+  healthy by this record; only the recovery-automation layer is closed out
+- next action: monitor the next real transient-failure occurrence to confirm
+  the extended recovery window behaves as designed; separately, `DATA(M8)`
+  rollover remains due per the existing operator card (by 2026-07-29/31)
+
 ## Required handoff note for future developers and AI agents
 
 Before making a change, read this file completely.

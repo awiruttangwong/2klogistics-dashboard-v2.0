@@ -1,7 +1,8 @@
 const PAGES = [
   { id: 'master', title: 'ภาพรวมผลประกอบการ', icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M80-120v-80h800v80H80Zm40-120v-280h120v280H120Zm200 0v-480h120v480H320Zm200 0v-360h120v360H520Zm200 0v-600h120v600H720Z"/></svg>' },
   { id: 'daily', title: 'วิเคราะห์และเปรียบเทียบผลการดำเนินงาน', icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="m320-160-56-57 103-103H80v-80h287L264-503l56-57 200 200-200 200Zm320-240L440-600l200-200 56 57-103 103h287v80H593l103 103-56 57Z"/></svg>' },
-  { id: 'oilprice', title: 'ตรวจสอบราคาน้ำมันดีเซล', icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M160-120v-640q0-33 23.5-56.5T240-840h240q33 0 56.5 23.5T560-760v280h40q33 0 56.5 23.5T680-400v180q0 17 11.5 28.5T720-180q17 0 28.5-11.5T760-220v-288q-9 5-19 6.5t-21 1.5q-42 0-71-29t-29-71q0-32 17.5-57.5T684-694l-84-84 42-42 148 144q15 15 22.5 35t7.5 41v380q0 42-29 71t-71 29q-42 0-71-29t-29-71v-200h-60v300H160Zm80-440h240v-200H240v200Zm480 0q17 0 28.5-11.5T760-600q0-17-11.5-28.5T720-640q-17 0-28.5 11.5T680-600q0 17 11.5 28.5T720-560ZM240-200h240v-280H240v280Zm240 0H240h240Z"/></svg>' }
+  { id: 'oilprice', title: 'ตรวจสอบราคาน้ำมันดีเซล', icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M160-120v-640q0-33 23.5-56.5T240-840h240q33 0 56.5 23.5T560-760v280h40q33 0 56.5 23.5T680-400v180q0 17 11.5 28.5T720-180q17 0 28.5-11.5T760-220v-288q-9 5-19 6.5t-21 1.5q-42 0-71-29t-29-71q0-32 17.5-57.5T684-694l-84-84 42-42 148 144q15 15 22.5 35t7.5 41v380q0 42-29 71t-71 29q-42 0-71-29t-29-71v-200h-60v300H160Zm80-440h240v-200H240v200Zm480 0q17 0 28.5-11.5T760-600q0-17-11.5-28.5T720-640q-17 0-28.5 11.5T680-600q0 17 11.5 28.5T720-560ZM240-200h240v-280H240v280Zm240 0H240h240Z"/></svg>' },
+  { id: 'monthly', title: 'ตรวจสอบผลดำเนินงานรายเดือน', icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M200-80q-33 0-56.5-23.5T120-160v-560q0-33 23.5-56.5T200-800h40v-80h80v80h320v-80h80v80h40q33 0 56.5 23.5T840-720v560q0 33-23.5 56.5T760-80H200Zm0-80h560v-400H200v400Zm0-480h560v-80H200v80Zm0 0v-80 80Zm280 240q-17 0-28.5-11.5T440-440q0-17 11.5-28.5T480-480q17 0 28.5 11.5T520-440q0 17-11.5 28.5T480-400Zm-160 0q-17 0-28.5-11.5T280-440q0-17 11.5-28.5T320-480q17 0 28.5 11.5T360-440q0 17-11.5 28.5T320-400Zm320 0q-17 0-28.5-11.5T600-440q0-17 11.5-28.5T640-480q17 0 28.5 11.5T680-440q0 17-11.5 28.5T640-400ZM480-240q-17 0-28.5-11.5T440-280q0-17 11.5-28.5T480-320q17 0 28.5 11.5T520-280q0 17-11.5 28.5T480-240Zm-160 0q-17 0-28.5-11.5T280-280q0-17 11.5-28.5T320-320q17 0 28.5 11.5T360-280q0 17-11.5 28.5T320-240Zm320 0q-17 0-28.5-11.5T600-280q0-17 11.5-28.5T640-320q17 0 28.5 11.5T680-280q0 17-11.5 28.5T640-240Z"/></svg>' }
 ];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const MTH = { January: 'ม.ค.', February: 'ก.พ.', March: 'มี.ค.', April: 'เม.ย.', May: 'พ.ค.', June: 'มิ.ย.', July: 'ก.ค.', August: 'ส.ค.', September: 'ก.ย.', October: 'ต.ค.', November: 'พ.ย.', December: 'ธ.ค.' };
@@ -4329,7 +4330,8 @@ function buildMasterDashboard(d) {
 }
 
 /* ─── หน้า Daily Comparison ver 2.0 — Date Range + Cascading Filters + Trip-Level Anomaly ─── */
-function buildDailyCompare(data) {
+function buildDailyCompare(data, options = {}) {
+  const ENGINE_ONLY = !!(options && options.engineOnly);
   const fd = typeof FRAUD_DATA !== 'undefined' ? FRAUD_DATA : [];
   const validFd = fd
     .map(canonicalizeTripRow)
@@ -4906,13 +4908,151 @@ function buildDailyCompare(data) {
 
 
 
-  setTimeout(() => {
+  const __runInteractive = () => {
     let _stA = null, _stB = null, _labelA = '', _labelB = '';
     let _compareRunToken = 0;
     let _rollingPresetBackup = null;
 
+    // ── Shared inspection engine (single source of truth) ──────────────────
+    // These helpers reproduce the exact per-day single-mode inspection used by
+    // the XLSX export. They are also exposed via __engineApi (engineOnly mode)
+    // so the monthly review page (buildMonthlyReview) runs identical logic.
+    const findRefDaysForDate = (dayIso, custF, routeF, vtypeF) => {
+      const parts = String(dayIso || '').split('-').map(Number);
+      if (parts.length !== 3 || parts.some(v => !Number.isFinite(v))) return [];
+      const [y, m, d] = parts;
+      const refCandidates = [];
+      for (let i = 1; i <= 3; i++) {
+        const dt = new Date(y, m - 1, d - i);
+        const iso = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+        if (allDatesSet.has(iso)) refCandidates.push(iso);
+      }
+      return refCandidates.map(iso => rangeStats(iso, iso, custF, routeF, vtypeF)).filter(Boolean);
+    };
+    const buildSingleCasesForDay = (stA, stRefArray) => {
+      const refDays = Array.isArray(stRefArray) ? stRefArray : (stRefArray ? [stRefArray] : []);
+      const singleRefDaysList = refDays.map(st => fmtDate(st.dateStart));
+      if (!stA) return { singleCases: [], singleRefDaysList };
+      const refDayMaps = refDays.map(st => {
+        const map = {};
+        (st.rows || []).forEach(r => {
+          const k = dcQaRouteKey(r);
+          if (!map[k]) map[k] = [];
+          map[k].push(r);
+        });
+        return { dateLabel: fmtDate(st.dateStart), map };
+      });
+      const getRefForRoute = (routeKey) => {
+        for (const day of refDayMaps) {
+          if (day.map[routeKey] && day.map[routeKey].length > 0) {
+            return { trips: day.map[routeKey].slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))), dateLabel: day.dateLabel };
+          }
+        }
+        return null;
+      };
+      const singleCases = (stA.routes || []).map(route => {
+        const trips = (stA.rows || []).filter(r => r.customer === route.customer && routeIdentityKey(r) === routeIdentityKey(route) && r.vtype === route.vtype)
+          .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+        const routeKey = trips.length > 0 ? dcQaRouteKey(trips[0]) : null;
+        const refResult = routeKey ? getRefForRoute(routeKey) : null;
+        const refTripsForRoute = refResult ? refResult.trips : [];
+        const analyzedRows = trips.map(ra => {
+          const peers = dcQaStatusPeersForTrip(ra, refTripsForRoute);
+          const analysis = dcQaAnalyzeTrip(ra, peers, null);
+          return { ra, statuses: analysis.statuses, infoStatuses: analysis.infoStatuses, matchedRefTrip: analysis.matchedRefTrip };
+        })
+          .sort((a, b) => {
+            const rankA = dcQaStatusRank(a.statuses);
+            const rankB = dcQaStatusRank(b.statuses);
+            if (rankB !== rankA) return rankB - rankA;
+            return String(a.ra.date || '').localeCompare(String(b.ra.date || ''));
+          });
+        const attachResult = dcQaAttachMatchedRefTrips(analyzedRows, refTripsForRoute);
+        const pairPatternCtx = dcQaBuildPairPatternContext(
+          (attachResult.entries || []).filter(entry => entry?.ra && entry?.matchedRefTrip).map(entry => ({ ra: entry.ra, rb: entry.matchedRefTrip }))
+        );
+        const rows = attachResult.entries.map(entry => {
+          const displayedPeer = entry?.matchedRefTrip || null;
+          if (!displayedPeer) {
+            return { ...entry, pairScopedStatuses: entry?.statuses || ['normal'], pairScopedInfoStatuses: entry?.infoStatuses || [] };
+          }
+          const pairScopedAnalysis = dcQaAnalyzeMatchedPair(entry.ra || {}, displayedPeer, pairPatternCtx, { includePeerIntrinsic: false });
+          return {
+            ...entry,
+            statuses: pairScopedAnalysis.statuses || entry?.statuses || ['normal'],
+            infoStatuses: pairScopedAnalysis.infoStatuses || entry?.infoStatuses || [],
+            pairScopedStatuses: pairScopedAnalysis.statuses || entry?.statuses || ['normal'],
+            pairScopedInfoStatuses: pairScopedAnalysis.infoStatuses || entry?.infoStatuses || []
+          };
+        });
+        const basePatternRows = rows.filter(row => !dcQaHasAnomalyStatus(row.statuses) && (row.infoStatuses || []).length).map(row => ({
+          ra: row.ra, statuses: row.statuses || ['normal'], infoStatuses: row.infoStatuses || [], matchedRefTrip: row.matchedRefTrip || null
+        }));
+        const previewRows = rows.filter(dcQaShouldDisplayPrimaryRow);
+        const filterStatuses = dcQaCollectDisplayStatuses(rows);
+        return {
+          route, rows, previewRows, filterStatuses, basePatternRows,
+          basePatternCount: basePatternRows.length,
+          leftoverRefTrips: attachResult.leftoverRefTrips || [],
+          refTripsForRoute,
+          refDateLabel: refResult ? refResult.dateLabel : null
+        };
+      }).sort((a, b) => {
+        const ca = String(a.route.customer || '').trim().toUpperCase();
+        const cb = String(b.route.customer || '').trim().toUpperCase();
+        const pa = custOrder[ca] ?? 999;
+        const pb = custOrder[cb] ?? 999;
+        if (pa !== pb) return pa - pb;
+        return routeGroupHeaderDisplay(a.route).localeCompare(routeGroupHeaderDisplay(b.route), 'th');
+      });
+      return { singleCases, singleRefDaysList };
+    };
+    const computeSingleDaySummary = (stA, singleCases) => {
+      const statusCount = { loss: 0, oil50: 0, payHigh: 0, payOilChanged: 0, recvLow: 0, recvOilChanged: 0, normal: 0, noRef: 0 };
+      const statusImpact = { loss: 0, oil50: 0, payHigh: 0, payOilChanged: 0, recvLow: 0, recvOilChanged: 0 };
+      let totalAnomCount = 0;
+      const routesWithRefCount = (singleCases || []).filter(item => (item.refTripsForRoute || []).length > 0).length;
+      const calcMarginValue = trip => hasNum(trip?.margin)
+        ? Number(trip.margin)
+        : ((Number(trip?.recv) || 0) - (Number(trip?.pay) || 0) - (Number(trip?.oil) || 0));
+      const calcOilReserveExcess = trip => {
+        const pay = Number(trip?.pay) || 0;
+        const oil = Number(trip?.oil) || 0;
+        if (pay <= 0) return 0;
+        return Math.max(oil - (pay * 0.5), 0);
+      };
+      const absPairDiff = (a, b) => (hasNum(a) && hasNum(b)) ? Math.abs(Number(a) - Number(b)) : 0;
+      (singleCases || []).forEach(item => {
+        (item.rows || []).forEach(entry => {
+          if (!dcQaShouldDisplayPrimaryRow(entry)) return;
+          const ra = entry.ra || {};
+          const statuses = entry.statuses || [];
+          const cleaned = statuses.some(s => s !== 'normal') ? statuses.filter(s => s !== 'normal') : statuses;
+          const pairScopedStatuses = entry.pairScopedStatuses || statuses || ['normal'];
+          const pairScopedCleaned = pairScopedStatuses.some(s => s !== 'normal') ? pairScopedStatuses.filter(s => s !== 'normal') : pairScopedStatuses;
+          if (cleaned.includes('normal')) statusCount.normal++;
+          else if (dcQaHasAnomalyStatus(cleaned)) totalAnomCount++;
+          if (cleaned.includes('loss')) statusCount.loss++;
+          if (cleaned.includes('oil50')) statusCount.oil50++;
+          if (pairScopedCleaned.includes('payHigh')) statusCount.payHigh++;
+          if (pairScopedCleaned.includes('payOilChanged')) statusCount.payOilChanged++;
+          if (pairScopedCleaned.includes('recvLow')) statusCount.recvLow++;
+          if (pairScopedCleaned.includes('recvOilChanged')) statusCount.recvOilChanged++;
+          if (cleaned.includes('noRef')) statusCount.noRef++;
+          if (cleaned.includes('loss')) statusImpact.loss += Math.abs(Math.min(calcMarginValue(ra), 0));
+          if (cleaned.includes('oil50')) statusImpact.oil50 += calcOilReserveExcess(ra);
+          const displayedPeer = entry.matchedRefTrip || null;
+          if (pairScopedCleaned.includes('payHigh')) statusImpact.payHigh += absPairDiff(ra?.pay, displayedPeer?.pay);
+          if (pairScopedCleaned.includes('payOilChanged')) statusImpact.payOilChanged += absPairDiff(ra?.pay, displayedPeer?.pay);
+          if (pairScopedCleaned.includes('recvLow')) statusImpact.recvLow += absPairDiff(ra?.recv, displayedPeer?.recv);
+          if (pairScopedCleaned.includes('recvOilChanged')) statusImpact.recvOilChanged += absPairDiff(ra?.recv, displayedPeer?.recv);
+        });
+      });
+      return { statusCount, statusImpact, totalAnomCount, routesWithRefCount };
+    };
+
     // Initialize Flatpickr
-    (async () => {
+    if (!ENGINE_ONLY) (async () => {
       try {
         await ensureFlatpickrLibrary();
       } catch (err) {
@@ -5226,9 +5366,11 @@ function buildDailyCompare(data) {
     };
 
     // Initial cascade populate
-    wireComparePresetControls();
-    buildMsOptions('cust', allCustomers, []);
-    dcUpdateFilters(false);
+    if (!ENGINE_ONLY) {
+      wireComparePresetControls();
+      buildMsOptions('cust', allCustomers, []);
+      dcUpdateFilters(false);
+    }
 
     window.dcRunCompare = function runCompare() {
       const runToken = ++_compareRunToken;
@@ -6829,106 +6971,12 @@ function buildDailyCompare(data) {
         return list.length ? list.join(', ') : '-';
       };
 
-      let buildSingleCases = null;
       let singleCases = [];
       let singleRefDaysList = [];
       if (_isSingleMode && _stA) {
-        const refDays = Array.isArray(_stRef) ? _stRef : (_stRef ? [_stRef] : []);
-        singleRefDaysList = refDays.map(st => fmtDate(st.dateStart));
-        const refDayMaps = refDays.map(st => {
-          const map = {};
-          (st.rows || []).forEach(r => {
-            const k = dcQaRouteKey(r);
-            if (!map[k]) map[k] = [];
-            map[k].push(r);
-          });
-          return { dateLabel: fmtDate(st.dateStart), map };
-        });
-        const getRefForRoute = (routeKey) => {
-          for (const day of refDayMaps) {
-            if (day.map[routeKey] && day.map[routeKey].length > 0) {
-              return { trips: day.map[routeKey].slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))), dateLabel: day.dateLabel };
-            }
-          }
-          return null;
-        };
-        buildSingleCases = () => {
-          return (_stA.routes || []).map(route => {
-            const trips = (_stA.rows || []).filter(r => r.customer === route.customer && routeIdentityKey(r) === routeIdentityKey(route) && r.vtype === route.vtype)
-              .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
-            const routeKey = trips.length > 0 ? dcQaRouteKey(trips[0]) : null;
-            const refResult = routeKey ? getRefForRoute(routeKey) : null;
-            const refTripsForRoute = refResult ? refResult.trips : [];
-            const analyzedRows = trips.map(ra => {
-              const peers = dcQaStatusPeersForTrip(ra, refTripsForRoute);
-              const analysis = dcQaAnalyzeTrip(ra, peers, null);
-              return {
-                ra,
-                statuses: analysis.statuses,
-                infoStatuses: analysis.infoStatuses,
-                matchedRefTrip: analysis.matchedRefTrip
-              };
-            })
-              .sort((a, b) => {
-                const rankA = dcQaStatusRank(a.statuses);
-                const rankB = dcQaStatusRank(b.statuses);
-                if (rankB !== rankA) return rankB - rankA;
-                return String(a.ra.date || '').localeCompare(String(b.ra.date || ''));
-              });
-            const attachResult = dcQaAttachMatchedRefTrips(analyzedRows, refTripsForRoute);
-            const pairPatternCtx = dcQaBuildPairPatternContext(
-              (attachResult.entries || []).filter(entry => entry?.ra && entry?.matchedRefTrip).map(entry => ({
-                ra: entry.ra,
-                rb: entry.matchedRefTrip
-              }))
-            );
-            const rows = attachResult.entries.map(entry => {
-              const displayedPeer = entry?.matchedRefTrip || null;
-              if (!displayedPeer) {
-                return {
-                  ...entry,
-                  pairScopedStatuses: entry?.statuses || ['normal'],
-                  pairScopedInfoStatuses: entry?.infoStatuses || []
-                };
-              }
-              const pairScopedAnalysis = dcQaAnalyzeMatchedPair(entry.ra || {}, displayedPeer, pairPatternCtx, { includePeerIntrinsic: false });
-              return {
-                ...entry,
-                statuses: pairScopedAnalysis.statuses || entry?.statuses || ['normal'],
-                infoStatuses: pairScopedAnalysis.infoStatuses || entry?.infoStatuses || [],
-                pairScopedStatuses: pairScopedAnalysis.statuses || entry?.statuses || ['normal'],
-                pairScopedInfoStatuses: pairScopedAnalysis.infoStatuses || entry?.infoStatuses || []
-              };
-            });
-            const basePatternRows = rows.filter(row => !dcQaHasAnomalyStatus(row.statuses) && (row.infoStatuses || []).length).map(row => ({
-              ra: row.ra,
-              statuses: row.statuses || ['normal'],
-              infoStatuses: row.infoStatuses || [],
-              matchedRefTrip: row.matchedRefTrip || null
-            }));
-            const previewRows = rows.filter(dcQaShouldDisplayPrimaryRow);
-            const filterStatuses = dcQaCollectDisplayStatuses(rows);
-            return {
-              route,
-              rows,
-              previewRows,
-              filterStatuses,
-              basePatternRows,
-              basePatternCount: basePatternRows.length,
-              leftoverRefTrips: attachResult.leftoverRefTrips || [],
-              refTripsForRoute,
-              refDateLabel: refResult ? refResult.dateLabel : null
-            };
-          }).sort((a, b) => {
-            const ca = String(a.route.customer || '').trim().toUpperCase();
-            const cb = String(b.route.customer || '').trim().toUpperCase();
-            const pa = custOrder[ca] ?? 999;
-            const pb = custOrder[cb] ?? 999;
-            if (pa !== pb) return pa - pb;
-            return xlsxRouteDisplay(a.route).localeCompare(xlsxRouteDisplay(b.route), 'th');
-          });
-        };
-        singleCases = buildSingleCases();
+        const __built = buildSingleCasesForDay(_stA, _stRef);
+        singleCases = __built.singleCases;
+        singleRefDaysList = __built.singleRefDaysList;
       }
 
       // Pre-compute filtered cards (used by both Sheet 1 summary and per-view sheets).
@@ -7080,54 +7128,7 @@ function buildDailyCompare(data) {
         // We need: total routes, total trips, anomaly count, per-status counts, ref days.
         // Walk the same cases/rows used by the single-mode export sheets so summary
         // and detail sheets are based on the exact same displayed pairs.
-        const statusCount = { loss: 0, oil50: 0, payHigh: 0, payOilChanged: 0, recvLow: 0, recvOilChanged: 0, normal: 0, noRef: 0 };
-        const statusImpact = { loss: 0, oil50: 0, payHigh: 0, payOilChanged: 0, recvLow: 0, recvOilChanged: 0 };
-        let totalAnomCount = 0;
-        const routesWithRefCount = singleCases.filter(item => (item.refTripsForRoute || []).length > 0).length;
-        const calcMarginValue = trip => hasNum(trip?.margin)
-          ? Number(trip.margin)
-          : ((Number(trip?.recv) || 0) - (Number(trip?.pay) || 0) - (Number(trip?.oil) || 0));
-        const calcOilReserveExcess = trip => {
-          const pay = Number(trip?.pay) || 0;
-          const oil = Number(trip?.oil) || 0;
-          if (pay <= 0) return 0;
-          return Math.max(oil - (pay * 0.5), 0);
-        };
-        const absPairDiff = (a, b) => (hasNum(a) && hasNum(b)) ? Math.abs(Number(a) - Number(b)) : 0;
-        singleCases.forEach(item => {
-          (item.rows || []).forEach(entry => {
-            if (!dcQaShouldDisplayPrimaryRow(entry)) return;
-            const ra = entry.ra || {};
-            const statuses = entry.statuses || [];
-            const cleaned = statuses.some(s => s !== 'normal') ? statuses.filter(s => s !== 'normal') : statuses;
-            const pairScopedStatuses = entry.pairScopedStatuses || statuses || ['normal'];
-            const pairScopedCleaned = pairScopedStatuses.some(s => s !== 'normal') ? pairScopedStatuses.filter(s => s !== 'normal') : pairScopedStatuses;
-            if (cleaned.includes('normal')) statusCount.normal++;
-            else if (dcQaHasAnomalyStatus(cleaned)) totalAnomCount++;
-            if (cleaned.includes('loss')) statusCount.loss++;
-            if (cleaned.includes('oil50')) statusCount.oil50++;
-            if (pairScopedCleaned.includes('payHigh')) statusCount.payHigh++;
-            if (pairScopedCleaned.includes('payOilChanged')) statusCount.payOilChanged++;
-            if (pairScopedCleaned.includes('recvLow')) statusCount.recvLow++;
-            if (pairScopedCleaned.includes('recvOilChanged')) statusCount.recvOilChanged++;
-            if (cleaned.includes('noRef')) statusCount.noRef++;
-            if (cleaned.includes('loss')) statusImpact.loss += Math.abs(Math.min(calcMarginValue(ra), 0));
-            if (cleaned.includes('oil50')) statusImpact.oil50 += calcOilReserveExcess(ra);
-            const displayedPeer = entry.matchedRefTrip || null;
-            if (pairScopedCleaned.includes('payHigh')) {
-              statusImpact.payHigh += absPairDiff(ra?.pay, displayedPeer?.pay);
-            }
-            if (pairScopedCleaned.includes('payOilChanged')) {
-              statusImpact.payOilChanged += absPairDiff(ra?.pay, displayedPeer?.pay);
-            }
-            if (pairScopedCleaned.includes('recvLow')) {
-              statusImpact.recvLow += absPairDiff(ra?.recv, displayedPeer?.recv);
-            }
-            if (pairScopedCleaned.includes('recvOilChanged')) {
-              statusImpact.recvOilChanged += absPairDiff(ra?.recv, displayedPeer?.recv);
-            }
-          });
-        });
+        const { statusCount, statusImpact, totalAnomCount, routesWithRefCount } = computeSingleDaySummary(_stA, singleCases);
 
         const [y, m, d] = _stA.dateStart.split('-').map(Number);
         const getDayNum = (offset) => {
@@ -9558,12 +9559,29 @@ function buildDailyCompare(data) {
       dcQaModalShell('dc_unm_modal', 'dc_unm_capture', titleHtml, `${esc(card.ga.customer || '-')} · ${esc(card.ga.vtype || '-')} · ${esc(myLabel)}`, encodeURIComponent(`unmatched_${card.ga.route || 'route'}`), body);
     };
 
+    // Expose the shared inspection engine for the monthly review module.
+    const __engineApi = {
+      rangeStats,
+      allDates,
+      allDatesSet,
+      fmtDate,
+      fmtRange,
+      findRefDaysForDate,
+      buildSingleCasesForDay,
+      computeSingleDaySummary
+    };
+    if (ENGINE_ONLY) return __engineApi;
+
     document.getElementById('dc_compare_btn')?.addEventListener('click', dcRunCompare);
     // Start in single/normal mode by default.
     window.dcSetMode(pendingCompareRanges?.single === false ? 'compare' : 'single', true);
     dcRunCompare();
     if (pendingCompareRanges && typeof window !== 'undefined') window.DC_PENDING_COMPARE_RANGES = null;
-  }, 50);
+    return __engineApi;
+  };
+
+  if (ENGINE_ONLY) return __runInteractive();
+  setTimeout(__runInteractive, 50);
 
   // Animation: add visible class after small delay
   setTimeout(() => {
@@ -9883,6 +9901,426 @@ function buildOilPricePage(d) {
   return html;
 }
 
+/* ─── Page 4: ตรวจสอบผลดำเนินงานรายเดือน (Monthly Review) ───
+   Reuses the exact single-day inspection engine from buildDailyCompare
+   (engineOnly mode) and renders sections 1–3 of "สรุปผลดำเนินงาน" aggregated
+   for a whole month plus a per-day breakdown. Logic is 100% shared with XLSX. */
+const MR_STATUS_META = [
+  { key: 'loss', label: 'ขาดทุน', color: '#f87171', note: 'รวมมูลค่าขาดทุนจากเที่ยวที่ส่วนต่างติดลบ' },
+  { key: 'oil50', label: 'สำรองน้ำมัน > 50%', color: '#fbbf24', note: 'รวมเฉพาะส่วนที่สำรองน้ำมันเกิน 50% ของราคาจ่าย' },
+  { key: 'payHigh', label: 'ราคาจ่ายผิดปกติ', color: '#a78bfa', note: 'รวมผลต่างราคาจ่ายเทียบกับวันที่อ้างอิง' },
+  { key: 'payOilChanged', label: 'ราคาจ่ายเปลี่ยนแปลงตามราคาน้ำมัน', color: '#f472b6', note: 'รวมผลต่างราคาจ่ายของคู่ที่ราคาน้ำมันเปลี่ยนแปลง' },
+  { key: 'recvLow', label: 'ราคารับผิดปกติ', color: '#60a5fa', note: 'รวมผลต่างราคารับเทียบกับวันที่อ้างอิง' },
+  { key: 'recvOilChanged', label: 'ราคารับเปลี่ยนแปลงตามราคาน้ำมัน', color: '#22d3ee', note: 'รวมผลต่างราคารับของคู่ที่ราคาน้ำมันเปลี่ยนแปลง' },
+  { key: 'normal', label: 'ข้อมูลไม่เปลี่ยนแปลง', color: '#34d399', note: '-' },
+  { key: 'noRef', label: 'ไม่มีข้อมูลเปรียบเทียบ', color: '#94a3b8', note: '-' }
+];
+
+// The 7 selectable trend views, all the same magnitude-bar type (single hue,
+// baseline at the bottom) — "ส่วนต่าง" matches the term already used in the
+// finance card (ส่วนต่างรวม) instead of "กำไร" so the wording stays consistent.
+// The other 6 reuse MR_STATUS_META's key/label/color 1:1 so a status keeps the
+// exact same color everywhere on the page (status table, dot, and trend chart).
+const MR_TREND_SHORT_LABEL = { oil50: 'สำรองน้ำมัน' };
+const MR_TREND_METRICS = [
+  { key: 'margin', label: 'แนวโน้มส่วนต่าง', shortLabel: 'ส่วนต่าง', color: 'var(--green)', value: pd => pd.stA.margin || 0 },
+  ...MR_STATUS_META
+    .filter(m => m.key !== 'normal' && m.key !== 'noRef')
+    .map(m => ({ key: m.key, label: m.label, shortLabel: MR_TREND_SHORT_LABEL[m.key] || m.label, color: m.color, value: pd => Number(pd.summary.statusImpact[m.key]) || 0 }))
+];
+
+function buildMonthlyReview(data) {
+  // Fallback month source (used only if the dates API + loaded trips are empty).
+  const fallbackDates = Array.isArray(data?.daily)
+    ? [...new Set(
+        data.daily
+          .flatMap(day => Array.isArray(day?.rows) ? day.rows.map(r => r?.date) : [])
+          .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')))
+      )]
+    : [];
+  let defaultMonth = '';
+  let mrRunToken = 0;
+  let lastPerDay = [];
+  let activeTrendMetric = 'margin';
+  const monthLabel = ym => {
+    const [y, m] = String(ym).split('-');
+    return `${MTH[MONTHS[Number(m) - 1]]} ${y}`;
+  };
+  // Default view = the calendar month before the current one (Bangkok time), e.g.
+  // today is in July -> default to June. Falls back to the latest month that has
+  // data if the previous calendar month has none. The user can still pick any
+  // other month (including the current one) from the dropdown.
+  const getCurrentMonthKeyBangkok = () => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit'
+    }).formatToParts(new Date());
+    const y = parts.find(p => p.type === 'year')?.value;
+    const m = parts.find(p => p.type === 'month')?.value;
+    return `${y}-${m}`;
+  };
+  const getPreviousMonthKey = ym => {
+    const [y, m] = String(ym).split('-').map(Number);
+    const d = new Date(y, m - 2, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  };
+
+  // ── formatting helpers (match XLSX summary presentation) ──
+  const addCommas = str => String(str).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const fmtMoney = n => {
+    if (n == null || isNaN(n)) return '0.00';
+    const v = Math.round(Number(n) * 100) / 100;
+    const neg = v < 0;
+    const [i, d] = Math.abs(v).toFixed(2).split('.');
+    return (neg ? '-' : '') + addCommas(i) + '.' + d;
+  };
+  const fmtInt = n => {
+    if (n == null || isNaN(n)) return '0';
+    const v = Math.round(Number(n));
+    return (v < 0 ? '-' : '') + addCommas(String(Math.abs(v)));
+  };
+  const fmtPct = n => (n == null || isNaN(n)) ? '0.00%' : (Math.round(Number(n) * 100) / 100).toFixed(2) + '%';
+  const shortDay = iso => { const [y, m, d] = String(iso).split('-'); return `${Number(d)} ${MTH[MONTHS[Number(m) - 1]]}`; };
+
+  // ── section renderers (shared by month aggregate + per-day) ──
+  const financeGrid = st => {
+    const marginCls = (st.margin || 0) < 0 ? 'is-neg' : 'is-pos';
+    return `<div class="mr-kpi-grid">
+      <div class="mr-kpi"><div class="mr-kpi-label">ราคารับรวม</div><div class="mr-kpi-value">${fmtMoney(st.recv)}</div></div>
+      <div class="mr-kpi"><div class="mr-kpi-label">ราคาจ่ายรวม</div><div class="mr-kpi-value">${fmtMoney(st.pay)}</div></div>
+      <div class="mr-kpi"><div class="mr-kpi-label">สำรองน้ำมันรวม</div><div class="mr-kpi-value">${fmtMoney(st.oil)}</div></div>
+      <div class="mr-kpi"><div class="mr-kpi-label">ส่วนต่างรวม</div><div class="mr-kpi-value ${marginCls}">${fmtMoney(st.margin)}</div></div>
+      <div class="mr-kpi"><div class="mr-kpi-label">กำไร %</div><div class="mr-kpi-value ${marginCls}">${fmtPct(st.recv ? (st.margin / st.recv * 100) : 0)}</div></div>
+    </div>`;
+  };
+  const statusTable = (statusCount, statusImpact, totalTrips) => {
+    const rows = MR_STATUS_META.map(meta => {
+      const count = Number(statusCount[meta.key]) || 0;
+      const pct = totalTrips > 0 ? count / totalTrips : 0;
+      const isInfo = meta.key === 'normal' || meta.key === 'noRef';
+      const impact = isInfo ? null : (Math.round((Number(statusImpact[meta.key]) || 0) * 100) / 100);
+      const barW = Math.max(0, Math.min(pct * 100, 100));
+      return `<tr>
+        <td><span class="mr-dot" style="background:${meta.color}"></span>${esc(meta.label)}</td>
+        <td class="is-center" style="color:${count > 0 && !isInfo ? meta.color : 'var(--text)'}">${fmtInt(count)}</td>
+        <td class="is-center">${fmtPct(pct * 100)}</td>
+        <td class="mr-bar-cell is-center"><div class="mr-bar"><div class="mr-bar-fill" style="width:${barW}%;background:${meta.color}"></div></div></td>
+        <td class="is-center">${impact == null ? '<span class="mr-muted">-</span>' : fmtMoney(impact)}</td>
+      </tr>`;
+    }).join('');
+    return `<div class="mr-table-wrap"><table class="mr-table">
+      <thead><tr><th>สถานะ</th><th class="is-center">จำนวนเที่ยว</th><th class="is-center">สัดส่วนต่อเที่ยวทั้งหมด</th><th class="is-center">แถบสรุป</th><th class="is-center">รายงานการเงิน (บาท)</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+      <div class="mr-note">หมายเหตุ: 1 เที่ยวอาจพบได้มากกว่า 1 สถานะ จึงทำให้ผลรวมของสัดส่วนต่อเที่ยวทั้งหมดมากกว่า 100% ได้</div>`;
+  };
+
+  // Daily trend bar chart, one of 7 selectable metrics (MR_TREND_METRICS).
+  // "margin" is diverging (single zero-baseline scale, both directions — never
+  // two separately-scaled axes). Green/red sits in the CVD warn band, so bar
+  // direction + legend + tooltip carry identity too — never color-alone.
+  // The other 6 are magnitude-only (always >= 0): single hue, baseline at the
+  // bottom, no legend needed (one series — the tab/title already names it).
+  const trendChart = (perDay, metricKey) => {
+    if (!perDay || !perDay.length) return '<div class="mr-empty">ไม่มีข้อมูลสำหรับกราฟ</div>';
+    const meta = MR_TREND_METRICS.find(m => m.key === metricKey) || MR_TREND_METRICS[0];
+    const values = perDay.map(meta.value);
+    const maxAbs = Math.max(1, ...values.map(v => Math.abs(v)));
+    const isCount = metricKey !== 'margin';
+    const bars = perDay.map((pd, i) => {
+      const v = values[i];
+      const h = Math.round((Math.abs(v) / maxAbs) * 172);
+      const shownH = Math.max(h, v !== 0 ? 2 : 0);
+      const dayNum = Number(String(pd.day).split('-')[2]);
+      const tooltipBody = isCount
+        ? `<div style="font-size:13px;color:var(--text)">${fmtMoney(v)} บาท</div>
+           <div style="font-size:10px;color:var(--muted)">${fmtInt(Number(pd.summary.statusCount[metricKey]) || 0)} เที่ยวที่พบ</div>`
+        : `<div style="font-size:13px;color:var(--text)">${fmtMoney(v)} บาท</div>
+           <div style="font-size:10px;color:var(--muted)">${fmtInt(pd.stA.trips || 0)} เที่ยว</div>`;
+      return `<div class="mr-trend-col">
+        <div class="mr-trend-bar" style="bottom:0;height:${shownH}px;background:${meta.color}"></div>
+        <div class="mr-trend-tick">${dayNum}</div>
+        <div class="mr-trend-tooltip">
+          <div style="font-weight:700;color:${meta.color};margin-bottom:2px">${esc(shortDay(pd.day))}</div>
+          ${tooltipBody}
+        </div>
+      </div>`;
+    }).join('');
+    return `<div class="mr-trend-scroll"><div class="mr-trend-chart">
+      <div class="mr-trend-baseline"></div>
+      ${bars}
+    </div></div>`;
+  };
+
+  const trendTabs = () => MR_TREND_METRICS.map(m =>
+    `<button type="button" class="mr-trend-tab${activeTrendMetric === m.key ? ' is-active' : ''}" data-metric="${m.key}" onclick="window.mrSelectTrendMetric('${m.key}')"><span class="mr-trend-tab-dot" style="background:${m.color}"></span>${esc(m.shortLabel)}</button>`
+  ).join('');
+
+  const trendChartCard = perDay => {
+    lastPerDay = perDay;
+    return `<div class="mr-trend-tabs">${trendTabs()}</div>
+    <div id="mr_trend_chart_holder">${trendChart(perDay, activeTrendMetric)}</div>`;
+  };
+
+  window.mrSelectTrendMetric = function (key) {
+    if (!MR_TREND_METRICS.some(m => m.key === key)) return;
+    activeTrendMetric = key;
+    document.querySelectorAll('.mr-trend-tab').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.metric === key);
+    });
+    const holder = document.getElementById('mr_trend_chart_holder');
+    if (holder) holder.innerHTML = trendChart(lastPerDay, key);
+  };
+
+  window.mrRun = async function (monthKey) {
+    const results = document.getElementById('mr_results');
+    if (!results) return;
+    const mk = monthKey || defaultMonth;
+    const token = ++mrRunToken;
+    results.innerHTML = `<section class="loading-screen mr-loading"><div class="loader-wrap"><div class="loader-ring"></div><div class="loader-ring"></div></div><div class="loader-text">กำลังตรวจสอบ<span class="loader-dots"></span></div><div class="loader-sub">โหลดและวิเคราะห์ข้อมูลเดือน ${esc(monthLabel(mk))}</div></section>`;
+    const [yy, mm] = mk.split('-').map(Number);
+    const monthStart = `${mk}-01`;
+    const lastDay = new Date(yy, mm, 0).getDate();
+    const monthEnd = `${mk}-${String(lastDay).padStart(2, '0')}`;
+    const bufferStart = addDaysToIso(monthStart, -3) || monthStart;
+    if (typeof loadTripsRange === 'function') {
+      try { await loadTripsRange(bufferStart, monthEnd); }
+      catch (err) { console.warn('Monthly review: trip load failed:', err.message); }
+    }
+    if (token !== mrRunToken) return; // a newer month request superseded this one
+    let engine = null;
+    try { engine = buildDailyCompare(DATA, { engineOnly: true }); }
+    catch (err) { console.error('Monthly review: engine build failed:', err); }
+    if (!engine || typeof engine.rangeStats !== 'function') {
+      results.innerHTML = `<div class="mr-empty">ไม่สามารถเตรียมข้อมูลสำหรับการตรวจสอบได้<br><button type="button" class="mr-run-btn" style="margin-top:16px" onclick="window.mrOnMonthChange()">ลองใหม่</button></div>`;
+      return;
+    }
+    const days = (engine.allDates || []).filter(d => d >= monthStart && d <= monthEnd);
+    if (!days.length) {
+      results.innerHTML = `<div class="mr-empty">ไม่พบข้อมูลเที่ยววิ่งในเดือน ${esc(monthLabel(mk))}</div>`;
+      return;
+    }
+    const NF = [];
+    const agg = {
+      recv: 0, pay: 0, oil: 0, margin: 0, trips: 0, anom: 0,
+      statusCount: { loss: 0, oil50: 0, payHigh: 0, payOilChanged: 0, recvLow: 0, recvOilChanged: 0, normal: 0, noRef: 0 },
+      statusImpact: { loss: 0, oil50: 0, payHigh: 0, payOilChanged: 0, recvLow: 0, recvOilChanged: 0 }
+    };
+    // Distinct-route sets: a route that runs on many days is counted once for the
+    // whole month, so "จำนวนเส้นทาง" matches the same route-identity dedup that the
+    // normal-view page and XLSX use (getRouteIdentity().key), not a per-day sum.
+    const monthRoutes = new Set();        // distinct routes in the month
+    const monthRoutesWithRef = new Set(); // distinct routes with a reference on >=1 day
+    const perDay = [];
+    days.forEach(day => {
+      const stA = engine.rangeStats(day, day, NF, NF, NF);
+      if (!stA) return;
+      const stRef = engine.findRefDaysForDate(day, NF, NF, NF);
+      const built = engine.buildSingleCasesForDay(stA, stRef);
+      const s = engine.computeSingleDaySummary(stA, built.singleCases);
+      agg.recv += stA.recv; agg.pay += stA.pay; agg.oil += stA.oil; agg.margin += stA.margin;
+      agg.trips += stA.trips || 0;
+      agg.anom += s.totalAnomCount;
+      (stA.routes || []).forEach(r => monthRoutes.add(r.routeKey));
+      (built.singleCases || []).forEach(item => {
+        if ((item.refTripsForRoute || []).length > 0) monthRoutesWithRef.add(item.route.routeKey);
+      });
+      Object.keys(agg.statusCount).forEach(k => { agg.statusCount[k] += s.statusCount[k] || 0; });
+      Object.keys(agg.statusImpact).forEach(k => { agg.statusImpact[k] += s.statusImpact[k] || 0; });
+      perDay.push({ day, stA, summary: s, refCount: (stRef || []).length, refList: built.singleRefDaysList });
+    });
+    if (!perDay.length) {
+      results.innerHTML = `<div class="mr-empty">ไม่พบข้อมูลเที่ยววิ่งในเดือน ${esc(monthLabel(mk))}</div>`;
+      return;
+    }
+
+    // ── Monthly aggregate: sections 1–3 ──
+    const overview = `<div class="mr-kpi-grid mr-overview">
+      <div class="mr-kpi"><div class="mr-kpi-label">เดือน</div><div class="mr-kpi-value">${esc(monthLabel(mk))}</div></div>
+      <div class="mr-kpi"><div class="mr-kpi-label">วันที่มีข้อมูล</div><div class="mr-kpi-value">${fmtInt(perDay.length)}</div></div>
+      <div class="mr-kpi"><div class="mr-kpi-label">จำนวนเส้นทาง</div><div class="mr-kpi-value">${fmtInt(monthRoutes.size)}</div></div>
+      <div class="mr-kpi"><div class="mr-kpi-label">เส้นทางที่มีข้อมูลเปรียบเทียบ</div><div class="mr-kpi-value">${fmtInt(monthRoutesWithRef.size)}</div></div>
+      <div class="mr-kpi"><div class="mr-kpi-label">จำนวนเที่ยว</div><div class="mr-kpi-value">${fmtInt(agg.trips)}</div></div>
+      <div class="mr-kpi"><div class="mr-kpi-label">จำนวนรายการที่มีความผิดปกติ</div><div class="mr-kpi-value ${agg.anom > 0 ? 'is-neg' : 'is-pos'}">${fmtInt(agg.anom)}</div></div>
+    </div>`;
+
+    const perDayHtml = perDay.map(pd => {
+      const anomBadge = pd.summary.totalAnomCount > 0
+        ? `<span class="mr-badge is-anom">ผิดปกติ ${fmtInt(pd.summary.totalAnomCount)}</span>`
+        : `<span class="mr-badge is-ok">ปกติ</span>`;
+      const marginCls = (pd.stA.margin || 0) < 0 ? 'is-neg' : 'is-pos';
+      const refText = pd.refList && pd.refList.length ? pd.refList.join(', ') : 'ไม่พบข้อมูลย้อนหลัง';
+      return `<details class="mr-day">
+        <summary>
+          <span class="mr-day-date">${esc(shortDay(pd.day))}</span>
+          <span class="mr-day-meta">${fmtInt(pd.stA.trips || 0)} เที่ยว · ${(pd.stA.routes || []).length} เส้นทาง (มี ${fmtInt(pd.summary.routesWithRefCount)} เส้นทางเปรียบเทียบได้ · ${fmtInt((pd.stA.routes || []).length - pd.summary.routesWithRefCount)} เส้นทางไม่มีข้อมูลเปรียบเทียบ)</span>
+          <span class="mr-day-margin ${marginCls}">${fmtMoney(pd.stA.margin)}</span>
+          ${anomBadge}
+          <svg class="mr-chevron" xmlns="http://www.w3.org/2000/svg" height="18" viewBox="0 -960 960 960" width="18" fill="currentColor"><path d="M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z"/></svg>
+        </summary>
+        <div class="mr-day-body">
+          <div class="mr-day-ref">วันอ้างอิงเพื่อเปรียบเทียบ (ย้อนหลัง 3 วัน): ${esc(refText)}</div>
+          ${financeGrid(pd.stA)}
+          ${statusTable(pd.summary.statusCount, pd.summary.statusImpact, pd.stA.trips || 0)}
+        </div>
+      </details>`;
+    }).join('');
+
+    if (token !== mrRunToken) return; // superseded before render
+    results.innerHTML = `
+      <section class="mr-card">
+        <div class="mr-card-head"><span class="mr-card-bar"></span><h3 class="mr-card-title">ภาพรวม <span class="mr-card-sub">— ${esc(monthLabel(mk))}</span></h3></div>
+        <div class="mr-card-body">${overview}</div>
+      </section>
+      <section class="mr-card">
+        <div class="mr-card-head"><span class="mr-card-bar"></span><h3 class="mr-card-title">สรุปการเงิน</h3></div>
+        <div class="mr-card-body">${financeGrid(agg)}</div>
+      </section>
+      <section class="mr-card">
+        <div class="mr-card-head"><span class="mr-card-bar"></span><h3 class="mr-card-title">แนวโน้มรายวัน</h3></div>
+        <div class="mr-card-body">${trendChartCard(perDay)}</div>
+      </section>
+      <section class="mr-card">
+        <div class="mr-card-head"><span class="mr-card-bar"></span><h3 class="mr-card-title">แยกตามสถานะที่ตรวจพบ</h3></div>
+        <div class="mr-card-body">${statusTable(agg.statusCount, agg.statusImpact, agg.trips)}</div>
+      </section>
+      <section class="mr-card">
+        <div class="mr-card-head"><span class="mr-card-bar"></span><h3 class="mr-card-title">ผลตรวจสอบรายวัน <span class="mr-card-sub">(คลิกเพื่อดูรายละเอียด)</span></h3></div>
+        <div class="mr-card-body"><div class="mr-days">${perDayHtml}</div></div>
+      </section>`;
+  };
+
+  window.mrOnMonthChange = function () {
+    const sel = document.getElementById('mr_month');
+    if (sel) window.mrRun(sel.value);
+  };
+
+  // Populate the month selector from the authoritative dates source (same source
+  // the daily-compare date picker uses), then auto-run the latest month.
+  window.mrInit = async function () {
+    const sel = document.getElementById('mr_month');
+    const results = document.getElementById('mr_results');
+    let dates = [];
+    try {
+      const dp = await loadDatesSource();
+      if (Array.isArray(dp?.dates)) dates = dp.dates.filter(Boolean);
+    } catch (err) {
+      console.warn('Monthly review: dates load failed:', err.message);
+    }
+    if (!dates.length && Array.isArray(window.FRAUD_DATA)) {
+      dates = [...new Set(window.FRAUD_DATA.map(r => r?.date).filter(Boolean))];
+    }
+    if (!dates.length) dates = fallbackDates;
+    const months = [...new Set(dates.map(d => String(d).slice(0, 7)).filter(m => /^\d{4}-\d{2}$/.test(m)))].sort();
+    if (!months.length) {
+      if (results) results.innerHTML = `<div class="mr-empty">ไม่พบข้อมูลสำหรับการตรวจสอบรายเดือน</div>`;
+      return;
+    }
+    const latestAvailableMonth = months[months.length - 1];
+    const wantedDefault = getPreviousMonthKey(getCurrentMonthKeyBangkok());
+    defaultMonth = months.includes(wantedDefault) ? wantedDefault : latestAvailableMonth;
+    if (sel) {
+      sel.innerHTML = months.slice().reverse()
+        .map(ym => `<option value="${ym}"${ym === defaultMonth ? ' selected' : ''}>${esc(monthLabel(ym))}</option>`)
+        .join('');
+    }
+    window.mrRun(defaultMonth);
+  };
+
+  const html = `
+    <style>
+      .mr-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px;padding:14px 18px;background:linear-gradient(180deg,var(--card),rgba(26,29,39,.6));border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+      .mr-toolbar-label{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+      .mr-select{padding:8px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;min-width:180px;transition:border-color .15s}
+      .mr-select:hover{border-color:rgba(59,130,246,.4)}
+      .mr-select:focus{outline:none;border-color:var(--accent)}
+      .mr-run-btn{height:36px;padding:0 22px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;transition:transform .12s,box-shadow .12s;box-shadow:0 2px 8px rgba(59,130,246,.25)}
+      .mr-run-btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(59,130,246,.45)}
+      .mr-run-btn:active{transform:translateY(0)}
+      .mr-card{background:linear-gradient(180deg,var(--card),rgba(26,29,39,.6));border:1px solid var(--border);border-radius:var(--radius);margin-bottom:20px;overflow:hidden;animation:masterFadeIn .5s ease both}
+      .mr-card:hover{border-color:rgba(59,130,246,.15)}
+      .mr-card:nth-child(1){animation-delay:.02s}.mr-card:nth-child(2){animation-delay:.08s}.mr-card:nth-child(3){animation-delay:.14s}.mr-card:nth-child(4){animation-delay:.2s}
+      .mr-card-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border)}
+      .mr-card-bar{width:4px;height:18px;border-radius:3px;background:linear-gradient(180deg,var(--accent),var(--accent2));flex:0 0 auto}
+      .mr-card-title{font-size:14px;font-weight:700;color:var(--text);margin:0;letter-spacing:-.2px}
+      .mr-card-sub{font-size:12px;font-weight:400;color:var(--muted)}
+      .mr-card-body{padding:18px}
+      .mr-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px}
+      .mr-kpi{padding:14px 16px;background:var(--bg);border:1px solid var(--border);border-radius:10px}
+      .mr-kpi-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
+      .mr-kpi-value{font-size:19px;font-weight:700;color:var(--text);letter-spacing:-.4px;font-variant-numeric:tabular-nums}
+      .mr-kpi-value.is-neg{color:var(--red)}
+      .mr-kpi-value.is-pos{color:var(--green)}
+      .mr-table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px}
+      .mr-table{width:100%;border-collapse:collapse;font-size:13px}
+      .mr-table th{text-align:left;padding:11px 14px;background:var(--surface);color:var(--muted);font-weight:600;font-size:12px;white-space:nowrap;border-bottom:1px solid var(--border)}
+      .mr-table td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text);font-variant-numeric:tabular-nums}
+      .mr-table tbody tr:last-child td{border-bottom:none}
+      .mr-table tbody tr:hover{background:rgba(255,255,255,.02)}
+      .mr-table .is-right{text-align:right;white-space:nowrap}
+      .mr-table .is-center{text-align:center;white-space:nowrap}
+      .mr-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:9px;vertical-align:middle}
+      .mr-bar-cell{width:180px;min-width:140px}
+      .mr-bar{height:8px;background:rgba(255,255,255,.06);border-radius:5px;overflow:hidden}
+      .mr-bar-fill{height:100%;border-radius:5px;transition:width .4s ease}
+      .mr-trend-scroll{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+      .mr-trend-scroll::-webkit-scrollbar{height:6px}
+      .mr-trend-scroll::-webkit-scrollbar-track{background:transparent}
+      .mr-trend-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:999px}
+      .mr-trend-chart{position:relative;height:210px;padding:10px 4px 24px;display:flex;align-items:stretch;gap:3px}
+      .mr-trend-baseline{position:absolute;left:4px;right:4px;bottom:24px;height:1px;background:var(--border)}
+      .mr-trend-col{flex:1 1 26px;min-width:26px;position:relative;cursor:pointer}
+      .mr-trend-bar{position:absolute;left:50%;transform:translateX(-50%);width:min(22px,100%);border-radius:4px 4px 0 0;transition:filter .15s}
+      .mr-trend-col:hover .mr-trend-bar{filter:brightness(1.35)}
+      .mr-trend-tick{position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--muted);white-space:nowrap}
+      .mr-trend-tooltip{position:absolute;bottom:calc(50% + 14px);left:50%;transform:translateX(-50%) translateY(4px);background:linear-gradient(180deg,var(--surface),rgba(30,33,45,.95));border:1px solid var(--border);border-radius:10px;padding:8px 14px;font-size:11px;white-space:nowrap;opacity:0;pointer-events:none;transition:all .2s cubic-bezier(.16,1,.3,1);z-index:20;box-shadow:0 8px 32px rgba(0,0,0,.3);line-height:1.5}
+      .mr-trend-col:hover .mr-trend-tooltip{opacity:1;transform:translateX(-50%) translateY(0)}
+      .mr-trend-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+      .mr-trend-tab{display:flex;align-items:center;gap:7px;padding:7px 13px;background:var(--bg);border:1px solid var(--border);border-radius:20px;color:var(--muted);font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;transition:border-color .15s,color .15s,background .15s;white-space:nowrap}
+      .mr-trend-tab:hover{border-color:rgba(59,130,246,.4);color:var(--text)}
+      .mr-trend-tab.is-active{background:linear-gradient(135deg,rgba(59,130,246,.16),rgba(99,102,241,.1));border-color:var(--accent);color:var(--text)}
+      .mr-trend-tab-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+      .mr-muted{color:var(--muted)}
+      .mr-note{font-size:11px;color:var(--muted);margin-top:10px}
+      .mr-days{display:flex;flex-direction:column;gap:8px}
+      .mr-day{background:var(--bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;transition:border-color .15s}
+      .mr-day[open]{border-color:rgba(59,130,246,.25)}
+      .mr-day>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:14px;padding:13px 16px;user-select:none}
+      .mr-day>summary::-webkit-details-marker{display:none}
+      .mr-day>summary:hover{background:var(--surface)}
+      .mr-day-date{font-weight:700;color:var(--text);min-width:66px;font-size:13px}
+      .mr-day-meta{font-size:12px;color:var(--muted);flex:1}
+      .mr-day-margin{font-weight:700;font-variant-numeric:tabular-nums;font-size:13px}
+      .mr-day-margin.is-neg{color:var(--red)}
+      .mr-day-margin.is-pos{color:var(--green)}
+      .mr-badge{font-size:11px;font-weight:700;padding:3px 11px;border-radius:20px;white-space:nowrap}
+      .mr-badge.is-anom{background:rgba(239,68,68,.16);color:#fca5a5}
+      .mr-badge.is-ok{background:rgba(34,197,94,.14);color:#86efac}
+      .mr-chevron{color:var(--muted);transition:transform .2s;flex-shrink:0}
+      .mr-day[open]>summary .mr-chevron{transform:rotate(180deg)}
+      .mr-day-body{padding:2px 16px 16px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:14px}
+      .mr-day-ref{font-size:12px;color:var(--muted);padding-top:12px}
+      .mr-loading{min-height:420px}
+      .mr-empty{padding:56px 24px;text-align:center;color:var(--muted);font-size:14px;background:linear-gradient(180deg,var(--card),rgba(26,29,39,.6));border:1px solid var(--border);border-radius:var(--radius)}
+      .mr-select:focus-visible,.mr-run-btn:focus-visible,.mr-day>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+      @media (prefers-reduced-motion:reduce){.mr-card{animation:none}.mr-bar-fill{transition:none}}
+      .mr-toolbar-inner{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+      .mr-toolbar-hint{width:100%;font-size:11px;color:var(--muted);margin-top:2px}
+    </style>
+    <div class="mr-toolbar">
+      <div class="mr-toolbar-inner">
+        <span class="mr-toolbar-label">เลือกเดือน</span>
+        <select class="mr-select" id="mr_month" aria-label="เลือกเดือนที่ต้องการตรวจสอบ" onchange="window.mrOnMonthChange()"><option value="">กำลังโหลดเดือน...</option></select>
+      </div>
+      <div class="mr-toolbar-hint">ค่าเริ่มต้นแสดงข้อมูลของเดือนก่อนหน้า (เดือนล่าสุดที่ข้อมูลครบทั้งเดือนแล้ว) — หากต้องการดูเดือนปัจจุบันหรือเดือนอื่น สามารถเลือกได้จากเมนูด้านบน</div>
+    </div>
+    <div id="mr_results">
+      <section class="loading-screen mr-loading"><div class="loader-wrap"><div class="loader-ring"></div><div class="loader-ring"></div></div><div class="loader-text">กำลังเตรียมข้อมูล<span class="loader-dots"></span></div><div class="loader-sub">กำลังโหลดรายการเดือนที่มีข้อมูล</div></section>
+    </div>`;
+
+  setTimeout(() => { window.mrInit(); }, 60);
+
+  return html;
+}
+
 function initNav() {
   const nav = document.getElementById('navList');
   const sidebarMobileToggle = document.getElementById('sidebarMobileToggle');
@@ -10181,7 +10619,7 @@ function showPage(idx) {
   const sidebarBackdrop = document.getElementById('sidebarBackdrop');
   if (sidebarBackdrop) sidebarBackdrop.hidden = true;
   document.getElementById('sidebarMobileToggle')?.setAttribute('aria-expanded', 'false');
-  const builders = [buildMasterDashboard, buildDailyCompare, buildOilPricePage];
+  const builders = [buildMasterDashboard, buildDailyCompare, buildOilPricePage, buildMonthlyReview];
   if (idx === 1 && !TRIPS_READY) {
     c.innerHTML = `${renderDataSourceNotice()}${renderTripsDeferredState()}`;
     c.scrollTop = 0;

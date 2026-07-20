@@ -1415,6 +1415,66 @@ assumption, not rewritten away, so the evidence trail is preserved.
   produces zero rows for the current month
 - release state: complete and verified end-to-end
 
+## Closeout record: Monthly Review page (ตรวจสอบผลดำเนินงานรายเดือน)
+
+Date: 2026-07-20 Asia/Bangkok
+
+- change type: Type A (frontend-only) — new Page 4, no Apps Script/Supabase/sync/schema change
+- commit: `27942e3` (`Add Monthly Review page (ตรวจสอบผลดำเนินงานรายเดือน)`)
+- files changed: `dashboard/scripts/app.js`, `dashboard/index.html` (cache-buster
+  `?v=20260720-monthly-review-launch`)
+- what it is: aggregates the existing single-day inspection engine
+  (`buildDailyCompare(..., {engineOnly:true})`) across a whole month — overview
+  KPIs, finance totals, a 7-metric selectable daily trend chart, per-status
+  breakdown, expandable per-day detail. Reuses `buildSingleCasesForDay` /
+  `computeSingleDaySummary` verbatim (same functions Daily Compare and the
+  XLSX single-day export already use) rather than reimplementing classification
+- root cause fixed during development: route counts (`จำนวนเส้นทาง`,
+  `เส้นทางที่มีข้อมูลเปรียบเทียบ`) initially summed per-day route counts across
+  the month, inflating the figure ~20x (6,015 vs a true 301 distinct routes).
+  Fixed to use `Set` keyed on `getRouteIdentity().key` — the identical dedup
+  the normal view (`cases.length`) and XLSX (`_stA.routes.length`) already use
+- local checks (all passed): `node --check`, `git diff --check`,
+  `test:xlsx-reviewer-reasons`, `test:route-display-policy`,
+  `test:xlsx-freeze-panes`, `test:daily-sync-readiness`, `test:pre-nine-recovery`,
+  `test:supabase-cli-guard`, `production:health` (`ok:true`), `apps-script:health`
+  (`ok:true`) — run before push to confirm this frontend-only change did not
+  collaterally break the shared route-display/reviewer-reason/freeze-pane
+  contracts it reuses
+- deploy path: `git push origin main` → GitHub Actions built branch-deploy
+  `release-27942e3e312c` → Netlify auto-published it as `published_deploy`
+  (verified via `getSite` API, not assumed from the push alone)
+- production checks:
+  - `curl` confirmed the live page serves the new cache-buster tag and the
+    served `app.js` contains the new Monthly Review code (not just a metadata
+    match)
+  - Playwright smoke test against all 4 production nav pages: zero console
+    errors, zero failed/non-2xx network requests, no stuck loading state
+  - Monthly Review specifically took ~10s to resolve on first production load
+    (real-network trip fetch for a full month, vs near-instant on local dev's
+    loopback proxy) — this is expected latency, not a bug; confirmed by polling
+    every 2s until `.mr-overview` rendered, with a clean network/console trace
+  - production overview KPIs for มิ.ย. 2026 matched the independently
+    verified ground truth exactly: 301 เส้นทาง, 254 เส้นทางที่มีข้อมูลเปรียบเทียบ,
+    7,361 เที่ยว, 1,557 รายการผิดปกติ
+  - all 7 trend-chart tabs present with correct labels/colors; live tab-click
+    (ขาดทุน) confirmed the chart re-renders correctly on production, not just
+    locally
+- export-specific check: not applicable — Monthly Review is read-only and does
+  not touch the XLSX export writer; the reviewer-reason/route-display/freeze-pane
+  regression tests above passing confirms no collateral change to those shared
+  contracts
+- known remaining risk / limitation: no dedicated automated test exists yet for
+  Monthly Review's own aggregation logic (route dedup, trend-chart metric
+  selection) — the passing regression tests cover the *shared* engine paths it
+  reuses, not this page's own aggregation code specifically. Only June 2026 was
+  screenshot-verified in depth on production; other months share the same
+  month-agnostic code path but were not individually re-verified with fresh
+  screenshots this session
+- next monthly action: `DATA(M8)` rollover remains due per the existing
+  operator card (by 2026-07-29/31) — unrelated to this change, carried over
+- release state: complete and verified end-to-end on production
+
 ## Required handoff note for future developers and AI agents
 
 Before making a change, read this file completely.

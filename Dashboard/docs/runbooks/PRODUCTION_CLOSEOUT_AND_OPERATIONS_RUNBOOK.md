@@ -1327,6 +1327,94 @@ Date: 2026-07-20 Asia/Bangkok
   the extended recovery window behaves as designed; separately, `DATA(M8)`
   rollover remains due per the existing operator card (by 2026-07-29/31)
 
+## Closeout record: DATA(M7) silent import failure + zero-row contract guard
+
+Date: 2026-07-20 Asia/Bangkok
+
+### Correction of the earlier same-day record
+
+The record above ("extended daily batch recovery window") stated the July
+symptom was a source data-entry gap (blank R/S/T pay/margin columns). Live
+diagnostics **disproved that hypothesis**. It is recorded here as a corrected
+assumption, not rewritten away, so the evidence trail is preserved.
+
+### Verified root cause
+
+- symptom: production and Supabase showed no `DATA(M7)` (July 2026) data;
+  `trips` API returned 0 for every July date; Supabase `dates.max` stuck at
+  `2026-06-30` for ~20 days while every health check reported `ok:true`
+- read-only probes (temporary `diagnoseSource`/`diagnoseImport`/`diagnoseDest`
+  actions, since removed) proved against live production:
+  - the July source sheet "Daily EXPRESS July 2026" (id
+    `1sMshl7_b-dvrtnDYcl-WQt467gSnfdLw0o35rgRFJMU`, tab `SUMDATA`) held 9,581
+    rows with real data for 01–19 July
+  - `fetchSourceData` called exactly as the batch calls it returned 5,088 valid
+    rows (first row `01/07/2026`, recv/pay/margin populated)
+  - yet the destination `DATA(M7)` tab was empty (header only) and `MASTER`
+    contained zero `DATA(M7)` rows
+- therefore the failure was **not** data entry and **not** permissions: the
+  daily batch was reporting success while carrying nothing into the current
+  month's tab. Every health/contract check passed because none of them checked
+  whether the current month actually had imported rows — they only checked
+  cumulative totals across all months
+- `parseDate` was ruled out: it correctly handles the source `DD/MM/YYYY`
+  (Buddhist-year aware) format
+
+### Repair performed
+
+- ran `dailyBatchJob` once from the Apps Script editor (owner action) after the
+  source was confirmed populated: 4,688 rows imported, audit `added=4688`,
+  Supabase callback accepted (HTTP 202)
+- verified end-to-end live: `DATA(M7)` tab 4,688 rows; `MASTER` 49,188 rows with
+  4,688 July; Apps Script `trips` API returns July; Supabase promoted at
+  10:32 Asia/Bangkok with 49,099 rows and `dates.max` `2026-07-31`; production
+  `supabase-api` serves July trips; site returns HTTP 200
+
+### Systemic hardening (so this cannot silently recur)
+
+- commit `e2e6192`: `validateFrontendApiContract` now hard-fails when the
+  current Asia/Bangkok month has a configured source URL but a zero-row
+  destination tab. Because `dailyBatchJob` records `contractPassed` and
+  `isSuccessfulDailyBatchToday_` requires it, a zero-row current month now:
+  1. marks the batch unsuccessful, so `dailyBatchRecoveryJob` retries instead
+     of skipping (paired with the extended 08:30–10:00 recovery windows)
+  2. turns `check-apps-script-health.mjs` red instead of green
+  Future months with a blank source URL are exempt so rollover prep is unaffected
+- commit `07abc27`: recovery windows extended to 08:30/09:00/09:30/10:00
+  (`DAILY_BATCH_RECOVERY_WINDOWS` in `config.gs`); installed triggers verified
+  live at count 4 == `expectedRecoveryJobCount`
+
+### Deployment identity
+
+- Apps Script `/exec` deployment
+  `AKfycbwCcI17V6ocXp_ELEJa7kjUHXV5zIchdPxIaHNT-ibNQZPksWtjNDdlxqRIcatFSQjVwQ`
+  updated across this session from v24 to **v29** (URL preserved). Intermediate
+  versions v26–v28 carried temporary read-only diagnostics; v29 is clean with
+  all diagnostic actions/functions removed (`?action=diagnoseSource` returns
+  `Invalid action`)
+- triggers: `dailyBatchJob` count 1 at 08:00; `dailyBatchRecoveryJob` count 4
+- commits: `07abc27` (recovery windows), `8a81c2c` (recovery closeout),
+  `e2e6192` (zero-row contract guard)
+
+### Validation summary
+
+- `npm run apps-script:health`: `ok:true`, `contract.passed:true`, recovery
+  4/4, tripsTotal 49,099, no failures
+- `npm run production:health`: `ok:true`, 49,099 rows, `promoted`,
+  `dateMax 2026-07-31`
+- `npm run test:daily-sync-readiness` and `npm run test:pre-nine-recovery`: pass
+- Netlify production served unchanged (no frontend change this session); commit
+  `eca17c1` remains published; site HTTP 200
+
+### Known limitation
+
+- the zero-row guard's failure path was verified by code review and by the
+  confirmed no-false-positive live pass; it was not exercised against a live
+  empty month, because inducing an empty production month to test the alarm was
+  judged unsafe. It will be exercised naturally the next time an import truly
+  produces zero rows for the current month
+- release state: complete and verified end-to-end
+
 ## Required handoff note for future developers and AI agents
 
 Before making a change, read this file completely.

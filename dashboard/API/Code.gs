@@ -3030,6 +3030,31 @@ function validateFrontendApiContract() {
     warnings.push('Source months not configured: ' + meta.missingMonths.join(', '));
   }
 
+  // Current-month import guard (added 2026-07-20 after the DATA(M7) incident):
+  // a month whose source URL is configured but whose destination tab holds zero
+  // imported rows means the pipeline silently carried nothing across, even though
+  // every other check can still pass. Fail loudly so (a) health/contract goes red,
+  // (b) the batch is not marked successful, and (c) dailyBatchRecoveryJob retries
+  // instead of skipping. This is what turns a 20-day silent gap into a same-day
+  // alert. A month with a blank source URL (a future month) is intentionally
+  // exempt so normal rollover preparation does not trip the guard.
+  try {
+    var bkkMonthNum = Number(Utilities.formatDate(new Date(), 'Asia/Bangkok', 'M'));
+    var currentMonthKey = 'DATA(M' + bkkMonthNum + ')';
+    var currentSource = (typeof SHEET_SOURCES !== 'undefined') ? SHEET_SOURCES[currentMonthKey] : '';
+    var currentConfigured = currentSource && String(currentSource).indexOf('http') !== -1;
+    if (currentConfigured) {
+      var curSheet = getDashboardSpreadsheet_().getSheetByName(currentMonthKey);
+      var curRows = curSheet ? Math.max(0, curSheet.getLastRow() - 1) : 0;
+      if (curRows === 0) {
+        errors.push('current month ' + currentMonthKey +
+          ' has a configured source but its destination tab is empty (0 imported rows)');
+      }
+    }
+  } catch (guardErr) {
+    warnings.push('current-month import guard could not run: ' + guardErr.message);
+  }
+
   if (typeof EXPECTED_DASHBOARD_SPREADSHEET_ID !== 'undefined' && EXPECTED_DASHBOARD_SPREADSHEET_ID) {
     var activeId = getDashboardSpreadsheet_().getId();
     if (activeId !== EXPECTED_DASHBOARD_SPREADSHEET_ID) {

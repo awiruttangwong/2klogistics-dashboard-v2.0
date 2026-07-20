@@ -22,12 +22,20 @@ Production มีเส้นทาง sync สองทาง:
 - **ทางหลัก (event-driven)**: หลัง `dailyBatchJob` ใน Apps Script รันเสร็จและ contract ผ่าน
   Apps Script จะยิง webhook ไปที่ `netlify/functions/supabase-sync-background.mjs` ทันที
   เพื่อทำ staging → parity → promote เข้า Supabase โดยไม่ต้องรอ GitHub Actions
+- **ทาง auto-recovery ใน Apps Script เอง**: `dailyBatchRecoveryJob` (`dashboard/API/Code.gs`,
+  ตั้งค่าที่ `DAILY_BATCH_RECOVERY_WINDOWS` ใน `config.gs`) รันซ้ำทุก 30 นาทีหลัง 08:00 ไปจนถึง 10:00
+  (08:30, 09:00, 09:30, 10:00 เวลาไทย) แต่ละรอบจะเช็คก่อนว่าวันนี้มี batch ที่ `ok:true` และ
+  `contractPassed:true` แล้วหรือยัง (`isSuccessfulDailyBatchToday_`) ถ้ามีแล้วจะข้ามทันทีไม่ทำงานซ้ำ
+  ถ้ายังไม่สำเร็จจะรัน sync ใหม่ให้อัตโนมัติ — **ครอบคลุมเฉพาะความล้มเหลวชั่วคราว** (Apps Script error,
+  network, contract ไม่ผ่าน ฯลฯ) เท่านั้น **ไม่ครอบคลุม** กรณีที่ batch รันสำเร็จ (`ok:true`) แต่ข้อมูลใน
+  source sheet เดือนปัจจุบันยังไม่ครบ (เช่น คอลัมน์ R/S/T ราคารับ-จ่าย-ส่วนต่างยังว่าง) เพราะระบบมองว่านั่น
+  "สำเร็จ" ตามเงื่อนไข ไม่ใช่ error ที่ต้อง retry — กรณีนี้ต้องแก้ที่ source data โดยตรง
 - **ทางสำรอง (GitHub Actions watchdog)**: `.github/workflows/production-sync-watchdog.yml`
   รันตาม cron `47 1 * * *` และ `17 3 * * *` (08:47 และ 10:17 เวลาไทย) แต่ GitHub อาจเริ่มช้ากว่ากำหนดจริง
-  ได้หลายชั่วโมง จึงเป็นแค่ safety net ไม่ใช่เส้นทางหลัก
+  ได้หลายชั่วโมง จึงเป็นแค่ safety net ชั้นสุดท้าย ไม่ใช่เส้นทางหลัก
 
 ดังนั้น **การเห็นหน้าเว็บ fallback ไป Apps Script ช่วงเช้าเป็นพฤติกรรมที่คาดไว้แล้ว** ไม่ใช่สัญญาณว่ามีบั๊กเสมอไป
-มักหายเองภายในไม่กี่นาทีหลัง `dailyBatchJob` เสร็จ
+มักหายเองภายในไม่กี่นาทีหลัง `dailyBatchJob` เสร็จ หรืออย่างช้าคือหลัง recovery รอบ 10:00 ผ่านไป
 
 ### ขั้นตอนวินิจฉัย (ทำตามลำดับ)
 
@@ -160,7 +168,13 @@ npm run apps-script:health -- --month 8
 
 ผ่านเมื่อ: `ok: true`, `requiredCurrentMonth` ตรงกับเดือนเป้าหมาย, `configuredMonths` มีเดือนนั้นอยู่,
 spreadsheet/project id ตรงกับ production, trigger `dailyBatchJob` มี 1 ตัวที่ 08:00 และ
-`dailyBatchRecoveryJob` มี 1 ตัวที่ประมาณ 08:30 เวลาไทย
+`dailyBatchRecoveryJob` มีตามจำนวนที่ตั้งไว้ใน `DAILY_BATCH_RECOVERY_WINDOWS` (`config.gs`) — ปัจจุบันคือ
+4 ตัว ที่ 08:30, 09:00, 09:30, 10:00 เวลาไทย (เช็คได้จาก `health.trigger.expectedRecoveryJobCount`)
+
+ถ้าเพิ่งแก้ `DAILY_BATCH_RECOVERY_WINDOWS` หรือเวลา trigger อื่นใน `config.gs`/`Code.gs` ต้องรัน
+`createDailyTrigger()` หนึ่งครั้งจาก Apps Script editor (Run menu) หลัง save โค้ดแล้ว เพื่อลบ trigger เก่า
+แล้วสร้างชุดใหม่ตามค่า config — ขั้นตอนนี้แยกจาก Phase 4 (deploy `/exec`) เพราะ trigger ใช้โค้ดที่ save ล่าสุด
+เสมอ ไม่ต้องรอ deploy version ใหม่
 
 **Phase 5 — ปล่อยให้ batch รันและตรวจผล**
 

@@ -145,7 +145,18 @@ var APPS_SCRIPT_PROJECT_ID = '1FGsRlFbWgI_rzRRVoXXF-TpGUKlhvl6kXlcH8lUit2PfEsb9b
 var DAILY_BATCH_TRIGGER_TIMEZONE = 'Asia/Bangkok';
 var DAILY_BATCH_TRIGGER_HOUR = 8;
 var DAILY_BATCH_TRIGGER_NEAR_MINUTE = 0;
-var DAILY_BATCH_RECOVERY_NEAR_MINUTE = 30;
+var DAILY_BATCH_RECOVERY_NEAR_MINUTE = 30; // kept for backward-compat reporting; first entry of DAILY_BATCH_RECOVERY_WINDOWS below
+
+// Recovery keeps retrying every 30 min after the 08:00 primary run until 10:00.
+// Each attempt no-ops if a successful batch already ran today (see isSuccessfulDailyBatchToday_),
+// so widening this window is safe and only helps transient failures (Apps Script/network/contract
+// errors) recover without a human running the runbook by hand.
+var DAILY_BATCH_RECOVERY_WINDOWS = [
+  { hour: 8, minute: 30 },
+  { hour: 9, minute: 0 },
+  { hour: 9, minute: 30 },
+  { hour: 10, minute: 0 }
+];
 
 // Event-driven Supabase sync. The secret value belongs in Script Properties
 // under SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY and must never be committed.

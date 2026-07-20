@@ -355,11 +355,17 @@ function importAllConfiguredSheets() {
 var DAILY_BATCH_LAST_STATUS_PROPERTY = 'DAILY_BATCH_LAST_STATUS';
 
 function getDailyBatchTriggerConfig_() {
+  var legacyRecoveryMinute = typeof DAILY_BATCH_RECOVERY_NEAR_MINUTE !== 'undefined' ? DAILY_BATCH_RECOVERY_NEAR_MINUTE : 30;
+  var hour = typeof DAILY_BATCH_TRIGGER_HOUR !== 'undefined' ? DAILY_BATCH_TRIGGER_HOUR : 8;
+  var recoveryWindows = typeof DAILY_BATCH_RECOVERY_WINDOWS !== 'undefined' && DAILY_BATCH_RECOVERY_WINDOWS.length > 0
+    ? DAILY_BATCH_RECOVERY_WINDOWS
+    : [{ hour: hour, minute: legacyRecoveryMinute }];
   return {
     timezone: typeof DAILY_BATCH_TRIGGER_TIMEZONE !== 'undefined' ? DAILY_BATCH_TRIGGER_TIMEZONE : 'Asia/Bangkok',
-    hour: typeof DAILY_BATCH_TRIGGER_HOUR !== 'undefined' ? DAILY_BATCH_TRIGGER_HOUR : 8,
+    hour: hour,
     nearMinute: typeof DAILY_BATCH_TRIGGER_NEAR_MINUTE !== 'undefined' ? DAILY_BATCH_TRIGGER_NEAR_MINUTE : 0,
-    recoveryNearMinute: typeof DAILY_BATCH_RECOVERY_NEAR_MINUTE !== 'undefined' ? DAILY_BATCH_RECOVERY_NEAR_MINUTE : 30
+    recoveryNearMinute: legacyRecoveryMinute,
+    recoveryWindows: recoveryWindows
   };
 }
 
@@ -493,13 +499,16 @@ function createDailyTriggerCore_() {
     .nearMinute(triggerConfig.nearMinute)
     .create();
 
-  ScriptApp.newTrigger('dailyBatchRecoveryJob')
-    .timeBased()
-    .everyDays(1)
-    .inTimezone(triggerConfig.timezone)
-    .atHour(triggerConfig.hour)
-    .nearMinute(triggerConfig.recoveryNearMinute)
-    .create();
+  for (var w = 0; w < triggerConfig.recoveryWindows.length; w++) {
+    var recoveryWindow = triggerConfig.recoveryWindows[w];
+    ScriptApp.newTrigger('dailyBatchRecoveryJob')
+      .timeBased()
+      .everyDays(1)
+      .inTimezone(triggerConfig.timezone)
+      .atHour(recoveryWindow.hour)
+      .nearMinute(recoveryWindow.minute)
+      .create();
+  }
 
   return {
     ok: true,
@@ -510,6 +519,7 @@ function createDailyTriggerCore_() {
     recoveryExpectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' +
       ('0' + triggerConfig.recoveryNearMinute).slice(-2) +
       ' (UTC+7, ' + triggerConfig.timezone + ')',
+    recoveryWindows: triggerConfig.recoveryWindows,
     checkedAt: new Date().toISOString()
   };
 }
@@ -1210,7 +1220,9 @@ function systemStatusReport() {
       expectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' + ('0' + triggerConfig.nearMinute).slice(-2) + ' ' + triggerConfig.timezone,
       dailyBatchRecoveryJobCount: recoveryTriggers.length,
       configuredRecoveryNearMinute: triggerConfig.recoveryNearMinute,
-      recoveryExpectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' + ('0' + triggerConfig.recoveryNearMinute).slice(-2) + ' ' + triggerConfig.timezone
+      recoveryExpectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' + ('0' + triggerConfig.recoveryNearMinute).slice(-2) + ' ' + triggerConfig.timezone,
+      recoveryWindows: triggerConfig.recoveryWindows,
+      expectedRecoveryJobCount: triggerConfig.recoveryWindows.length
     },
     spreadsheet: {
       id: activeSpreadsheetId,

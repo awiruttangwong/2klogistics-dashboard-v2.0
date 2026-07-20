@@ -43,8 +43,22 @@ async function main() {
   const configuredMonths = Array.isArray(meta?.configuredMonths) ? meta.configuredMonths : [];
   if (health?.contract?.passed !== true) failures.push('health.contract.passed is not true');
   if (Number(health?.trigger?.dailyBatchJobCount || 0) !== 1) warnings.push(`dailyBatchJob trigger count is ${health?.trigger?.dailyBatchJobCount ?? 'missing'}`);
-  if (health?.trigger?.dailyBatchRecoveryJobCount !== undefined && Number(health.trigger.dailyBatchRecoveryJobCount) !== 1) {
-    failures.push(`dailyBatchRecoveryJob trigger count is ${health.trigger.dailyBatchRecoveryJobCount}`);
+  // expectedRecoveryJobCount is only present once the /exec Web App deployment has been
+  // updated to code that reports it (triggers themselves always run latest-saved code, so
+  // dailyBatchRecoveryJobCount can be ahead of what this stale field says). Without it, fall
+  // back to a loose sanity check (>=1) instead of a hard-coded expectation of 1.
+  const expectedRecoveryJobCount = health?.trigger?.expectedRecoveryJobCount !== undefined
+    ? Number(health.trigger.expectedRecoveryJobCount)
+    : null;
+  if (health?.trigger?.dailyBatchRecoveryJobCount !== undefined) {
+    const actualRecoveryJobCount = Number(health.trigger.dailyBatchRecoveryJobCount);
+    if (expectedRecoveryJobCount !== null && actualRecoveryJobCount !== expectedRecoveryJobCount) {
+      failures.push(`dailyBatchRecoveryJob trigger count is ${actualRecoveryJobCount}, expected ${expectedRecoveryJobCount}`);
+    } else if (expectedRecoveryJobCount === null && actualRecoveryJobCount < 1) {
+      failures.push(`dailyBatchRecoveryJob trigger count is ${actualRecoveryJobCount}`);
+    } else if (expectedRecoveryJobCount === null) {
+      warnings.push(`health.trigger.expectedRecoveryJobCount missing (stale /exec deployment) — dailyBatchRecoveryJobCount is ${actualRecoveryJobCount}, not validated against config`);
+    }
   }
   if (health?.spreadsheet?.matchesExpected === false) failures.push(`active spreadsheet is ${health.spreadsheet.id}, expected ${expectedSpreadsheetId}`);
   if (health?.spreadsheet && health.spreadsheet.expectedId !== expectedSpreadsheetId) warnings.push(`health expectedId is ${health.spreadsheet.expectedId}, local expected is ${expectedSpreadsheetId}`);

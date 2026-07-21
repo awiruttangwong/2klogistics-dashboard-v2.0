@@ -5010,6 +5010,10 @@ function buildDailyCompare(data, options = {}) {
     const computeSingleDaySummary = (stA, singleCases) => {
       const statusCount = { loss: 0, oil50: 0, payHigh: 0, payOilChanged: 0, recvLow: 0, recvOilChanged: 0, normal: 0, noRef: 0 };
       const statusImpact = { loss: 0, oil50: 0, payHigh: 0, payOilChanged: 0, recvLow: 0, recvOilChanged: 0 };
+      // Per-status matched entries (same rows counted into statusCount above) — lets callers
+      // drill into the exact trips behind a status/impact number without re-deriving the
+      // classification. Populated in lockstep with statusCount just below.
+      const statusEntries = { loss: [], oil50: [], payHigh: [], payOilChanged: [], recvLow: [], recvOilChanged: [] };
       let totalAnomCount = 0;
       const routesWithRefCount = (singleCases || []).filter(item => (item.refTripsForRoute || []).length > 0).length;
       const calcMarginValue = trip => hasNum(trip?.margin)
@@ -5032,12 +5036,12 @@ function buildDailyCompare(data, options = {}) {
           const pairScopedCleaned = pairScopedStatuses.some(s => s !== 'normal') ? pairScopedStatuses.filter(s => s !== 'normal') : pairScopedStatuses;
           if (cleaned.includes('normal')) statusCount.normal++;
           else if (dcQaHasAnomalyStatus(cleaned)) totalAnomCount++;
-          if (cleaned.includes('loss')) statusCount.loss++;
-          if (cleaned.includes('oil50')) statusCount.oil50++;
-          if (pairScopedCleaned.includes('payHigh')) statusCount.payHigh++;
-          if (pairScopedCleaned.includes('payOilChanged')) statusCount.payOilChanged++;
-          if (pairScopedCleaned.includes('recvLow')) statusCount.recvLow++;
-          if (pairScopedCleaned.includes('recvOilChanged')) statusCount.recvOilChanged++;
+          if (cleaned.includes('loss')) { statusCount.loss++; statusEntries.loss.push(entry); }
+          if (cleaned.includes('oil50')) { statusCount.oil50++; statusEntries.oil50.push(entry); }
+          if (pairScopedCleaned.includes('payHigh')) { statusCount.payHigh++; statusEntries.payHigh.push(entry); }
+          if (pairScopedCleaned.includes('payOilChanged')) { statusCount.payOilChanged++; statusEntries.payOilChanged.push(entry); }
+          if (pairScopedCleaned.includes('recvLow')) { statusCount.recvLow++; statusEntries.recvLow.push(entry); }
+          if (pairScopedCleaned.includes('recvOilChanged')) { statusCount.recvOilChanged++; statusEntries.recvOilChanged.push(entry); }
           if (cleaned.includes('noRef')) statusCount.noRef++;
           if (cleaned.includes('loss')) statusImpact.loss += Math.abs(Math.min(calcMarginValue(ra), 0));
           if (cleaned.includes('oil50')) statusImpact.oil50 += calcOilReserveExcess(ra);
@@ -5048,7 +5052,7 @@ function buildDailyCompare(data, options = {}) {
           if (pairScopedCleaned.includes('recvOilChanged')) statusImpact.recvOilChanged += absPairDiff(ra?.recv, displayedPeer?.recv);
         });
       });
-      return { statusCount, statusImpact, totalAnomCount, routesWithRefCount };
+      return { statusCount, statusImpact, statusEntries, totalAnomCount, routesWithRefCount };
     };
 
     // Initialize Flatpickr
@@ -8808,7 +8812,11 @@ function buildDailyCompare(data, options = {}) {
     }
 
     function dcQaPairCell(a, b, cls = '', isModal = false, invertColor = false) {
-      const canDiff = hasNum(a) && hasNum(b);
+      // Guard null/undefined explicitly: hasNum(null) is true because Number(null)===0,
+      // which would render a phantom Δ (e.g. oil price present on the main day but absent
+      // on an unpaired comparison, where getOilPriceByDate returns null). A missing side is
+      // not "0" — require both sides to be real values before showing a delta.
+      const canDiff = a != null && b != null && hasNum(a) && hasNum(b);
       const diff = canDiff ? (Number(a) - Number(b)) : 0;
       let diffClass = 'is-muted';
       if (canDiff) {
@@ -9568,7 +9576,12 @@ function buildDailyCompare(data, options = {}) {
       fmtRange,
       findRefDaysForDate,
       buildSingleCasesForDay,
-      computeSingleDaySummary
+      computeSingleDaySummary,
+      // Rendering helpers reused as-is so the route-issue drill-down modal in Monthly Review
+      // renders byte-for-byte the same trip-row markup as the normal single-view table.
+      dcQaSingleTripRow,
+      dcQaPairRow,
+      dcQaModalShell
     };
     if (ENGINE_ONLY) return __engineApi;
 
@@ -9907,7 +9920,7 @@ function buildOilPricePage(d) {
    for a whole month plus a per-day breakdown. Logic is 100% shared with XLSX. */
 const MR_STATUS_META = [
   { key: 'loss', label: 'ขาดทุน', color: '#f87171', note: 'รวมมูลค่าขาดทุนจากเที่ยวที่ส่วนต่างติดลบ' },
-  { key: 'oil50', label: 'สำรองน้ำมัน > 50%', color: '#fbbf24', note: 'รวมเฉพาะส่วนที่สำรองน้ำมันเกิน 50% ของราคาจ่าย' },
+  { key: 'oil50', label: 'สำรองน้ำมัน>50%', color: '#fbbf24', note: 'รวมเฉพาะส่วนที่สำรองน้ำมันเกิน 50% ของราคาจ่าย' },
   { key: 'payHigh', label: 'ราคาจ่ายผิดปกติ', color: '#a78bfa', note: 'รวมผลต่างราคาจ่ายเทียบกับวันที่อ้างอิง' },
   { key: 'payOilChanged', label: 'ราคาจ่ายเปลี่ยนแปลงตามราคาน้ำมัน', color: '#f472b6', note: 'รวมผลต่างราคาจ่ายของคู่ที่ราคาน้ำมันเปลี่ยนแปลง' },
   { key: 'recvLow', label: 'ราคารับผิดปกติ', color: '#60a5fa', note: 'รวมผลต่างราคารับเทียบกับวันที่อ้างอิง' },
@@ -9942,6 +9955,11 @@ function buildMonthlyReview(data) {
   let mrRunToken = 0;
   let lastPerDay = [];
   let activeTrendMetric = 'margin';
+  // Route-issue drill-down modal state: the currently displayed month's engine (for its
+  // rendering helpers) and a registry of {routeLabel, statusLabel, rows} rebuilt on every
+  // mrRun() call, indexed by the position each issue-type row is rendered in.
+  let mrEngineRef = null;
+  let mrRouteIssueRegistry = [];
   const monthLabel = ym => {
     const [y, m] = String(ym).split('-');
     return `${MTH[MONTHS[Number(m) - 1]]} ${y}`;
@@ -10081,9 +10099,19 @@ function buildMonthlyReview(data) {
     const lastDay = new Date(yy, mm, 0).getDate();
     const monthEnd = `${mk}-${String(lastDay).padStart(2, '0')}`;
     const bufferStart = addDaysToIso(monthStart, -3) || monthStart;
+    // Previous calendar month range — used to compare this month's per-route damage
+    // against last month's for the "แนวโน้ม" trend in the route-issue section below.
+    let prevYy = yy, prevMm = mm - 1;
+    if (prevMm < 1) { prevMm = 12; prevYy -= 1; }
+    const prevMk = `${prevYy}-${String(prevMm).padStart(2, '0')}`;
+    const prevMonthStart = `${prevMk}-01`;
+    const prevLastDay = new Date(prevYy, prevMm, 0).getDate();
+    const prevMonthEnd = `${prevMk}-${String(prevLastDay).padStart(2, '0')}`;
     if (typeof loadTripsRange === 'function') {
       try { await loadTripsRange(bufferStart, monthEnd); }
       catch (err) { console.warn('Monthly review: trip load failed:', err.message); }
+      try { await loadTripsRange(prevMonthStart, prevMonthEnd); }
+      catch (err) { console.warn('Monthly review: prev-month trip load failed:', err.message); }
     }
     if (token !== mrRunToken) return; // a newer month request superseded this one
     let engine = null;
@@ -10093,6 +10121,7 @@ function buildMonthlyReview(data) {
       results.innerHTML = `<div class="mr-empty">ไม่สามารถเตรียมข้อมูลสำหรับการตรวจสอบได้<br><button type="button" class="mr-run-btn" style="margin-top:16px" onclick="window.mrOnMonthChange()">ลองใหม่</button></div>`;
       return;
     }
+    mrEngineRef = engine;
     const days = (engine.allDates || []).filter(d => d >= monthStart && d <= monthEnd);
     if (!days.length) {
       results.innerHTML = `<div class="mr-empty">ไม่พบข้อมูลเที่ยววิ่งในเดือน ${esc(monthLabel(mk))}</div>`;
@@ -10109,8 +10138,13 @@ function buildMonthlyReview(data) {
     // normal-view page and XLSX use (getRouteIdentity().key), not a per-day sum.
     const monthRoutes = new Set();        // distinct routes in the month
     const monthRoutesWithRef = new Set(); // distinct routes with a reference on >=1 day
+    // Per-route cross-day aggregation for the "เส้นทางที่ควรพิจารณาปรับปรุง" table below —
+    // reuses computeSingleDaySummary(null, [item]) per single route-day (the function never
+    // reads its stA argument), so the status/impact math is byte-for-byte the same code path
+    // as the day-level summary and XLSX, never re-derived.
+    const routeAgg = new Map();
     const perDay = [];
-    days.forEach(day => {
+    days.forEach((day) => {
       const stA = engine.rangeStats(day, day, NF, NF, NF);
       if (!stA) return;
       const stRef = engine.findRefDaysForDate(day, NF, NF, NF);
@@ -10122,6 +10156,28 @@ function buildMonthlyReview(data) {
       (stA.routes || []).forEach(r => monthRoutes.add(r.routeKey));
       (built.singleCases || []).forEach(item => {
         if ((item.refTripsForRoute || []).length > 0) monthRoutesWithRef.add(item.route.routeKey);
+        const routeKey = item.route.routeKey;
+        const itemSummary = engine.computeSingleDaySummary(null, [item]);
+        let ra = routeAgg.get(routeKey);
+        if (!ra) {
+          ra = {
+            route: item.route, daysRun: 0, daysWithIssue: 0,
+            statusCount: { loss: 0, oil50: 0, payHigh: 0, payOilChanged: 0, recvLow: 0, recvOilChanged: 0 },
+            statusImpact: { loss: 0, oil50: 0, payHigh: 0, payOilChanged: 0, recvLow: 0, recvOilChanged: 0 },
+            // Matched trip entries behind each status, across every day this month — feeds the
+            // route-issue drill-down modal so it can show the exact trips, not just a re-summed total.
+            issueRows: { loss: [], oil50: [], payHigh: [], payOilChanged: [], recvLow: [], recvOilChanged: [] },
+            worstDay: null
+          };
+          routeAgg.set(routeKey, ra);
+        }
+        ra.daysRun++;
+        if (itemSummary.totalAnomCount > 0) ra.daysWithIssue++;
+        Object.keys(ra.statusCount).forEach(k => { ra.statusCount[k] += itemSummary.statusCount[k] || 0; });
+        Object.keys(ra.issueRows).forEach(k => { ra.issueRows[k].push(...(itemSummary.statusEntries[k] || [])); });
+        let dayImpact = 0;
+        Object.keys(ra.statusImpact).forEach(k => { const v = itemSummary.statusImpact[k] || 0; ra.statusImpact[k] += v; dayImpact += v; });
+        if (dayImpact > 0 && (!ra.worstDay || dayImpact > ra.worstDay.impact)) ra.worstDay = { day, impact: dayImpact };
       });
       Object.keys(agg.statusCount).forEach(k => { agg.statusCount[k] += s.statusCount[k] || 0; });
       Object.keys(agg.statusImpact).forEach(k => { agg.statusImpact[k] += s.statusImpact[k] || 0; });
@@ -10131,6 +10187,23 @@ function buildMonthlyReview(data) {
       results.innerHTML = `<div class="mr-empty">ไม่พบข้อมูลเที่ยววิ่งในเดือน ${esc(monthLabel(mk))}</div>`;
       return;
     }
+
+    // Previous-month per-route issue-trip count — reuses the same computeSingleDaySummary(null,[item])
+    // path as the current month's routeAgg above, summed into a single count per route (trend is
+    // about problem frequency, kept deliberately separate from the money-based sort order above).
+    const prevRouteIssueCount = new Map();
+    const prevDays = (engine.allDates || []).filter(d => d >= prevMonthStart && d <= prevMonthEnd);
+    prevDays.forEach(day => {
+      const stA = engine.rangeStats(day, day, NF, NF, NF);
+      if (!stA) return;
+      const stRef = engine.findRefDaysForDate(day, NF, NF, NF);
+      const built = engine.buildSingleCasesForDay(stA, stRef);
+      (built.singleCases || []).forEach(item => {
+        const routeKey = item.route.routeKey;
+        const itemSummary = engine.computeSingleDaySummary(null, [item]);
+        prevRouteIssueCount.set(routeKey, (prevRouteIssueCount.get(routeKey) || 0) + (itemSummary.totalAnomCount || 0));
+      });
+    });
 
     // ── Monthly aggregate: sections 1–3 ──
     const overview = `<div class="mr-kpi-grid mr-overview">
@@ -10148,7 +10221,7 @@ function buildMonthlyReview(data) {
         : `<span class="mr-badge is-ok">ปกติ</span>`;
       const marginCls = (pd.stA.margin || 0) < 0 ? 'is-neg' : 'is-pos';
       const refText = pd.refList && pd.refList.length ? pd.refList.join(', ') : 'ไม่พบข้อมูลย้อนหลัง';
-      return `<details class="mr-day">
+      return `<details class="mr-day" id="mr-day-${esc(pd.day)}">
         <summary>
           <span class="mr-day-date">${esc(shortDay(pd.day))}</span>
           <span class="mr-day-meta">${fmtInt(pd.stA.trips || 0)} เที่ยว · ${(pd.stA.routes || []).length} เส้นทาง (มี ${fmtInt(pd.summary.routesWithRefCount)} เส้นทางเปรียบเทียบได้ · ${fmtInt((pd.stA.routes || []).length - pd.summary.routesWithRefCount)} เส้นทางไม่มีข้อมูลเปรียบเทียบ)</span>
@@ -10163,6 +10236,91 @@ function buildMonthlyReview(data) {
         </div>
       </details>`;
     }).join('');
+
+    // ── Route-level cross-day rollup: "เส้นทางที่ควรพิจารณาปรับปรุง" ──
+    // Ranked purely by total มูลค่าความเสียหาย (highest cost first). Every issue type a route
+    // hit gets its own table row (rowspan on the route-level columns) so nothing is truncated.
+    const ROUTE_ISSUE_LIMIT = 20;
+    const routeIssueAll = [...routeAgg.values()]
+      .filter(r => r.daysWithIssue > 0)
+      .map(r => {
+        const rate = r.daysRun > 0 ? r.daysWithIssue / r.daysRun : 0;
+        const totalImpact = Object.values(r.statusImpact).reduce((a, b) => a + b, 0);
+        const totalIssueCount = Object.values(r.statusCount).reduce((a, b) => a + b, 0);
+        return { ...r, rate, totalImpact, totalIssueCount };
+      })
+      .sort((a, b) => b.totalImpact - a.totalImpact);
+    const routeIssueTop = routeIssueAll.slice(0, ROUTE_ISSUE_LIMIT);
+
+    // Trend is deliberately based on issue *frequency* (trip count), separate from the
+    // money-based sort order above — a route can rank by damage value while its trend
+    // describes whether problems are getting more or less frequent.
+    const routeIssueTrend = r => {
+      const prev = prevRouteIssueCount.get(r.route.routeKey) || 0;
+      const current = r.totalIssueCount;
+      if (current > prev * 1.15) return { cls: 'is-up', text: '▲ ปัญหามากขึ้น' };
+      if (prev > 0 && current < prev * 0.85) return { cls: 'is-down', text: '▼ ปัญหาน้อยลง' };
+      return null; // roughly unchanged vs last month — no trend line shown
+    };
+
+    // Report-card layout (one block per route) instead of one giant table — matches the
+    // reference plaintext report format the user provided: a header block (route, run/issue
+    // days, rate, trend, total damage) followed by a numbered breakdown table per problem type
+    // with its own trip count, damage value, and % share of that route's total damage.
+    // Rebuilt fresh every render — indices below only ever refer to the currently-rendered rows.
+    mrRouteIssueRegistry = [];
+    const routeIssueCards = routeIssueTop.map((r, idx) => {
+      const trend = routeIssueTrend(r);
+      const routeLabel = routeGroupHeaderDisplay(r.route);
+      const issueTypes = MR_STATUS_META
+        .filter(meta => meta.key !== 'normal' && meta.key !== 'noRef' && (r.statusCount[meta.key] || 0) > 0)
+        .sort((a, b) => (r.statusImpact[b.key] || 0) - (r.statusImpact[a.key] || 0));
+      const issueRows = issueTypes.map((meta, j) => {
+        const impact = Number(r.statusImpact[meta.key]) || 0;
+        const share = r.totalImpact > 0 ? (impact / r.totalImpact) * 100 : 0;
+        const regIdx = mrRouteIssueRegistry.push({
+          routeLabel,
+          statusLabel: meta.label,
+          statusKey: meta.key,
+          // Carried over verbatim from the row already rendered on the card (not recomputed)
+          // so the modal's summary line is provably the same number, not just similar.
+          count: r.statusCount[meta.key] || 0,
+          impact,
+          rows: r.issueRows[meta.key] || []
+        }) - 1;
+        return `<tr class="mr-issue-row" onclick="window.mrOpenRouteIssueModal(${regIdx})">
+          <td class="is-center">${j + 1}</td>
+          <td><span class="mr-dot" style="background:${meta.color}"></span>${esc(meta.label)}</td>
+          <td class="is-center">${fmtInt(r.statusCount[meta.key])}</td>
+          <td class="is-center">${fmtMoney(impact)}</td>
+          <td class="is-center">${fmtPct(share)}</td>
+        </tr>`;
+      }).join('');
+      return `<div class="mr-route-card">
+        <div class="mr-route-card-head">
+          <div class="mr-route-card-title"><span class="mr-route-rank">${idx + 1}</span><span class="mr-route-name">${esc(routeLabel)}</span></div>
+          <div class="mr-route-card-meta">
+            <span>สถานะวิ่งงาน: <b>${fmtInt(r.daysRun)} วัน / พบปัญหา ${fmtInt(r.daysWithIssue)} วัน</b> (อัตราพบปัญหา <b class="${r.rate >= 0.5 ? 'is-neg' : ''}">${fmtPct(r.rate * 100)}</b>)</span>
+            ${trend ? `<span>แนวโน้ม: <span class="mr-trend-arrow ${trend.cls}">${trend.text}</span></span>` : ''}
+          </div>
+        </div>
+        <div class="mr-route-card-body">
+          <table class="mr-table mr-route-issue-table">
+            <thead><tr>
+              <th class="is-center">ลำดับ</th><th>ประเภทปัญหา</th><th class="is-center">จำนวนเที่ยว</th>
+              <th class="is-center">มูลค่าความเสียหาย (บาท)</th><th class="is-center">สัดส่วน (%)</th>
+            </tr></thead>
+            <tbody>${issueRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+    }).join('');
+
+    const routeIssueSection = routeIssueTop.length === 0
+      ? `<div class="mr-empty">ไม่พบเส้นทางที่มีปัญหาซ้ำในเดือนนี้</div>`
+      : `${routeIssueCards}
+        ${routeIssueAll.length > ROUTE_ISSUE_LIMIT ? `<div class="mr-note">แสดง ${ROUTE_ISSUE_LIMIT} จาก ${routeIssueAll.length} เส้นทางที่พบปัญหาในเดือนนี้ (เรียงตามมูลค่าความเสียหายรวม)</div>` : ''}
+        <div class="mr-note">เรียงลำดับตามมูลค่าความเสียหายรวมของเส้นทาง (มากไปน้อย) · ในแต่ละเส้นทางเรียงประเภทปัญหาตามมูลค่าความเสียหายของประเภทนั้น · แนวโน้มเทียบจำนวนครั้งที่พบปัญหาเดือนนี้กับเดือนที่แล้ว</div>`;
 
     if (token !== mrRunToken) return; // superseded before render
     results.innerHTML = `
@@ -10185,12 +10343,60 @@ function buildMonthlyReview(data) {
       <section class="mr-card">
         <div class="mr-card-head"><span class="mr-card-bar"></span><h3 class="mr-card-title">ผลตรวจสอบรายวัน <span class="mr-card-sub">(คลิกเพื่อดูรายละเอียด)</span></h3></div>
         <div class="mr-card-body"><div class="mr-days">${perDayHtml}</div></div>
+      </section>
+      <section class="mr-card">
+        <div class="mr-card-head"><span class="mr-card-bar"></span><h3 class="mr-card-title">เส้นทางที่ควรพิจารณาปรับปรุง</h3></div>
+        <div class="mr-card-body">${routeIssueSection}</div>
       </section>`;
   };
 
   window.mrOnMonthChange = function () {
     const sel = document.getElementById('mr_month');
     if (sel) window.mrRun(sel.value);
+  };
+
+  // Drill-down modal for a single issue-type row (1, 2, 3, 4...) inside a route card — shows
+  // every matching trip across the whole month PLUS the reference trip each was compared
+  // against, rendered with the exact same pair-row markup as the "รายละเอียดการเปรียบเทียบ"
+  // modal on the normal daily-compare page (dcQaPairRow), reused via mrEngineRef so this can
+  // never drift from how that table renders elsewhere. The status tag is force-limited to the
+  // single issue type this row was opened for — never the trip's other co-occurring statuses —
+  // and rb falls back to {} (dcQaPairRow/dcQaNum already render missing fields as "-") for the
+  // rare loss/oil50 entries that have no matched reference trip.
+  window.mrOpenRouteIssueModal = function (idx) {
+    const entry = mrRouteIssueRegistry[idx];
+    if (!entry || !mrEngineRef || typeof mrEngineRef.dcQaPairRow !== 'function') return;
+    const rows = entry.rows || [];
+    const hasRef = r => !!(r.matchedRefTrip && r.matchedRefTrip.date);
+    const rowsHtml = rows
+      .slice()
+      // Rows that have a comparison day sort first (by date); rows whose วันที่เปรียบเทียบ is
+      // empty (no matched reference trip) drop to the bottom, still ordered by their own date.
+      .sort((a, b) => {
+        const aHas = hasRef(a), bHas = hasRef(b);
+        if (aHas !== bHas) return aHas ? -1 : 1;
+        return String(a.ra?.date || '').localeCompare(String(b.ra?.date || ''));
+      })
+      .map(r => mrEngineRef.dcQaPairRow({ ra: r.ra, rb: r.matchedRefTrip || {}, statuses: [entry.statusKey], infoStatuses: [] }, true))
+      .join('');
+    // Full-width summary line (not bound to any column) so the totals never look like a
+    // column-sum they don't belong to — they mirror the exact จำนวนเที่ยว/มูลค่า on the card.
+    const summaryRow = `<tr class="mr-issue-modal-summary-row">
+      <td colspan="11">รวม <b>${fmtInt(entry.count)}</b> เที่ยว<span class="mr-sum-sep">·</span>มูลค่าความเสียหายรวม <b>${fmtMoney(entry.impact)}</b> บาท</td>
+    </tr>`;
+    const body = rows.length
+      ? `<div class="dc-qa-table-wrap is-modal mr-issue-modal-table-wrap"><table class="dc-qa-table dc-qa-pair-table">
+          <thead><tr>
+            <th>วันที่หลัก</th><th>วันที่เปรียบเทียบ</th><th>พขร.</th><th>ประเภทรถ</th><th>ทะเบียน</th>
+            <th>ราคาน้ำมัน</th><th>สำรองน้ำมัน</th><th>ราคารับ</th><th>ราคาจ่าย</th>
+            <th class="dc-qa-th-diff">ส่วนต่าง</th><th class="dc-qa-th-flag">ความผิดปกติ</th>
+          </tr></thead>
+          <tbody>${rowsHtml}</tbody>
+          <tfoot>${summaryRow}</tfoot>
+        </table></div>`
+      : `<div class="dc-qa-empty">ไม่พบข้อมูลรายเที่ยว</div>`;
+    const titleHtml = `<span class="dc-qa-modal-title-prefix">${esc(entry.statusLabel)}:</span><span class="dc-qa-modal-title-route">${esc(entry.routeLabel)}</span>`;
+    mrEngineRef.dcQaModalShell('mr_issue_modal', 'mr_issue_capture', titleHtml, `${fmtInt(rows.length)} เที่ยว ตลอดทั้งเดือน · รวมมูลค่าความเสียหาย ${fmtMoney(entry.impact)} บาท`, encodeURIComponent(`route_issue_${entry.routeLabel}`), body);
   };
 
   // Populate the month selector from the authoritative dates source (same source
@@ -10240,7 +10446,7 @@ function buildMonthlyReview(data) {
       .mr-card:nth-child(1){animation-delay:.02s}.mr-card:nth-child(2){animation-delay:.08s}.mr-card:nth-child(3){animation-delay:.14s}.mr-card:nth-child(4){animation-delay:.2s}
       .mr-card-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border)}
       .mr-card-bar{width:4px;height:18px;border-radius:3px;background:linear-gradient(180deg,var(--accent),var(--accent2));flex:0 0 auto}
-      .mr-card-title{font-size:14px;font-weight:700;color:var(--text);margin:0;letter-spacing:-.2px}
+      .mr-card-title{font-size:14px;font-weight:600;color:var(--text);margin:0;letter-spacing:-.2px}
       .mr-card-sub{font-size:12px;font-weight:400;color:var(--muted)}
       .mr-card-body{padding:18px}
       .mr-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px}
@@ -10280,6 +10486,48 @@ function buildMonthlyReview(data) {
       .mr-trend-tab-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
       .mr-muted{color:var(--muted)}
       .mr-note{font-size:11px;color:var(--muted);margin-top:10px}
+      .mr-route-card{border:1px solid var(--border);border-radius:10px;margin-bottom:14px;background:var(--bg);overflow:hidden}
+      .mr-route-card:last-child{margin-bottom:0}
+      .mr-route-card-head{padding:12px 16px;border-bottom:1px solid var(--border)}
+      .mr-route-card-title{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text);letter-spacing:-.1px}
+      .mr-route-rank{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:600}
+      .mr-route-name{font-weight:600}
+      .mr-route-card-meta{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:8px;margin-left:32px;font-size:12px;color:var(--muted)}
+      .mr-route-card-meta b{color:var(--text);font-weight:600}
+      .mr-route-issue-table{border:none}
+      .mr-route-issue-table th{background:transparent;border-bottom:1px solid var(--border)}
+      .mr-route-issue-table tbody tr:last-child td{border-bottom:none}
+      .mr-issue-row{cursor:pointer}
+      .mr-issue-row:hover td{background:rgba(59,130,246,.06)}
+      /* Route-issue drill-down modal — scoped to #mr_issue_modal only (by id) so this doesn't
+         touch the shared .dc-qa-modal styling used by the daily-compare page's own modals.
+         Darker surfaces (matching --bg/--card) and stronger borders per feedback that the
+         reused modal looked too pale/washed-out against this page's theme. */
+      #mr_issue_modal .dc-qa-modal{background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 24px 64px rgba(0,0,0,.75)}
+      #mr_issue_modal .dc-qa-modal-head{background:var(--card);border-bottom:1px solid var(--border)}
+      #mr_issue_modal .dc-qa-modal-body{background:var(--bg)}
+      #mr_issue_modal .dc-qa-table-wrap.is-modal{background:var(--card);border:1px solid var(--border);border-radius:8px;margin:14px 16px 16px}
+      #mr_issue_modal .dc-qa-table th{background:var(--bg);border-bottom:1px solid var(--border);color:var(--muted)}
+      #mr_issue_modal .dc-qa-table td{border-bottom:1px solid var(--border)}
+      /* Hide the "ความผิดปกติ" (status badge) column — redundant here since the popup is opened
+         from a specific issue type that's already named in the title. Both header and body cells
+         hidden by class so the 11-column layout stays consistent and the freed width is reclaimed. */
+      #mr_issue_modal .dc-qa-th-flag,
+      #mr_issue_modal .dc-qa-td-flag{display:none}
+      #mr_issue_modal .dc-qa-table tbody tr:hover td{background:rgba(255,255,255,.03)}
+      #mr_issue_modal .dc-qa-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+      #mr_issue_modal tfoot .mr-issue-modal-summary-row td{border-top:2px solid var(--accent);border-bottom:none;background:var(--card);color:var(--muted);font-weight:400;text-align:left;padding:13px 18px;font-size:12px;letter-spacing:.2px}
+      #mr_issue_modal tfoot .mr-issue-modal-summary-row b{color:var(--text);font-weight:600;margin:0 2px}
+      #mr_issue_modal tfoot .mr-issue-modal-summary-row .mr-sum-sep{margin:0 12px;color:var(--border);font-weight:400}
+      /* Δ stays inline right after the value. The value sits in a fixed-width left-aligned
+         box so the main-day (top) and reference-day (bottom) numbers start at the same left
+         edge AND every Δ in a column begins at the same x — one neat aligned Δ column, no
+         stacking. Width covers the widest amount so nothing pushes the Δ out of line. */
+      #mr_issue_modal .dc-qa-pair-cell .dc-qa-ab-row > span:not(.dc-qa-inline-delta){min-width:62px;text-align:left;display:inline-block}
+      #mr_issue_modal .dc-qa-inline-delta{margin-left:4px}
+      .mr-trend-arrow{font-weight:700}
+      .mr-trend-arrow.is-up{color:var(--red)}
+      .mr-trend-arrow.is-down{color:var(--green)}
       .mr-days{display:flex;flex-direction:column;gap:8px}
       .mr-day{background:var(--bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;transition:border-color .15s}
       .mr-day[open]{border-color:rgba(59,130,246,.25)}

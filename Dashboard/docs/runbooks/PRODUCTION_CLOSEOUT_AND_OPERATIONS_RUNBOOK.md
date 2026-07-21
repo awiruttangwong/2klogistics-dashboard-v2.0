@@ -1475,6 +1475,73 @@ Date: 2026-07-20 Asia/Bangkok
   operator card (by 2026-07-29/31) — unrelated to this change, carried over
 - release state: complete and verified end-to-end on production
 
+## Closeout record: Monthly Review route-issue drill-down popup + phantom pair-delta fix
+
+Date: 2026-07-21 Asia/Bangkok
+
+- change type: Type A (frontend-only) — but the same commit also fixes shared
+  Daily-Compare render logic (`dcQaPairCell`), so UI + shared-contract
+  verification was treated as mandatory
+- commit: `ecf4b9e` (`Add Monthly Review route-issue drill-down popup and fix
+  phantom pair delta`)
+- files changed: `dashboard/scripts/app.js`,
+  `dashboard/index.html` (cache-buster `?v=20260721-monthly-review-popup`)
+- preserved (not staged): `.vscode/settings.json` (local live-server port),
+  untracked `Dashboard/docs/image/**` and `table report.txt`
+- what it is:
+  1. Monthly Review (`ตรวจสอบผลดำเนินงานรายเดือน`) route cards now open a
+     per-issue drill-down popup that mirrors the Daily-Compare comparison table
+     across the whole month. It reuses the shared inspection engine verbatim
+     (`computeSingleDaySummary` / `dcQaPairRow` / `dcQaModalShell` via
+     `__engineApi`); per-route issue rows are collected in lockstep with
+     `statusCount`, so popup counts/impact equal the day-summary and XLSX by
+     construction. Unpaired trips (no comparison) still count as a trip but
+     contribute 0 impact (`absPairDiff` returns 0 when a side is absent) —
+     identical to the production engine
+  2. shared `dcQaPairCell` phantom-delta fix: `hasNum(null)` is `true` because
+     `Number(null)===0`, so an absent comparison value (e.g. oil price on an
+     unpaired row where `getOilPriceByDate` returns `null`) rendered a spurious
+     `Δ +<value>`. `canDiff` now requires both sides non-null. This only
+     suppresses deltas where a value is genuinely missing; legitimate pair
+     deltas (both sides present) are unchanged — so the normal Daily-Compare
+     modal is unaffected for real pairs
+- local checks (all passed): `node --check`, `git diff --check`,
+  `test:xlsx-reviewer-reasons`, `test:route-display-policy`,
+  `test:xlsx-freeze-panes`, `apps-script:health` (`ok`, 49,306 trips, no
+  failures), `production:health` (`ok:true`, `promoted`, sync age 4.2h)
+- pre-deploy local Playwright audit: 98/98 Monthly Review popups had
+  card=modal-rows=footer count parity and impact parity; 70/70 pay/recv popups
+  reconciled `Σ|Δrow| == footer impact` exactly; 0 unpaired phantom deltas after
+  the fix; 0 console errors
+- deploy path: `git push origin main` → GitHub Actions build → Netlify published
+  deploy for `ecf4b9e`, state `ready`, published 2026-07-21T06:41:13Z (verified
+  via `listSiteDeploys`/`getSite`, not assumed from the push)
+- production checks on `https://2klogistics-dashboard.netlify.app/`:
+  - live page serves cache-buster `?v=20260721-monthly-review-popup`
+  - served `app.js` contains the new code (`mrOpenRouteIssueModal`,
+    `mr-issue-modal-summary-row`, the `a != null && b != null` guard) and its
+    CRLF-normalized SHA-256 matched the committed local file at
+    `2f57ef407d9b46fdea9fd481f2e66a5efce5ef176d9290f88bd8de71b8e30e7f`
+  - Playwright production smoke: Monthly Review overview rendered; first card
+    issue popup (`ราคาจ่ายผิดปกติ` / PTE_D-UDN) showed count 35 = card 35 =
+    footer 35, impact `189,000.00` matching the card, a single status tag, and
+    **0 phantom deltas** on unpaired rows; 0 console errors; 0 failed/4xx
+    network requests
+- export-specific check: `dcQaPairCell` renders on-screen HTML only; the XLSX
+  writer is separate and was not touched. The reviewer-reason, route-display,
+  and freeze-pane regression tests passing confirms no collateral change to the
+  shared export contracts
+- known remaining risk / limitation: only the first card's popup was deeply
+  re-verified on production; the other cards share the identical month-agnostic
+  code path and were verified 98/98 locally but not each re-screenshotted on
+  production. The `dcQaPairCell` change's effect on the normal Daily-Compare
+  modal was reasoned + regression-tested (legitimate pairs unchanged) rather
+  than exhaustively re-screenshotted. No dedicated automated test yet exists for
+  Monthly Review's own aggregation/popup logic
+- next monthly action: `DATA(M8)` rollover remains due per the existing operator
+  card (by 2026-07-29/31) — unrelated to this change, carried over
+- release state: complete and verified end-to-end on production
+
 ## Required handoff note for future developers and AI agents
 
 Before making a change, read this file completely.

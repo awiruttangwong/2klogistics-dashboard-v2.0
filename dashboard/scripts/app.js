@@ -10182,7 +10182,7 @@ function renderTripsDeferredState() {
 function describeCompareTripLoadError(err) {
   const msg = describeDataLoadError(err, 'Supabase trips API');
   if (/HTTP 404|not found/i.test(msg)) {
-    return 'ไม่พบ Supabase API Function สำหรับหน้าเปรียบเทียบ กรุณาเปิดระบบผ่าน Netlify deploy หรือ local server ที่รองรับ /.netlify/functions/supabase-api';
+    return 'ไม่พบ Supabase API Function สำหรับหน้าเปรียบเทียบ กรุณาเปิดระบบผ่าน production deploy หรือ local server ที่รองรับ /api/supabase-api';
   }
   return msg;
 }

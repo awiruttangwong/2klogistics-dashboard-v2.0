@@ -1387,26 +1387,32 @@ function requestSupabaseSyncAfterBatch_(batchResult) {
   }
 
   try {
+    // Cloudflare migration (2026-08-10): this no longer calls a Netlify
+    // background function directly. It dispatches the GitHub Actions
+    // workflow that performs the Apps Script -> Supabase sync, since that
+    // workflow already runs on plain Node.js with no edge-runtime limits.
     var response = UrlFetchApp.fetch(SUPABASE_SYNC_WEBHOOK_URL, {
       method: 'post',
       contentType: 'application/json',
-      headers: { 'X-Sync-Token': secret },
+      headers: {
+        'Authorization': 'Bearer ' + secret,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+      },
       payload: JSON.stringify({
-        source: 'apps-script-daily-batch',
-        batchFinishedAt: batchResult.finishedAt,
-        tripsRows: batchResult.tripsCacheRows
+        ref: 'main'
       }),
       muteHttpExceptions: true
     });
     var status = response.getResponseCode();
-    if (status !== 202) {
-      Logger.log('[dailyBatchJob] Supabase callback failed: HTTP ' + status);
+    if (status !== 204) {
+      Logger.log('[dailyBatchJob] Supabase sync dispatch failed: HTTP ' + status + ' ' + response.getContentText());
       return { accepted: false, skipped: false, status: status, reason: 'webhook-http-error' };
     }
-    Logger.log('[dailyBatchJob] Supabase callback accepted');
+    Logger.log('[dailyBatchJob] Supabase sync workflow dispatched');
     return { accepted: true, skipped: false, status: status, requestedAt: new Date().toISOString() };
   } catch (err) {
-    Logger.log('[dailyBatchJob] Supabase callback error: ' + err.message);
+    Logger.log('[dailyBatchJob] Supabase sync dispatch error: ' + err.message);
     return { accepted: false, skipped: false, reason: 'webhook-request-error', error: err.message };
   }
 }

@@ -3,8 +3,12 @@ name: Production Sync Watchdog
 on:
   workflow_dispatch:
   schedule:
-    # Independent pre-deadline recovery. GitHub may start late, so Netlify
-    # remains the primary recovery loop and the database lease prevents races.
+    # Primary daily sync window, 08:20/08:30/08:40/08:50 Asia/Bangkok.
+    # Replaces the old Netlify scheduled function (retired during the
+    # Cloudflare migration, 2026-08-10) — every invocation is idempotent
+    # and all writers share a Supabase lease.
+    - cron: "20,30,40,50 1 * * *"
+    # Independent pre-deadline recovery check.
     - cron: "47 1 * * *"
     # Late recovery remains available when an upstream outage spans 09:00.
     - cron: "17 3 * * *"
@@ -30,7 +34,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           APPS_SCRIPT_API_URL: ${{ secrets.APPS_SCRIPT_API_URL }}
-          DASHBOARD_HEALTH_URL: https://2klogistics-dashboard.netlify.app/.netlify/functions/supabase-api?action=health
+          DASHBOARD_HEALTH_URL: https://2klogistics-dashboard.pages.dev/api/supabase-api?action=health
           SUPABASE_SYNC_BATCH_SIZE: "500"
           APPS_SCRIPT_PAGE_LIMIT: "5000"
           SYNC_REQUEST_TIMEOUT_MS: "60000"

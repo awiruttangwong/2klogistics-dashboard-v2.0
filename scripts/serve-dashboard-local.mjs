@@ -6,12 +6,18 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const DASHBOARD_DIR = resolve(ROOT_DIR, 'Dashboard');
-const FUNCTION_PATH = resolve(ROOT_DIR, 'netlify/functions/supabase-api.mjs');
+const FUNCTION_PATH = resolve(ROOT_DIR, 'dashboard/functions/api/supabase-api.js');
 const DEFAULT_PORT = 8899;
 
 loadDotEnv(resolve(ROOT_DIR, '.env'));
 
-const { handler } = await import(`${pathToFileURL(FUNCTION_PATH).href}?dev=${Date.now()}`);
+const { onRequestGet } = await import(`${pathToFileURL(FUNCTION_PATH).href}?dev=${Date.now()}`);
+const functionEnv = {
+  SUPABASE_URL: process.env.SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  APPS_SCRIPT_API_URL: process.env.APPS_SCRIPT_API_URL,
+  SUPABASE_MIN_OPERATIONAL_DATE: process.env.SUPABASE_MIN_OPERATIONAL_DATE,
+};
 
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -32,13 +38,13 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', `http://${req.headers.host || `127.0.0.1:${requestedPort}`}`);
 
-    if (url.pathname === '/.netlify/functions/supabase-api') {
-      const result = await handler({
-        httpMethod: req.method || 'GET',
-        queryStringParameters: Object.fromEntries(url.searchParams.entries()),
+    if (url.pathname === '/api/supabase-api') {
+      const result = await onRequestGet({
+        request: new Request(url, { method: req.method || 'GET' }),
+        env: functionEnv,
       });
-      res.writeHead(result.statusCode || 200, result.headers || { 'content-type': 'application/json' });
-      res.end(result.body || '');
+      res.writeHead(result.status || 200, Object.fromEntries(result.headers.entries()));
+      res.end(Buffer.from(await result.arrayBuffer()));
       return;
     }
 
@@ -62,7 +68,7 @@ const server = createServer(async (req, res) => {
 
 server.listen(requestedPort, '127.0.0.1', () => {
   console.log(`Dashboard local server: http://127.0.0.1:${requestedPort}/`);
-  console.log('Supabase function route: /.netlify/functions/supabase-api');
+  console.log('Supabase function route: /api/supabase-api');
 });
 
 function loadDotEnv(path) {

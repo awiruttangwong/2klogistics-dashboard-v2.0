@@ -146,10 +146,16 @@ var DAILY_BATCH_TRIGGER_TIMEZONE = 'Asia/Bangkok';
 var DAILY_BATCH_TRIGGER_HOUR = 8;
 var DAILY_BATCH_TRIGGER_NEAR_MINUTE = 0;
 
-// Event-driven Supabase sync. The secret value belongs in Script Properties
-// under SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY and must never be committed.
-var SUPABASE_SYNC_WEBHOOK_URL = 'https://2klogistics-dashboard.netlify.app/.netlify/functions/supabase-sync-background';
-var SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY = 'NETLIFY_SYNC_TRIGGER_SECRET';
+// Event-driven Supabase sync. As of the Cloudflare migration (2026-08-10)
+// this dispatches the "Supabase Shadow Sync" GitHub Actions workflow
+// (.github/workflows/supabase-sync.yml) instead of calling a Netlify
+// background function, so the sync itself keeps running on plain Node.js
+// with no edge-runtime execution limits. The secret value (a GitHub
+// fine-grained PAT scoped to this repo's Actions: write permission) belongs
+// in Script Properties under SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY and must
+// never be committed.
+var SUPABASE_SYNC_WEBHOOK_URL = 'https://api.github.com/repos/awiruttangwong/2klogistics-dashboard-v2.0/actions/workflows/supabase-sync.yml/dispatches';
+var SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY = 'GITHUB_SYNC_DISPATCH_TOKEN';
 
 // -------------------------------------------------------------------------
 // API Response Helper

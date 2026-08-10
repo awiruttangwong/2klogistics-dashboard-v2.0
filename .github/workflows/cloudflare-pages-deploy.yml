@@ -1,0 +1,97 @@
+name: Cloudflare Pages Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "dashboard/**"
+      - "supabase/sync/daily-sync-readiness.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/check-production-health.mjs"
+      - "scripts/cloudflare-release.mjs"
+      - "scripts/test-daily-sync-readiness.mjs"
+      - "scripts/test-pre-nine-recovery.mjs"
+      - ".github/workflows/cloudflare-pages-deploy.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_PAGES_PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify deadline recovery contracts
+        run: |
+          npm run test:daily-sync-readiness
+          npm run test:pre-nine-recovery
+          npm run test:supabase-cli-guard
+          npm run test:xlsx-reviewer-reasons
+
+      - name: Capture current production deployment (for rollback)
+        id: current
+        run: node scripts/cloudflare-release.mjs current-production-id
+
+      - name: Deploy preview
+        id: preview
+        working-directory: dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          alias_name="ci-preview-${GITHUB_SHA:0:12}"
+          out="$(npx --yes wrangler pages deploy . \
+            --project-name "$CLOUDFLARE_PAGES_PROJECT" \
+            --branch "$alias_name" \
+            --commit-hash "$GITHUB_SHA" \
+            --commit-message "GitHub Actions ${GITHUB_SHA}" \
+            --commit-dirty=true)"
+          echo "$out"
+          preview_url="$(echo "$out" | grep -oE 'https://[a-z0-9.-]*\.pages\.dev' | tail -1)"
+          if [ -z "$preview_url" ]; then
+            echo "Could not parse preview URL from wrangler output" >&2
+            exit 1
+          fi
+          echo "preview_url=$preview_url" >> "$GITHUB_OUTPUT"
+
+      - name: Verify preview health
+        run: npm run production:health
+        env:
+          DASHBOARD_HEALTH_URL: ${{ steps.preview.outputs.preview_url }}/api/supabase-api?action=health
+          HEALTH_CHECK_ATTEMPTS: "5"
+          HEALTH_CHECK_RETRY_DELAY_MS: "3000"
+
+      - name: Deploy to production
+        working-directory: dashboard
+        run: |
+          npx --yes wrangler pages deploy . \
+            --project-name "$CLOUDFLARE_PAGES_PROJECT" \
+            --branch main \
+            --commit-hash "$GITHUB_SHA" \
+            --commit-message "GitHub Actions ${GITHUB_SHA}" \
+            --commit-dirty=true
+
+      - name: Verify production health
+        id: prod_health
+        continue-on-error: true
+        run: npm run production:health
+        env:
+          HEALTH_CHECK_ATTEMPTS: "8"
+          HEALTH_CHECK_RETRY_DELAY_MS: "3000"
+
+      - name: Roll back failed production release
+        if: steps.prod_health.outcome == 'failure' && steps.current.outputs.previous_deploy_id != ''
+        run: node scripts/cloudflare-release.mjs rollback "${{ steps.current.outputs.previous_deploy_id }}"
+
+      - name: Fail job if production health check failed
+        if: steps.prod_health.outcome == 'failure'
+        run: exit 1

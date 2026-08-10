@@ -63,6 +63,9 @@ jobs:
           fi
           echo "preview_url=$preview_url" >> "$GITHUB_OUTPUT"
 
+      - name: Wait for preview deployment to propagate
+        run: sleep 15
+
       - name: Verify preview health
         run: npm run production:health
         env:
@@ -79,6 +82,9 @@ jobs:
             --commit-hash "$GITHUB_SHA" \
             --commit-message "GitHub Actions ${GITHUB_SHA}" \
             --commit-dirty=true
+
+      - name: Wait for production deployment to propagate
+        run: sleep 15
 
       - name: Verify production health
         id: prod_health

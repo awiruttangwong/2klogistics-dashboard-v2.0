@@ -24,15 +24,43 @@ const sharedNewReason = 'รอเรทราคาน้ำมันจาก�
 const singleMode = buildMapping(true);
 const compareMode = buildMapping(false);
 
+assert.deepEqual(singleMode['สำรองน้ำมัน > 50%'], [
+  'น้ำมันไม่พอวิ่ง',
+  'หลีกเลี่ยงการปิดตู้โอนจ่าย',
+  'สำรองน้ำมันขาเดียว',
+  'สำรองน้ำมัน 1 สัปดาห์',
+  'รถบริษัท',
+]);
+assert.deepEqual(compareMode['สำรองน้ำมัน > 50%'], [
+  'น้ำมันไม่พอวิ่ง',
+  'หลีกเลี่ยงการปิดตู้โอนจ่าย',
+]);
+assert.deepEqual(singleMode['ขาดทุน'], [
+  'ขาดทุน/ไม่สามารถลดราคา พขร. ได้',
+  'โปร',
+  'ดันราคา/หารถไม่ได้',
+  'รถแทน/รถด่วน',
+  'ใส่ราคารับผิด',
+  'ใส่ราคาจ่ายผิด',
+  'รถบริษัท',
+]);
+assert.deepEqual(compareMode['ขาดทุน'], [
+  'ขาดทุน/ไม่สามารถลดราคา พขร. ได้',
+  'โปร',
+  'ดันราคา/หารถไม่ได้',
+  'รถแทน/รถด่วน',
+]);
 assert.deepEqual(singleMode['ราคาจ่ายผิดปกติ'], [
   ...basePriceReasons,
   sharedNewReason,
   'ใส่ราคาจ่ายผิด',
+  'รถบริษัท',
 ]);
 assert.deepEqual(singleMode['ราคารับผิดปกติ'], [
   ...basePriceReasons,
   sharedNewReason,
   'ใส่ราคารับผิด',
+  'รถบริษัท',
 ]);
 assert.deepEqual(compareMode['ราคาจ่ายผิดปกติ'], basePriceReasons);
 assert.deepEqual(compareMode['ราคารับผิดปกติ'], basePriceReasons);
@@ -41,6 +69,8 @@ const singleSummaryReasons = [...new Set(Object.values(singleMode).flat())];
 assert.equal(singleSummaryReasons.filter(reason => reason === sharedNewReason).length, 1);
 assert.ok(singleSummaryReasons.includes('ใส่ราคารับผิด'));
 assert.ok(singleSummaryReasons.includes('ใส่ราคาจ่ายผิด'));
+assert.equal(singleSummaryReasons.filter(reason => reason === 'รถบริษัท').length, 1);
+assert.ok(!Object.values(compareMode).flat().includes('รถบริษัท'));
 
 for (const contract of [
   'const qaSummaryReasonHeaders = [...new Set(',

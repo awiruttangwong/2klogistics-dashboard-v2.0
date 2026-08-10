@@ -17,7 +17,7 @@ var SHEET_SOURCES = {
   'DATA(M6)': 'https://docs.google.com/spreadsheets/d/11xnRv1OFciOQtpAIMEL8tqMvsf1tm5NuOkVAb7vb-0c/edit?gid=1824601668#gid=1824601668',
   
   'DATA(M7)': 'https://docs.google.com/spreadsheets/d/1sMshl7_b-dvrtnDYcl-WQt467gSnfdLw0o35rgRFJMU/edit?gid=1824601668#gid=1824601668',
-  'DATA(M8)': '',
+  'DATA(M8)': 'https://docs.google.com/spreadsheets/d/16hkvexRI5zdo9vMNmvIjfD6sOGve-hgov9m45f3zAv0/edit?gid=1824601668#gid=1824601668',
   'DATA(M9)': '',
   'DATA(M10)': '',
   'DATA(M11)': '',
@@ -160,8 +160,10 @@ var DAILY_BATCH_RECOVERY_WINDOWS = [
 
 // Event-driven Supabase sync. The secret value belongs in Script Properties
 // under SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY and must never be committed.
-var SUPABASE_SYNC_WEBHOOK_URL = 'https://2klogistics-dashboard.netlify.app/.netlify/functions/supabase-sync-background';
-var SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY = 'NETLIFY_SYNC_TRIGGER_SECRET';
+// Cloudflare migration (2026-08-10): dispatches the "Supabase Shadow Sync"
+// GitHub Actions workflow instead of a Netlify background function.
+var SUPABASE_SYNC_WEBHOOK_URL = 'https://api.github.com/repos/awiruttangwong/2klogistics-dashboard-v2.0/actions/workflows/supabase-sync.yml/dispatches';
+var SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY = 'GITHUB_SYNC_DISPATCH_TOKEN';
 
 // -------------------------------------------------------------------------
 // API Response Helper

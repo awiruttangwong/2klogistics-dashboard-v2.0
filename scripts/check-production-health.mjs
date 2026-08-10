@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const DEFAULT_HEALTH_URL = 'https://2klogistics-dashboard.netlify.app/.netlify/functions/supabase-api?action=health';
+const DEFAULT_HEALTH_URL = 'https://2klogistics-dashboard.pages.dev/api/supabase-api?action=health';
 
 loadDotEnvFile();
 

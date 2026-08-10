@@ -13,6 +13,9 @@ test-results/
 # Local Netlify folder
 .netlify
 
+# Local Cloudflare Wrangler cache/state
+.wrangler
+
 # Local automation scratch/state
 .codex/
 .clasp.json

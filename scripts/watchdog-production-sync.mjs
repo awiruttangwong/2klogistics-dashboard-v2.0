@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 import { sourceBatchReadyToday } from '../supabase/sync/daily-sync-readiness.mjs';
 
-const DEFAULT_HEALTH_URL = 'https://2klogistics-dashboard.netlify.app/.netlify/functions/supabase-api?action=health';
+const DEFAULT_HEALTH_URL = 'https://2klogistics-dashboard.pages.dev/api/supabase-api?action=health';
 const DEFAULT_MIN_PROMOTED_HOUR_BANGKOK = 8;
 const DEFAULT_MIN_ROW_DELTA_TO_SYNC = 1;
 const DEFAULT_SYNC_TIMEOUT_MS = 30 * 60 * 1000;

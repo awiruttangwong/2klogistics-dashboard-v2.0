@@ -2,6 +2,44 @@
 
 Last updated: 2026-08-10
 
+## Current status (read this first)
+
+Code changes for Phases 1–5 are done and committed on branch
+`cloudflare-migration` (not merged to `main` yet — Netlify production is
+untouched). The Cloudflare Pages project `2klogistics-dashboard` is live at
+`https://2klogistics-dashboard.pages.dev` and the ported function correctly
+returns `Missing required environment variable: SUPABASE_URL` (expected —
+secrets aren't set yet). **Three things need the user before this can go
+further:**
+
+1. **`CLOUDFLARE_API_TOKEN`** — needed as a GitHub Actions secret so
+   `cloudflare-pages-deploy.yml` can deploy non-interactively. Claude's local
+   Cloudflare access is an OAuth session (used for the manual deploy above)
+   and cannot mint this token itself. Create one at
+   `https://dash.cloudflare.com/6c6387119b50a72218ec37c3618d1972/api-tokens`
+   with the "Cloudflare Pages — Edit" template, then either paste it for
+   Claude to set with `gh secret set CLOUDFLARE_API_TOKEN`, or run that
+   command yourself.
+2. **Cloudflare Pages secrets** (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+   `APPS_SCRIPT_API_URL`) — these already exist as GitHub Actions secrets but
+   GitHub secrets cannot be read back by anyone, including Claude, so the
+   values have to come from you again. Safest path: create a local `.env`
+   (gitignored) with these three lines, tell Claude it's ready, and Claude
+   will pipe them into `wrangler pages secret put` without ever printing the
+   values into the conversation.
+3. **A GitHub fine-grained PAT** (repo-scoped to
+   `awiruttangwong/2klogistics-dashboard-v2.0`, `Actions: write`) — needed so
+   the Apps Script webhook can call `workflow_dispatch` on `supabase-sync.yml`.
+   Store it in Apps Script Script Properties under
+   `GITHUB_SYNC_DISPATCH_TOKEN` (via `configureSupabaseSyncWebhookSecret()`),
+   then **manually redeploy the Apps Script Web App** (Deploy → New
+   deployment) — this is a live production system Claude will not push to
+   without your explicit go-ahead in the same conversation.
+
+Once those three are in place, remaining work is verification (Phase 6),
+merging `cloudflare-migration` to `main` (Phase 7 — safe, doesn't touch
+Netlify), and burn-in before Netlify decommission (Phase 9).
+
 ## Purpose
 
 Move production hosting for this dashboard off Netlify (repeated
@@ -37,110 +75,102 @@ without breaking the daily Supabase sync or the Apps Script data pipeline.
 
 ---
 
-## Phase 0 — Cloudflare account setup (you do this first)
+## Phase 0 — Cloudflare account setup
 
-- [ ] Create a Cloudflare Pages project in account `6c6387119b50a72218ec37c3618d1972`,
-      connected to GitHub repo `awiruttangwong/2klogistics-dashboard-v2.0`
-      (or set up for direct/Wrangler upload if not using Git integration)
-- [ ] Decide and register the custom domain (e.g. `dashboard.2klogistics.co.th`)
-      and add it to the Cloudflare Pages project
-- [ ] Create a Cloudflare API Token scoped to `Cloudflare Pages:Edit` for this account
-- [ ] Note down: Cloudflare **Account ID** (`6c6387119b50a72218ec37c3618d1972`),
-      **Pages project name**, and the **API Token** value
+- [x] Cloudflare Pages project `2klogistics-dashboard` created via Wrangler
+      CLI (account `6c6387119b50a72218ec37c3618d1972`), production branch
+      `main`, live at `https://2klogistics-dashboard.pages.dev`
+- [x] `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_PAGES_PROJECT` GitHub secrets set
+- [ ] Domain: using the default `*.pages.dev` domain (user decision,
+      2026-08-10) — no custom domain, no DNS step needed
+- [ ] Create a Cloudflare API Token scoped to `Cloudflare Pages:Edit` and add
+      as GitHub secret `CLOUDFLARE_API_TOKEN` — **blocking Phase 3 automation**
 - [ ] Create a GitHub Personal Access Token (fine-grained, scoped only to
       `awiruttangwong/2klogistics-dashboard-v2.0`, `Actions: write` permission)
-      to allow Apps Script to call `workflow_dispatch`
-- [ ] Confirm with Claude that all of the above is ready before Phase 1 starts
+      to allow Apps Script to call `workflow_dispatch` — **blocking Phase 5**
 
 ---
 
 ## Phase 1 — Port the read API to Cloudflare Pages Functions
 
-- [ ] Create `dashboard/functions/api/supabase-api.js`, ported from
-      `netlify/functions/supabase-api.mjs`:
-  - [ ] Convert `handler(event)` → `onRequestGet(context)` / `onRequest(context)`
-  - [ ] Replace `process.env.X` → `context.env.X`
-  - [ ] Replace return shape `{statusCode, headers, body}` → `new Response(body, {status, headers})`
-  - [ ] Replace header `Netlify-CDN-Cache-Control` → `CDN-Cache-Control`
-  - [ ] Keep all query actions identical: `meta`, `health`, `freshness`, `summary`,
-        `trips`, `oil`, `routes`, `customers`, `dates`, `compare`
-- [ ] Verify no other Netlify-only globals remain in the ported file
-- [ ] Delete/retire `netlify/functions/schedule-supabase-sync.mjs` and
-      `netlify/functions/supabase-sync-background.mjs` (superseded by Phase 4)
-- [ ] Update `dashboard/scripts/api-config.js:5`:
-      `/.netlify/functions/supabase-api` → `/api/supabase-api`
-- [ ] Update the Thai error string in `dashboard/scripts/app.js` (~line 10185)
-      that mentions "Netlify deploy" to reference the new hosting generically
-- [ ] Update `scripts/serve-dashboard-local.mjs`:
-  - [ ] Mock route path `/.netlify/functions/supabase-api` → `/api/supabase-api`
-  - [ ] `FUNCTION_PATH` → point at `dashboard/functions/api/supabase-api.js`
-- [ ] `node --check dashboard/scripts/app.js` passes
-- [ ] `node --check dashboard/scripts/api-config.js` passes
+- [x] Created `dashboard/functions/api/supabase-api.js`, ported from
+      `netlify/functions/supabase-api.mjs` (`onRequestGet`/`onRequestOptions`,
+      `context.env`, `Response` objects, `CDN-Cache-Control` header, and a
+      real import of `supabase/sync/daily-sync-readiness.mjs` for the
+      `freshness` action instead of a hand-rolled reimplementation)
+- [x] `netlify/functions/schedule-supabase-sync.mjs` and
+      `supabase-sync-background.mjs` intentionally **kept** (not deleted) —
+      they remain Netlify's fallback until burn-in (Phase 9), and
+      `netlify.toml`/Netlify itself are completely untouched by this branch
+- [x] `dashboard/scripts/api-config.js:5` → `/api/supabase-api`
+- [x] Thai error string in `dashboard/scripts/app.js` (~line 10185) updated
+- [x] `scripts/serve-dashboard-local.mjs` updated to call
+      `onRequestGet({request, env})` and serve `/api/supabase-api`
+- [x] `node --check` passes on all touched files
 
 ## Phase 2 — Local verification of the ported function
 
-- [ ] `npm run dashboard:dev` starts and serves the dashboard locally
-- [ ] `http://127.0.0.1:8899/api/supabase-api?action=health` returns valid JSON
-- [ ] All frontend pages (Page 1 summary, Page 2 compare) load real data locally
-- [ ] `npx wrangler pages dev dashboard` (Cloudflare local emulator) also serves
-      `functions/api/supabase-api.js` correctly with env vars from `.dev.vars`
+- [x] `scripts/serve-dashboard-local.mjs` verified: index 200, `?action=health`
+      correctly returns `Missing required environment variable: SUPABASE_URL`
+      (no local `.env`, expected)
+- [x] `wrangler pages dev` (real Cloudflare/workerd runtime, not just Node)
+      verified the same way — **must be run with cwd inside `dashboard/`**
+      for the `functions/` dir to be auto-detected (see Phase 3 note)
 
 ## Phase 3 — Cloudflare deploy pipeline (GitHub Actions)
 
-- [ ] Add GitHub repo secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`,
-      `CLOUDFLARE_PAGES_PROJECT`
-- [ ] Set Cloudflare Pages environment variables/secrets (via dashboard or
-      `wrangler pages secret put`): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
-      `APPS_SCRIPT_API_URL`
-- [ ] Write `.github/workflows/cloudflare-pages-deploy.yml` replacing
-      `netlify-production-deploy.yml`, preserving the same safety shape:
-  - [ ] Run the existing test suite first (`test:daily-sync-readiness`,
-        `test:pre-nine-recovery`, `test:supabase-cli-guard`, `test:xlsx-reviewer-reasons`)
-  - [ ] Deploy to a non-production Cloudflare Pages branch/preview deployment
-  - [ ] Health-check the preview deployment (`/api/supabase-api?action=health`)
-  - [ ] Only then deploy/promote to the production branch/domain
-  - [ ] On failure, roll back to the last known-good production deployment
-        (Cloudflare Pages deployment history / rollback API — confirm exact
-        endpoint against current Cloudflare docs when implementing)
-- [ ] Write/adjust `scripts/cloudflare-release.mjs` if a scripted
-      promote/rollback step (mirroring `scripts/netlify-release.mjs`) is needed
-- [ ] Delete `.github/workflows/netlify-production-deploy.yml` once the new
-      workflow is proven (keep both temporarily side-by-side is fine)
-- [ ] Delete `scripts/netlify-release.mjs` once no longer referenced
+- [x] `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT` GitHub secrets set
+- [ ] `CLOUDFLARE_API_TOKEN` GitHub secret — **needs user**, see "Current status"
+- [ ] Cloudflare Pages secrets (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+      `APPS_SCRIPT_API_URL`) — **needs user**, see "Current status"
+- [x] `.github/workflows/cloudflare-pages-deploy.yml` written: runs the same
+      4 test scripts, deploys to a `ci-preview-<sha>` branch, health-checks
+      it, deploys to `main` (production), health-checks that, and rolls back
+      via `scripts/cloudflare-release.mjs rollback` on failure
+  - Important discovery: `wrangler pages deploy <dir>` resolves `functions/`
+    relative to the **current working directory**, not relative to
+    `<dir>`. The workflow uses `working-directory: dashboard` and
+    `wrangler pages deploy .` to get this right — confirmed by testing (a
+    first attempt run from repo root silently deployed with *no* functions
+    and Pages' SPA-fallback masked it as a false-positive 200).
+- [x] `scripts/cloudflare-release.mjs` written (`current-production-id` /
+      `rollback` via the Cloudflare Pages REST API)
+- [ ] Delete `.github/workflows/netlify-production-deploy.yml` and
+      `scripts/netlify-release.mjs` — deferred to Phase 9 (kept as fallback)
 
 ## Phase 4 — Move sync scheduling/triggering off Netlify
 
-- [ ] Decide the exact GitHub Actions cron entries needed to replace Netlify's
-      `20,30,40,50 1 * * *` (08:20/30/40/50 Asia/Bangkok) — add them to
-      `production-sync-watchdog.yml` and/or `supabase-sync.yml`
-- [ ] Confirm `supabase-sync.yml` can be safely triggered via
-      `workflow_dispatch` with inputs (or `repository_dispatch`) from an
-      external caller (Apps Script)
-- [ ] Update `scripts/check-production-health.mjs` and
-      `scripts/watchdog-production-sync.mjs`: replace the hardcoded default
-      `DASHBOARD_HEALTH_URL` (`https://2klogistics-dashboard.netlify.app/...`)
-      with the new custom domain
-- [ ] Update `DASHBOARD_HEALTH_URL` env values inside
-      `.github/workflows/production-sync-watchdog.yml` and
-      `.github/workflows/supabase-sync.yml`
-- [ ] Confirm GitHub secrets `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
-      `APPS_SCRIPT_API_URL` are unchanged and still valid
+- [x] Added cron `20,30,40,50 1 * * *` (08:20/30/40/50 Asia/Bangkok) to
+      `production-sync-watchdog.yml`, alongside the existing 08:47/10:17 checks
+- [x] `supabase-sync.yml` already supports bare `workflow_dispatch` (no inputs
+      required — a plain `{"ref":"main"}` POST is enough for Apps Script to
+      trigger it)
+- [x] `scripts/check-production-health.mjs` and
+      `scripts/watchdog-production-sync.mjs` default `DASHBOARD_HEALTH_URL`
+      updated to `https://2klogistics-dashboard.pages.dev/api/supabase-api?action=health`
+- [x] `DASHBOARD_HEALTH_URL` env values updated in both workflow YAMLs
+- [x] Confirmed `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+      `APPS_SCRIPT_API_URL` already exist as GitHub secrets (set 2026-06-25/26)
 
 ## Phase 5 — Apps Script (Google) changes
 
-- [ ] Update `dashboard/API/config.gs` (and mirrored `Dashboard/API/config.gs`
-      if not the same case-insensitive file — verify first):
-  - [ ] `SUPABASE_SYNC_WEBHOOK_URL` → GitHub Actions dispatch endpoint
-        (e.g. `https://api.github.com/repos/awiruttangwong/2klogistics-dashboard-v2.0/actions/workflows/supabase-sync.yml/dispatches`)
-  - [ ] Update the code around line ~1390 (`UrlFetchApp.fetch(SUPABASE_SYNC_WEBHOOK_URL, ...)`)
-        to send the GitHub-required request shape: `Authorization: Bearer <PAT>`,
-        `Accept: application/vnd.github+json`, POST body `{"ref":"main"}`
-  - [ ] Store the new GitHub PAT in Script Properties under
-        `SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY` (rename the property key too
-        if desired, e.g. `GITHUB_SYNC_DISPATCH_TOKEN`)
-- [ ] In the Apps Script editor: **Deploy → New deployment** (a code-only save
-      does not update the live Web App)
-- [ ] Confirm `Access-Control-Allow-Origin: '*'` in `jsonOut()` needs no change
+- [x] `dashboard/API/config.gs`: `SUPABASE_SYNC_WEBHOOK_URL` now points at
+      `https://api.github.com/repos/awiruttangwong/2klogistics-dashboard-v2.0/actions/workflows/supabase-sync.yml/dispatches`;
+      `SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY` renamed to
+      `GITHUB_SYNC_DISPATCH_TOKEN`
+- [x] `dashboard/API/Code.gs` (`requestSupabaseSyncAfterBatch_`): now sends
+      `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`,
+      `X-GitHub-Api-Version: 2022-11-28`, body `{"ref":"main"}`, and checks
+      for GitHub's `204` success status instead of Netlify's `202`
+- [x] `Access-Control-Allow-Origin: '*'` in `jsonOut()` confirmed unchanged
+- [ ] **Not yet deployed live** — this is a code change in the repo only.
+      The live Apps Script Web App still runs the old Netlify-webhook code
+      until someone runs `clasp push`/`clasp deploy` (Google credentials are
+      available on this machine via an existing `clasp login`, but Claude
+      will not push to this live production system without an explicit
+      go-ahead in conversation, since it also runs the actual daily batch job)
+- [ ] Store the GitHub PAT in Script Properties under
+      `GITHUB_SYNC_DISPATCH_TOKEN` before/at the same time as the clasp deploy
 - [ ] Manually trigger the webhook path once (outside 08:00–11:00 Bangkok) and
       confirm a GitHub Actions run of `supabase-sync.yml` starts
 
@@ -234,3 +264,15 @@ This migration is complete only when **all** of the following are true:
 
 - 2026-08-10 — Plan created; sync-via-GitHub-Actions and custom-domain
   decisions confirmed with user; Cloudflare project setup pending.
+- 2026-08-10 — User switched domain decision to `2klogistics-dashboard.pages.dev`
+  (no custom domain/DNS step) and authorized Claude to execute the migration.
+  Phases 1–5 code changes completed and committed on branch
+  `cloudflare-migration` (not merged to `main`). Cloudflare Pages project
+  created and deployed; ported function verified working end-to-end via both
+  the local Node dev server and the real `wrangler pages dev`/production
+  Cloudflare runtime (missing-env-var error confirms correct wiring, since no
+  secrets are set yet). GitHub secrets `CLOUDFLARE_ACCOUNT_ID` and
+  `CLOUDFLARE_PAGES_PROJECT` set. Blocked on: `CLOUDFLARE_API_TOKEN`,
+  Cloudflare Pages secrets (values need to come from the user again since
+  GitHub secrets can't be read back), and explicit confirmation before the
+  live Apps Script Web App is redeployed via `clasp`.

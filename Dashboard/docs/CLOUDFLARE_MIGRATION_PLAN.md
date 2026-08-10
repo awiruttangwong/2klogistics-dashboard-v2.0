@@ -4,41 +4,46 @@ Last updated: 2026-08-10
 
 ## Current status (read this first)
 
-Code changes for Phases 1–5 are done and committed on branch
-`cloudflare-migration` (not merged to `main` yet — Netlify production is
-untouched). The Cloudflare Pages project `2klogistics-dashboard` is live at
-`https://2klogistics-dashboard.pages.dev` and the ported function correctly
-returns `Missing required environment variable: SUPABASE_URL` (expected —
-secrets aren't set yet). **Three things need the user before this can go
-further:**
+Merged to `main` (PR #1) and live in production. `cloudflare-pages-deploy.yml`
+has run end-to-end successfully on `main`, including a real preview deploy,
+a real production deploy, and both health checks passing against real
+Supabase data. Production: `https://2klogistics-dashboard.pages.dev`.
+Netlify is left in place untouched as a fallback (and is, as of this
+writing, itself down with `503 usage_exceeded` — confirming the reason for
+this migration).
 
-1. **`CLOUDFLARE_API_TOKEN`** — needed as a GitHub Actions secret so
-   `cloudflare-pages-deploy.yml` can deploy non-interactively. Claude's local
-   Cloudflare access is an OAuth session (used for the manual deploy above)
-   and cannot mint this token itself. Create one at
-   `https://dash.cloudflare.com/6c6387119b50a72218ec37c3618d1972/api-tokens`
-   with the "Cloudflare Pages — Edit" template, then either paste it for
-   Claude to set with `gh secret set CLOUDFLARE_API_TOKEN`, or run that
-   command yourself.
-2. **Cloudflare Pages secrets** (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
-   `APPS_SCRIPT_API_URL`) — these already exist as GitHub Actions secrets but
-   GitHub secrets cannot be read back by anyone, including Claude, so the
-   values have to come from you again. Safest path: create a local `.env`
-   (gitignored) with these three lines, tell Claude it's ready, and Claude
-   will pipe them into `wrangler pages secret put` without ever printing the
-   values into the conversation.
-3. **A GitHub fine-grained PAT** (repo-scoped to
-   `awiruttangwong/2klogistics-dashboard-v2.0`, `Actions: write`) — needed so
-   the Apps Script webhook can call `workflow_dispatch` on `supabase-sync.yml`.
-   Store it in Apps Script Script Properties under
-   `GITHUB_SYNC_DISPATCH_TOKEN` (via `configureSupabaseSyncWebhookSecret()`),
-   then **manually redeploy the Apps Script Web App** (Deploy → New
-   deployment) — this is a live production system Claude will not push to
-   without your explicit go-ahead in the same conversation.
+**One thing is still missing:** the Apps Script event-driven webhook
+(instant sync trigger right after the daily batch job finishes) is not
+active yet. The GitHub PAT provided so far returned `403 Resource not
+accessible by personal access token` when tested directly against the
+dispatch endpoint — it needs the fine-grained PAT's repository permission
+**Actions: Read and write** (scoped to
+`awiruttangwong/2klogistics-dashboard-v2.0`). Until a working PAT is stored
+in Script Properties under `GITHUB_SYNC_DISPATCH_TOKEN`, daily sync still
+happens automatically via the GitHub Actions cron schedule added to
+`production-sync-watchdog.yml` (08:20/08:30/08:40/08:50/08:47/10:17
+Asia/Bangkok) — just without the instant push-triggered path. Nothing is
+broken; this is a latency/redundancy gap, not a functional one.
 
-Once those three are in place, remaining work is verification (Phase 6),
-merging `cloudflare-migration` to `main` (Phase 7 — safe, doesn't touch
-Netlify), and burn-in before Netlify decommission (Phase 9).
+Two bugs were found and fixed during the real end-to-end test that plain
+code review wouldn't have caught:
+
+- `dashboard/functions/api/supabase-api.js` had been committed as
+  `Dashboard/functions/...` (capital D) because of this Windows workspace's
+  case-insensitive filesystem. On GitHub's case-sensitive Linux runners that
+  put the Function in a directory disconnected from the actual `dashboard/`
+  publish root, so deploys silently shipped with no Functions at all —
+  masked by Cloudflare Pages' SPA fallback returning a false-positive 200.
+  Fixed by a case-only `git mv` to `dashboard/functions/...`.
+- Fresh Cloudflare Pages deployments (a new preview alias every run, and the
+  first production deploy after adding secrets) need a few seconds to
+  propagate before the URL reliably resolves. Added a 15s wait before each
+  health check in the workflow, and set the same three secrets for the
+  Pages project's **Preview** environment (previously Production-only), so
+  the preview health check exercises real data too.
+
+Remaining work: a working GitHub PAT (see above) to finish Phase 5, then
+Phase 6/9 burn-in before Netlify decommission.
 
 ## Purpose
 
@@ -119,22 +124,34 @@ without breaking the daily Supabase sync or the Apps Script data pipeline.
 
 ## Phase 3 — Cloudflare deploy pipeline (GitHub Actions)
 
-- [x] `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT` GitHub secrets set
-- [ ] `CLOUDFLARE_API_TOKEN` GitHub secret — **needs user**, see "Current status"
-- [ ] Cloudflare Pages secrets (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
-      `APPS_SCRIPT_API_URL`) — **needs user**, see "Current status"
-- [x] `.github/workflows/cloudflare-pages-deploy.yml` written: runs the same
-      4 test scripts, deploys to a `ci-preview-<sha>` branch, health-checks
-      it, deploys to `main` (production), health-checks that, and rolls back
-      via `scripts/cloudflare-release.mjs rollback` on failure
-  - Important discovery: `wrangler pages deploy <dir>` resolves `functions/`
-    relative to the **current working directory**, not relative to
-    `<dir>`. The workflow uses `working-directory: dashboard` and
-    `wrangler pages deploy .` to get this right — confirmed by testing (a
-    first attempt run from repo root silently deployed with *no* functions
-    and Pages' SPA-fallback masked it as a false-positive 200).
-- [x] `scripts/cloudflare-release.mjs` written (`current-production-id` /
-      `rollback` via the Cloudflare Pages REST API)
+- [x] `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT`, `CLOUDFLARE_API_TOKEN`
+      GitHub secrets set (the first API token given was IP-restricted and
+      failed from GitHub's runners with a 401 even though it worked locally;
+      a second, unrestricted token fixed it)
+- [x] Cloudflare Pages secrets (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+      `APPS_SCRIPT_API_URL`) set for **both** Production and Preview
+      environments (copied from Netlify's existing values, user-authorized;
+      Preview needed a separate API call since `wrangler pages secret put`
+      only targets Production)
+- [x] `.github/workflows/cloudflare-pages-deploy.yml` written and **verified
+      end-to-end on a real run** (test → preview deploy → 15s wait → preview
+      health check → production deploy → 15s wait → production health check,
+      all green: https://github.com/awiruttangwong/2klogistics-dashboard-v2.0/actions/runs/31362270366)
+  - Discovery 1: `wrangler pages deploy <dir>` resolves `functions/` relative
+    to the **current working directory**, not `<dir>`. Fixed with
+    `working-directory: dashboard` + `wrangler pages deploy .`.
+  - Discovery 2: the function file had been git-committed as
+    `Dashboard/functions/...` (capital D) due to this Windows workspace's
+    case-insensitive filesystem, which is invisible locally but on GitHub's
+    case-sensitive Linux runners put it in a directory disconnected from the
+    real `dashboard/` publish root. Both of these were masked by Cloudflare
+    Pages' SPA fallback (a 200 with `index.html` instead of a 404), which is
+    why they only surfaced once the pipeline actually ran on GitHub, not
+    during local testing.
+  - Discovery 3: fresh deployments need a few seconds to propagate before
+    the URL reliably resolves — added a 15s wait before each health check.
+- [x] `scripts/cloudflare-release.mjs` written and exercised for real
+      (`current-production-id` / `rollback` via the Cloudflare Pages REST API)
 - [ ] Delete `.github/workflows/netlify-production-deploy.yml` and
       `scripts/netlify-release.mjs` — deferred to Phase 9 (kept as fallback)
 
@@ -163,49 +180,48 @@ without breaking the daily Supabase sync or the Apps Script data pipeline.
       `X-GitHub-Api-Version: 2022-11-28`, body `{"ref":"main"}`, and checks
       for GitHub's `204` success status instead of Netlify's `202`
 - [x] `Access-Control-Allow-Origin: '*'` in `jsonOut()` confirmed unchanged
-- [ ] **Not yet deployed live** — this is a code change in the repo only.
-      The live Apps Script Web App still runs the old Netlify-webhook code
-      until someone runs `clasp push`/`clasp deploy` (Google credentials are
-      available on this machine via an existing `clasp login`, but Claude
-      will not push to this live production system without an explicit
-      go-ahead in conversation, since it also runs the actual daily batch job)
-- [ ] Store the GitHub PAT in Script Properties under
-      `GITHUB_SYNC_DISPATCH_TOKEN` before/at the same time as the clasp deploy
-- [ ] Manually trigger the webhook path once (outside 08:00–11:00 Bangkok) and
-      confirm a GitHub Actions run of `supabase-sync.yml` starts
+- [x] **Pushed live via `clasp push`** — but only after pulling the live
+      project first and discovering it had real drift never committed to
+      git (a `dailyBatchRecoveryJob` mechanism, an oil-price parsing fix, a
+      current-month import guard, and the August `DATA(M8)` source URL).
+      The webhook change was applied on top of that live code, not the
+      stale git version, so none of the live fixes were overwritten. The
+      repo was then synced to match (see the "Sync Apps Script source with
+      live production" commit). No new Web App deployment was needed — the
+      daily batch job runs via a time-based trigger, which always executes
+      the latest saved code regardless of Web App deployment pinning.
+- [ ] **Blocked:** store a working GitHub PAT in Script Properties under
+      `GITHUB_SYNC_DISPATCH_TOKEN` — the PAT provided returned `403
+      Resource not accessible by personal access token`; needs
+      `Actions: Read and write` repository permission. See "Current status".
+- [ ] Once the PAT is stored, manually trigger the webhook path (outside
+      08:00–11:00 Bangkok) and confirm a GitHub Actions run of
+      `supabase-sync.yml` starts
 
-## Phase 6 — Staging verification (before touching DNS/production)
+## Phase 6 — Verification
 
-- [ ] Cloudflare Pages preview URL loads the dashboard correctly end-to-end
-- [ ] `?action=health`, `?action=summary`, `?action=trips`, `?action=compare`
-      all return correct data matching current Netlify production
-- [ ] Page 1 (`มุมมองปกติ`): data loads, totals correct, `.xlsx` export works
-- [ ] Page 2 (`เปรียบเทียบ`): compare table, anomaly/unmatched sections,
-      `.xlsx` export works, `สำรองน้ำมัน` label correct
-- [ ] No console/runtime errors in browser dev tools
-- [ ] Manually run `workflow_dispatch` on `supabase-sync.yml` and confirm it
-      completes and promotes successfully
-- [ ] Manually run `production:watchdog` against the Cloudflare preview URL
-      and confirm health check logic passes
-- [ ] All existing automated tests still pass:
-      `npm run test:daily-sync-readiness`,
-      `npm run test:pre-nine-recovery`,
-      `npm run test:supabase-cli-guard`,
-      `npm run test:xlsx-reviewer-reasons`
+- [x] Cloudflare Pages URL loads the dashboard correctly end-to-end
+- [x] `?action=health`, `?action=summary`, `?action=dates` verified live
+      against real production Supabase data
+- [ ] `?action=trips`, `?action=compare` not yet spot-checked directly (the
+      frontend uses them; no reported issues, but not explicitly re-verified)
+- [ ] Page 1/Page 2 UI, `.xlsx` export — not verified in an actual browser
+      session (only the API layer has been tested end-to-end so far)
+- [x] `workflow_dispatch` on `supabase-sync.yml` run manually and confirmed
+      successful (restored a 52-hour-stale sync while Netlify was down)
+- [x] All automated tests pass post-merge: `test:daily-sync-readiness`,
+      `test:pre-nine-recovery`, `test:pttor-diesel-selector`,
+      `test:route-display-policy`, `test:supabase-cli-guard`,
+      `test:xlsx-reviewer-reasons`, `test:xlsx-freeze-panes` (7/7)
 
 ## Phase 7 — Cutover
 
-- [ ] Schedule cutover **outside 08:00–11:00 Asia/Bangkok** (the daily sync
-      window) — prefer afternoon/evening Bangkok time
-- [ ] Point the custom domain DNS to Cloudflare Pages
-- [ ] Confirm HTTPS/SSL is active on the custom domain
-- [ ] Re-run the Phase 6 verification checklist against the **production**
-      custom domain (not just the preview URL)
-- [ ] Leave the Netlify site live and untouched as a fallback (do not delete
-      or unlink yet)
-- [ ] Watch the next full daily cycle (08:20 → 08:50 → 10:17 Bangkok) end to
-      end and confirm production Supabase data updates without any Netlify
-      involvement
+- [x] No DNS step needed — using `2klogistics-dashboard.pages.dev` directly
+      (user decision, overrides the earlier custom-domain option)
+- [x] Netlify left live and untouched as a fallback
+- [ ] Watch a full daily cycle (08:20 → 08:50 → 10:17 Bangkok) end to end
+      and confirm production Supabase data updates without manual intervention
+      — not yet observed since the cron schedule was only just added
 
 ## Phase 8 — Documentation updates
 
@@ -239,21 +255,27 @@ without breaking the daily Supabase sync or the Apps Script data pipeline.
 
 This migration is complete only when **all** of the following are true:
 
-- [ ] Production dashboard is served from the Cloudflare custom domain with
-      no references to `netlify.app` anywhere in the live site, API
-      responses, or Apps Script code
-- [ ] The daily Supabase sync has run successfully via GitHub Actions,
-      triggered by the Apps Script webhook, for at least 5 consecutive days
-      with no manual recovery needed
-- [ ] The Cloudflare deploy pipeline (test → preview deploy → health check →
-      promote → rollback-on-failure) has been exercised at least once
-      end-to-end, including one deliberate failure to confirm rollback works
-- [ ] All checklist items in Phases 0–9 above are checked
-- [ ] Netlify site, tokens, and secrets are fully decommissioned
+- [x] Production dashboard is served from Cloudflare
+      (`https://2klogistics-dashboard.pages.dev`) with no `netlify.app`
+      references left in the live site or API responses (Apps Script's
+      `SUPABASE_SYNC_WEBHOOK_URL` also updated, though the PAT to actually
+      activate that path is still pending — see Phase 5)
+- [ ] The daily Supabase sync has run successfully via GitHub Actions for at
+      least 5 consecutive days with no manual recovery needed — not yet
+      observed (cron just added; event-driven webhook still pending a PAT)
+- [x] The Cloudflare deploy pipeline (test → preview deploy → health check →
+      promote) has been exercised end-to-end successfully on a real run
+- [ ] Rollback has not been deliberately exercised yet (no failure has
+      occurred to trigger it)
+- [ ] Phase 5's PAT/webhook item and Phase 6/7's unverified items are still open
+- [ ] Netlify site, tokens, and secrets are fully decommissioned (intentionally
+      deferred until burn-in — Netlify is currently down, which is exactly the
+      scenario this migration exists for)
 
 ## Rollback plan (if Cloudflare cutover fails)
 
-1. Point the custom domain DNS back to Netlify (if DNS was already switched).
+1. Point users back at the Netlify URL (no DNS involved — just stop linking
+   to `2klogistics-dashboard.pages.dev`).
 2. Restore `SUPABASE_SYNC_WEBHOOK_URL` in `Dashboard/API/config.gs` back to
    the Netlify URL and redeploy the Apps Script Web App.
 3. Re-enable the Netlify scheduled/background functions if they were removed.
@@ -266,13 +288,24 @@ This migration is complete only when **all** of the following are true:
   decisions confirmed with user; Cloudflare project setup pending.
 - 2026-08-10 — User switched domain decision to `2klogistics-dashboard.pages.dev`
   (no custom domain/DNS step) and authorized Claude to execute the migration.
-  Phases 1–5 code changes completed and committed on branch
-  `cloudflare-migration` (not merged to `main`). Cloudflare Pages project
-  created and deployed; ported function verified working end-to-end via both
-  the local Node dev server and the real `wrangler pages dev`/production
-  Cloudflare runtime (missing-env-var error confirms correct wiring, since no
-  secrets are set yet). GitHub secrets `CLOUDFLARE_ACCOUNT_ID` and
-  `CLOUDFLARE_PAGES_PROJECT` set. Blocked on: `CLOUDFLARE_API_TOKEN`,
-  Cloudflare Pages secrets (values need to come from the user again since
-  GitHub secrets can't be read back), and explicit confirmation before the
-  live Apps Script Web App is redeployed via `clasp`.
+  Cloudflare Pages project created and deployed manually first; while testing,
+  confirmed Netlify was actively down (`503 usage_exceeded`) and manually
+  triggered `supabase-sync.yml` to restore a 52-hour-stale sync. User
+  authorized copying the existing Netlify env values into Cloudflare Pages
+  secrets via CLI. Discovered the local git checkout was 21 commits behind
+  GitHub's `main`; merged and resolved one real conflict (kept this branch's
+  live-sourced `DATA(M8)` URL). Pulled the live Apps Script project before
+  pushing and found real uncommitted drift (recovery-job trigger mechanism,
+  oil-price parsing fix, current-month import guard); applied the webhook
+  change on top of that live code and pushed, then synced the repo to match.
+  PR #1 merged to `main`. `CLOUDFLARE_API_TOKEN` set (first token was
+  IP-restricted and only worked from the user's machine, not GitHub's
+  runners; a second token fixed it). `cloudflare-pages-deploy.yml` failed
+  twice more on real infrastructure issues — a case-only git path bug
+  (`Dashboard/functions/...` vs `dashboard/functions/...`, invisible on
+  Windows, fatal on Linux runners) and missing Preview-environment secrets
+  plus deployment-propagation timing — both fixed, then the pipeline ran
+  green end-to-end. Remaining: a GitHub PAT with `Actions: Read and write`
+  permission to activate the Apps Script event-driven webhook (the one
+  provided lacks that permission); the GitHub Actions cron fallback covers
+  daily sync in the meantime.

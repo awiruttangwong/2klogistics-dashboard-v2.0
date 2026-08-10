@@ -16,8 +16,8 @@ var SHEET_SOURCES = {
   'DATA(M5)': 'https://docs.google.com/spreadsheets/d/1wt8x2XsfvT-gSOmrI0HnNFcS27w-OuvzEYItGP3xn48/edit?gid=1824601668#gid=1824601668',
   'DATA(M6)': 'https://docs.google.com/spreadsheets/d/11xnRv1OFciOQtpAIMEL8tqMvsf1tm5NuOkVAb7vb-0c/edit?gid=1824601668#gid=1824601668',
   
-  'DATA(M7)': '',
-  'DATA(M8)': '',
+  'DATA(M7)': 'https://docs.google.com/spreadsheets/d/1sMshl7_b-dvrtnDYcl-WQt467gSnfdLw0o35rgRFJMU/edit?gid=1824601668#gid=1824601668',
+  'DATA(M8)': 'https://docs.google.com/spreadsheets/d/16hkvexRI5zdo9vMNmvIjfD6sOGve-hgov9m45f3zAv0/edit?gid=1824601668#gid=1824601668',
   'DATA(M9)': '',
   'DATA(M10)': '',
   'DATA(M11)': '',
@@ -145,15 +145,23 @@ var APPS_SCRIPT_PROJECT_ID = '1FGsRlFbWgI_rzRRVoXXF-TpGUKlhvl6kXlcH8lUit2PfEsb9b
 var DAILY_BATCH_TRIGGER_TIMEZONE = 'Asia/Bangkok';
 var DAILY_BATCH_TRIGGER_HOUR = 8;
 var DAILY_BATCH_TRIGGER_NEAR_MINUTE = 0;
+var DAILY_BATCH_RECOVERY_NEAR_MINUTE = 30; // kept for backward-compat reporting; first entry of DAILY_BATCH_RECOVERY_WINDOWS below
 
-// Event-driven Supabase sync. As of the Cloudflare migration (2026-08-10)
-// this dispatches the "Supabase Shadow Sync" GitHub Actions workflow
-// (.github/workflows/supabase-sync.yml) instead of calling a Netlify
-// background function, so the sync itself keeps running on plain Node.js
-// with no edge-runtime execution limits. The secret value (a GitHub
-// fine-grained PAT scoped to this repo's Actions: write permission) belongs
-// in Script Properties under SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY and must
-// never be committed.
+// Recovery keeps retrying every 30 min after the 08:00 primary run until 10:00.
+// Each attempt no-ops if a successful batch already ran today (see isSuccessfulDailyBatchToday_),
+// so widening this window is safe and only helps transient failures (Apps Script/network/contract
+// errors) recover without a human running the runbook by hand.
+var DAILY_BATCH_RECOVERY_WINDOWS = [
+  { hour: 8, minute: 30 },
+  { hour: 9, minute: 0 },
+  { hour: 9, minute: 30 },
+  { hour: 10, minute: 0 }
+];
+
+// Event-driven Supabase sync. The secret value belongs in Script Properties
+// under SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY and must never be committed.
+// Cloudflare migration (2026-08-10): dispatches the "Supabase Shadow Sync"
+// GitHub Actions workflow instead of a Netlify background function.
 var SUPABASE_SYNC_WEBHOOK_URL = 'https://api.github.com/repos/awiruttangwong/2klogistics-dashboard-v2.0/actions/workflows/supabase-sync.yml/dispatches';
 var SUPABASE_SYNC_WEBHOOK_SECRET_PROPERTY = 'GITHUB_SYNC_DISPATCH_TOKEN';
 

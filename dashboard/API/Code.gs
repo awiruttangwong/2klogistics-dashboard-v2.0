@@ -355,10 +355,17 @@ function importAllConfiguredSheets() {
 var DAILY_BATCH_LAST_STATUS_PROPERTY = 'DAILY_BATCH_LAST_STATUS';
 
 function getDailyBatchTriggerConfig_() {
+  var legacyRecoveryMinute = typeof DAILY_BATCH_RECOVERY_NEAR_MINUTE !== 'undefined' ? DAILY_BATCH_RECOVERY_NEAR_MINUTE : 30;
+  var hour = typeof DAILY_BATCH_TRIGGER_HOUR !== 'undefined' ? DAILY_BATCH_TRIGGER_HOUR : 8;
+  var recoveryWindows = typeof DAILY_BATCH_RECOVERY_WINDOWS !== 'undefined' && DAILY_BATCH_RECOVERY_WINDOWS.length > 0
+    ? DAILY_BATCH_RECOVERY_WINDOWS
+    : [{ hour: hour, minute: legacyRecoveryMinute }];
   return {
     timezone: typeof DAILY_BATCH_TRIGGER_TIMEZONE !== 'undefined' ? DAILY_BATCH_TRIGGER_TIMEZONE : 'Asia/Bangkok',
-    hour: typeof DAILY_BATCH_TRIGGER_HOUR !== 'undefined' ? DAILY_BATCH_TRIGGER_HOUR : 8,
-    nearMinute: typeof DAILY_BATCH_TRIGGER_NEAR_MINUTE !== 'undefined' ? DAILY_BATCH_TRIGGER_NEAR_MINUTE : 0
+    hour: hour,
+    nearMinute: typeof DAILY_BATCH_TRIGGER_NEAR_MINUTE !== 'undefined' ? DAILY_BATCH_TRIGGER_NEAR_MINUTE : 0,
+    recoveryNearMinute: legacyRecoveryMinute,
+    recoveryWindows: recoveryWindows
   };
 }
 
@@ -393,7 +400,8 @@ function createDailyTrigger() {
   SpreadsheetApp.getUi().alert(
     'Trigger configured.\n\n' +
     '- Removed old dailyBatchJob triggers: ' + result.removed + '\n' +
-    '- Created new trigger: dailyBatchJob at ' + result.expectedWindow + '\n\n' +
+    '- Created primary trigger: dailyBatchJob at ' + result.expectedWindow + '\n' +
+    '- Created recovery trigger: dailyBatchRecoveryJob at ' + result.recoveryExpectedWindow + '\n\n' +
     'Note: Apps Script may run a few minutes around this time window.'
   );
   return result;
@@ -413,6 +421,14 @@ function removeAllTriggers() {
 // ============================================
 
 function dailyBatchJob() {
+  return runDailyBatchWithLock_(false);
+}
+
+function dailyBatchRecoveryJob() {
+  return runDailyBatchWithLock_(true);
+}
+
+function runDailyBatchWithLock_(skipIfCompletedToday) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) {
     Logger.log('[dailyBatchJob] skipped: another dailyBatchJob run is already active');
@@ -422,15 +438,41 @@ function dailyBatchJob() {
       error: 'dailyBatchJob is already running',
       checkedAt: new Date().toISOString()
     };
-    saveLastDailyBatchStatus_(skippedStatus);
+    if (!skipIfCompletedToday) saveLastDailyBatchStatus_(skippedStatus);
     return skippedStatus;
   }
   try {
+    if (skipIfCompletedToday) {
+      var lastStatus = getLastDailyBatchStatus_();
+      if (isSuccessfulDailyBatchToday_(lastStatus)) {
+        Logger.log('[dailyBatchRecoveryJob] skipped: today\'s batch already completed successfully');
+        return {
+          ok: true,
+          skipped: true,
+          reason: 'today-batch-already-successful',
+          lastFinishedAt: lastStatus.finishedAt,
+          checkedAt: new Date().toISOString()
+        };
+      }
+      Logger.log('[dailyBatchRecoveryJob] today\'s successful batch not found; starting recovery');
+    }
     // Keep the original function name for menus/triggers, but route to the safe core implementation.
     return dailyBatchJobCore_();
   } finally {
     lock.releaseLock();
   }
+}
+
+function isSuccessfulDailyBatchToday_(status) {
+  if (!status || status.ok !== true || status.contractPassed !== true || !status.finishedAt) return false;
+  if (status.errors && status.errors.length > 0) return false;
+  if (status.syncErrors && status.syncErrors.length > 0) return false;
+  var finished = new Date(status.finishedAt);
+  if (isNaN(finished.getTime())) return false;
+  var timezone = getDailyBatchTriggerConfig_().timezone;
+  var dateFormat = 'yyyy-MM-dd';
+  return Utilities.formatDate(finished, timezone, dateFormat) ===
+    Utilities.formatDate(new Date(), timezone, dateFormat);
 }
 
 function importAllConfiguredSheetsSilent() {
@@ -442,7 +484,8 @@ function createDailyTriggerCore_() {
   var triggers = ScriptApp.getProjectTriggers();
   var removed = 0;
   for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'dailyBatchJob') {
+    var handler = triggers[i].getHandlerFunction();
+    if (handler === 'dailyBatchJob' || handler === 'dailyBatchRecoveryJob') {
       ScriptApp.deleteTrigger(triggers[i]);
       removed++;
     }
@@ -456,12 +499,27 @@ function createDailyTriggerCore_() {
     .nearMinute(triggerConfig.nearMinute)
     .create();
 
+  for (var w = 0; w < triggerConfig.recoveryWindows.length; w++) {
+    var recoveryWindow = triggerConfig.recoveryWindows[w];
+    ScriptApp.newTrigger('dailyBatchRecoveryJob')
+      .timeBased()
+      .everyDays(1)
+      .inTimezone(triggerConfig.timezone)
+      .atHour(recoveryWindow.hour)
+      .nearMinute(recoveryWindow.minute)
+      .create();
+  }
+
   return {
     ok: true,
     removed: removed,
     expectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' +
       ('0' + triggerConfig.nearMinute).slice(-2) +
       ' (UTC+7, ' + triggerConfig.timezone + ')',
+    recoveryExpectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' +
+      ('0' + triggerConfig.recoveryNearMinute).slice(-2) +
+      ' (UTC+7, ' + triggerConfig.timezone + ')',
+    recoveryWindows: triggerConfig.recoveryWindows,
     checkedAt: new Date().toISOString()
   };
 }
@@ -757,7 +815,9 @@ function selectDieselRows_(records, sourceName) {
     if (!date) {
       date = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
     }
-    if (byDateScore[date] !== undefined && byDateScore[date] > score) continue;
+    // Keep the first record when scores tie. PTTOR currently returns regular
+    // Diesel before premium Diesel, so a later ambiguous product must not win.
+    if (byDateScore[date] !== undefined && byDateScore[date] >= score) continue;
     byDateScore[date] = score;
     byDate[date] = {
       date: date,
@@ -776,27 +836,25 @@ function selectDieselRows_(records, sourceName) {
 }
 
 function getDieselRecordScore_(row) {
-  var txt = '';
-  for (var k in row) {
-    if (!row.hasOwnProperty(k)) continue;
-    txt += ' ' + String(row[k] || '').toLowerCase();
+  var productKeys = [
+    'PRODUCT', 'PRODUCT_NAME', 'PRODUCTNAME', 'OIL_NAME', 'OILNAME',
+    'FUEL_NAME', 'FUELNAME'
+  ];
+  var product = '';
+  for (var i = 0; i < productKeys.length; i++) {
+    var key = productKeys[i];
+    if (!row.hasOwnProperty(key)) continue;
+    product = String(row[key] || '').toLowerCase();
+    if (product) break;
   }
-  txt = txt.replace(/\s+/g, ' ').trim();
-  if (!txt) return 0;
+  product = product.replace(/\s+/g, ' ').trim();
+  if (!product) return 0;
 
-  // Exclude products that are not the main Diesel price shown on PTTOR page.
-  if (txt.indexOf('premium diesel') !== -1) return 0;
-  if (txt.indexOf('b20') !== -1) return 0;
-  if (txt.indexOf('gasohol') !== -1) return 0;
-  if (txt.indexOf('เบนซิน') !== -1) return 0;
-  if (txt.indexOf('benz') !== -1) return 0;
-  if (txt.indexOf('e20') !== -1 || txt.indexOf('e85') !== -1) return 0;
-  if (txt.indexOf('ซุปเปอร์พาวเวอร์') !== -1) return 0;
+  // Match the product field, not the entire record. The current PTTOR payload
+  // contains both "ดีเซล" and "Super Power Diesel" for the same timestamp.
+  if (product === 'diesel' || product === 'ดีเซล') return 100;
+  if (product === 'diesel b7' || product === 'ดีเซล b7') return 90;
 
-  if (txt === 'diesel' || txt === 'ดีเซล') return 100;
-  if (txt.indexOf(' diesel ') !== -1 || txt.indexOf('ดีเซล ') !== -1) return 95;
-  if (txt.indexOf('diesel') !== -1 || txt.indexOf('ดีเซล') !== -1) return 90;
-  if (txt.indexOf('diesel b7') !== -1 || txt.indexOf('b7') !== -1) return 70;
   return 0;
 }
 
@@ -1138,8 +1196,12 @@ function systemStatusReport() {
     ? EXPECTED_DASHBOARD_SPREADSHEET_ID
     : '';
   var activeSpreadsheetId = ss.getId();
-  var triggers = ScriptApp.getProjectTriggers().filter(function(t) {
+  var projectTriggers = ScriptApp.getProjectTriggers();
+  var triggers = projectTriggers.filter(function(t) {
     return t.getHandlerFunction() === 'dailyBatchJob';
+  });
+  var recoveryTriggers = projectTriggers.filter(function(t) {
+    return t.getHandlerFunction() === 'dailyBatchRecoveryJob';
   });
 
   function sheetRowCount(name) {
@@ -1155,7 +1217,12 @@ function systemStatusReport() {
       configuredTimezone: triggerConfig.timezone,
       configuredHour: triggerConfig.hour,
       configuredNearMinute: triggerConfig.nearMinute,
-      expectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' + ('0' + triggerConfig.nearMinute).slice(-2) + ' ' + triggerConfig.timezone
+      expectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' + ('0' + triggerConfig.nearMinute).slice(-2) + ' ' + triggerConfig.timezone,
+      dailyBatchRecoveryJobCount: recoveryTriggers.length,
+      configuredRecoveryNearMinute: triggerConfig.recoveryNearMinute,
+      recoveryExpectedWindow: ('0' + triggerConfig.hour).slice(-2) + ':' + ('0' + triggerConfig.recoveryNearMinute).slice(-2) + ' ' + triggerConfig.timezone,
+      recoveryWindows: triggerConfig.recoveryWindows,
+      expectedRecoveryJobCount: triggerConfig.recoveryWindows.length
     },
     spreadsheet: {
       id: activeSpreadsheetId,
@@ -2967,6 +3034,31 @@ function validateFrontendApiContract() {
   var meta = getApiInfo();
   if (meta.missingMonths && meta.missingMonths.length > 0) {
     warnings.push('Source months not configured: ' + meta.missingMonths.join(', '));
+  }
+
+  // Current-month import guard (added 2026-07-20 after the DATA(M7) incident):
+  // a month whose source URL is configured but whose destination tab holds zero
+  // imported rows means the pipeline silently carried nothing across, even though
+  // every other check can still pass. Fail loudly so (a) health/contract goes red,
+  // (b) the batch is not marked successful, and (c) dailyBatchRecoveryJob retries
+  // instead of skipping. This is what turns a 20-day silent gap into a same-day
+  // alert. A month with a blank source URL (a future month) is intentionally
+  // exempt so normal rollover preparation does not trip the guard.
+  try {
+    var bkkMonthNum = Number(Utilities.formatDate(new Date(), 'Asia/Bangkok', 'M'));
+    var currentMonthKey = 'DATA(M' + bkkMonthNum + ')';
+    var currentSource = (typeof SHEET_SOURCES !== 'undefined') ? SHEET_SOURCES[currentMonthKey] : '';
+    var currentConfigured = currentSource && String(currentSource).indexOf('http') !== -1;
+    if (currentConfigured) {
+      var curSheet = getDashboardSpreadsheet_().getSheetByName(currentMonthKey);
+      var curRows = curSheet ? Math.max(0, curSheet.getLastRow() - 1) : 0;
+      if (curRows === 0) {
+        errors.push('current month ' + currentMonthKey +
+          ' has a configured source but its destination tab is empty (0 imported rows)');
+      }
+    }
+  } catch (guardErr) {
+    warnings.push('current-month import guard could not run: ' + guardErr.message);
   }
 
   if (typeof EXPECTED_DASHBOARD_SPREADSHEET_ID !== 'undefined' && EXPECTED_DASHBOARD_SPREADSHEET_ID) {
